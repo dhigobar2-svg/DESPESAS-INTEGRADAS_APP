@@ -1,0 +1,5 @@
+{
+  "name": "DESPESAS INTEGRADAS",
+  "description": "App colaborativo de controle de despesas com suporte offline e sincronização em tempo real.",
+  "requestFramePermissions": []
+}
