@@ -9,10 +9,9 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const db = new Database("expenses.db");
 
-// Enable foreign keys
 db.exec("PRAGMA foreign_keys = ON;");
 
-// Initialize Database
+// Schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY,
@@ -40,82 +39,168 @@ db.exec(`
     FOREIGN KEY(responsible_id) REFERENCES responsibles(id) ON DELETE SET NULL
   );
 
-  -- Insert default categories if empty
-  INSERT OR IGNORE INTO categories (id, name, color) VALUES 
+  CREATE TABLE IF NOT EXISTS user_profile (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT 'Usuário',
+    photo TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS budgets (
+    id TEXT PRIMARY KEY,
+    category_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    limit_value REAL NOT NULL,
+    UNIQUE(category_id, month),
+    FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS recurring_expenses (
+    id TEXT PRIMARY KEY,
+    category_id TEXT,
+    description TEXT NOT NULL,
+    value REAL NOT NULL,
+    responsible_id TEXT,
+    day_of_month INTEGER NOT NULL,
+    active INTEGER DEFAULT 1,
+    FOREIGN KEY(category_id) REFERENCES categories(id) ON DELETE SET NULL,
+    FOREIGN KEY(responsible_id) REFERENCES responsibles(id) ON DELETE SET NULL
+  );
+
+  INSERT OR IGNORE INTO categories (id, name, color) VALUES
     ('1', 'Alimentação', '#ef4444'),
     ('2', 'Transporte', '#3b82f6'),
     ('3', 'Lazer', '#10b981'),
     ('4', 'Moradia', '#f59e0b');
+
+  INSERT OR IGNORE INTO user_profile (id, name) VALUES ('default', 'Usuário');
 `);
 
-// Migration: Add description column if it doesn't exist
-try {
-  db.prepare("SELECT description FROM expenses LIMIT 1").get();
-} catch (e) {
-  console.log("Adding description column to expenses table...");
-  db.exec("ALTER TABLE expenses ADD COLUMN description TEXT");
-}
+// Migrations
+const tryMigrate = (test: string, alter: string) => {
+  try { db.prepare(test).get(); } catch { db.exec(alter); }
+};
+tryMigrate(
+  "SELECT description FROM expenses LIMIT 1",
+  "ALTER TABLE expenses ADD COLUMN description TEXT"
+);
 
+// Whitelist of allowed columns per table — prevents SQL injection via sync
+const ALLOWED_COLUMNS: Record<string, string[]> = {
+  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid"],
+  categories:          ["id", "name", "color"],
+  responsibles:        ["id", "name", "photo"],
+  budgets:             ["id", "category_id", "month", "limit_value"],
+  recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active"],
+};
+
+// Safe upsert: only uses whitelisted columns
+function syncItems(table: string, items: unknown[]) {
+  if (!items?.length) return;
+  const allowed = ALLOWED_COLUMNS[table];
+  if (!allowed) throw new Error(`Invalid table: ${table}`);
+
+  const firstItem = items[0] as Record<string, unknown>;
+  const cols = allowed.filter(col => Object.prototype.hasOwnProperty.call(firstItem, col));
+  if (!cols.includes("id")) throw new Error("Missing id field");
+
+  const placeholders = cols.map(() => "?").join(",");
+  const stmt = db.prepare(`REPLACE INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`);
+
+  db.transaction((data: unknown[]) => {
+    for (const item of data) {
+      const row = item as Record<string, unknown>;
+      stmt.run(cols.map(col => row[col] ?? null));
+    }
+  })(items);
+}
 
 async function startServer() {
   const app = express();
   const httpServer = createServer(app);
-  const io = new Server(httpServer, {
-    cors: {
-      origin: "*",
-    },
+  const io = new Server(httpServer, { cors: { origin: "*" } });
+
+  app.use(express.json({ limit: "10mb" }));
+
+  // GET all data
+  app.get("/api/data", (_req, res) => {
+    const expenses    = db.prepare("SELECT * FROM expenses ORDER BY due_date DESC").all();
+    const categories  = db.prepare("SELECT * FROM categories ORDER BY name").all();
+    const responsibles = db.prepare("SELECT * FROM responsibles ORDER BY name").all();
+    const profile     = db.prepare("SELECT * FROM user_profile WHERE id = 'default'").get()
+                        ?? { id: "default", name: "Usuário", photo: null };
+    const budgets     = db.prepare("SELECT * FROM budgets").all();
+    const recurring   = db.prepare("SELECT * FROM recurring_expenses ORDER BY description").all();
+    res.json({ expenses, categories, responsibles, profile, budgets, recurring });
   });
 
-  app.use(express.json({ limit: '10mb' }));
-
-  // API Routes
-  app.get("/api/data", (req, res) => {
-    const expenses = db.prepare("SELECT * FROM expenses ORDER BY due_date DESC").all();
-    const categories = db.prepare("SELECT * FROM categories").all();
-    const responsibles = db.prepare("SELECT * FROM responsibles").all();
-    res.json({ expenses, categories, responsibles });
-  });
-
+  // POST /api/sync — validated upsert of all client state
   app.post("/api/sync", (req, res) => {
-    const { expenses, categories, responsibles } = req.body;
+    const { expenses, categories, responsibles, profile, budgets, recurring } = req.body;
+    try {
+      if (categories?.length)  syncItems("categories",         categories);
+      if (responsibles?.length) syncItems("responsibles",       responsibles);
+      if (expenses?.length)    syncItems("expenses",            expenses);
+      if (budgets?.length)     syncItems("budgets",             budgets);
+      if (recurring?.length)   syncItems("recurring_expenses",  recurring);
 
-    const syncItems = (table: string, items: any[]) => {
-      if (!items) return;
-      const insert = db.prepare(`REPLACE INTO ${table} (${Object.keys(items[0]).join(',')}) VALUES (${Object.keys(items[0]).map(() => '?').join(',')})`);
-      const transaction = db.transaction((data) => {
-        for (const item of data) insert.run(Object.values(item));
-      });
-      transaction(items);
-    };
+      if (profile && typeof profile === "object") {
+        const p = profile as Record<string, unknown>;
+        db.prepare("REPLACE INTO user_profile (id, name, photo) VALUES ('default', ?, ?)")
+          .run(p.name ?? "Usuário", p.photo ?? null);
+      }
 
-    if (categories?.length) syncItems('categories', categories);
-    if (responsibles?.length) syncItems('responsibles', responsibles);
-    if (expenses?.length) syncItems('expenses', expenses);
+      io.emit("data_updated");
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Sync error:", err);
+      res.status(500).json({ error: "Erro ao sincronizar dados." });
+    }
+  });
 
+  // DELETE /api/:table/:id
+  app.delete("/api/:table/:id", (req, res) => {
+    const { table, id } = req.params;
+    const validTables = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses"];
+    if (!validTables.includes(table)) {
+      return res.status(400).json({ error: "Tabela inválida." });
+    }
+    try {
+      db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+      io.emit("data_updated");
+      res.json({ success: true });
+    } catch (err: any) {
+      if (err.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
+        res.status(400).json({ error: "Não é possível excluir: item está sendo usado em uma despesa." });
+      } else {
+        res.status(500).json({ error: "Erro ao excluir item." });
+      }
+    }
+  });
+
+  // PUT /api/categories/:id — inline editing
+  app.put("/api/categories/:id", (req, res) => {
+    const { id } = req.params;
+    const { name, color } = req.body as { name?: string; color?: string };
+    if (!name || !color) return res.status(400).json({ error: "Nome e cor são obrigatórios." });
+    db.prepare("UPDATE categories SET name = ?, color = ? WHERE id = ?").run(name, color, id);
     io.emit("data_updated");
     res.json({ success: true });
   });
 
-  app.delete("/api/:table/:id", (req, res) => {
-    const { table, id } = req.params;
-    if (['expenses', 'categories', 'responsibles'].includes(table)) {
-      try {
-        db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
-        io.emit("data_updated");
-        res.json({ success: true });
-      } catch (err: any) {
-        if (err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-          res.status(400).json({ error: "Não é possível excluir este item pois ele está sendo usado em uma despesa." });
-        } else {
-          res.status(500).json({ error: "Erro ao excluir item." });
-        }
-      }
-    } else {
-      res.status(400).json({ error: "Invalid table" });
-    }
+  // PUT /api/expenses/:id — full update
+  app.put("/api/expenses/:id", (req, res) => {
+    const { id } = req.params;
+    const e = req.body as Record<string, unknown>;
+    db.prepare(`
+      UPDATE expenses
+      SET category_id=?, description=?, date=?, due_date=?, value=?, responsible_id=?, paid=?
+      WHERE id=?
+    `).run(e.category_id, e.description, e.date, e.due_date, e.value, e.responsible_id, e.paid, id);
+    io.emit("data_updated");
+    res.json({ success: true });
   });
 
-  // Vite middleware for development
+  // Vite / static
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -124,14 +209,13 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
   }
 
-  const PORT = 3000;
-  httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  httpServer.listen(3000, "0.0.0.0", () => {
+    console.log("Server running on http://localhost:3000");
   });
 }
 
