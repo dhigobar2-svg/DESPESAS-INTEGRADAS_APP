@@ -10,3 +10,29 @@
     @apply antialiased;
   }
 }
+
+@layer components {
+  .label {
+    @apply text-[10px] font-bold uppercase text-slate-400 block mb-1 tracking-wider;
+  }
+  .input {
+    @apply w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold
+           focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400
+           transition-colors;
+  }
+  .btn-primary {
+    @apply bg-emerald-600 text-white font-bold text-xs uppercase tracking-widest
+           rounded-2xl px-5 py-3 shadow-lg shadow-emerald-500/20
+           hover:bg-emerald-700 active:scale-95 transition-all;
+  }
+  .btn-secondary {
+    @apply bg-slate-100 text-slate-600 font-bold text-xs uppercase tracking-widest
+           rounded-2xl px-5 py-3 hover:bg-slate-200 active:scale-95 transition-all;
+  }
+  .card {
+    @apply bg-white rounded-2xl border border-slate-200 shadow-sm;
+  }
+  .section-title {
+    @apply text-xs font-bold uppercase tracking-widest mb-5 flex items-center gap-2 text-slate-700;
+  }
+}
