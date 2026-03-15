@@ -13,7 +13,7 @@ interface Props {
 }
 
 export default function ExpenseModal({ open, editing, defaultValues, onClose }: Props) {
-  const { categories, responsibles, saveExpense, currentUser } = useData();
+  const { categories, responsibles, saveExpense } = useData();
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -28,7 +28,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       responsible_id: fd.get("responsible") as string,
       paid:           fd.get("paid") === "on" ? 1 : 0,
       notes:          (fd.get("notes") as string) || undefined,
-      created_by:     editing?.created_by ?? currentUser?.name ?? "",
+      created_by:     editing?.created_by,
     };
     saveExpense(expense, !!editing);
     onClose();
@@ -37,14 +37,14 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
   const today = format(new Date(), "yyyy-MM-dd");
 
   // Resolve default values: editing > defaultValues > empty
-  const defCat  = editing?.category_id  ?? defaultValues?.category_id  ?? categories[0]?.id ?? "";
-  const defDesc = editing?.description  ?? defaultValues?.description  ?? "";
-  const defDate = editing?.date         ?? defaultValues?.date         ?? today;
-  const defDue  = editing?.due_date     ?? defaultValues?.due_date     ?? today;
-  const defVal  = editing?.value        ?? defaultValues?.value;
-  const defResp = editing?.responsible_id ?? defaultValues?.responsible_id ?? responsibles[0]?.id ?? "";
-  const defPaid = editing?.paid === 1;
-  const defNotes = editing?.notes ?? defaultValues?.notes ?? "";
+  const defCat   = editing?.category_id    ?? defaultValues?.category_id    ?? categories[0]?.id ?? "";
+  const defDesc  = editing?.description    ?? defaultValues?.description    ?? "";
+  const defDate  = editing?.date           ?? defaultValues?.date           ?? today;
+  const defDue   = editing?.due_date       ?? defaultValues?.due_date       ?? today;
+  const defVal   = editing?.value          ?? defaultValues?.value;
+  const defResp  = editing?.responsible_id ?? defaultValues?.responsible_id ?? responsibles[0]?.id ?? "";
+  const defPaid  = editing?.paid === 1;
+  const defNotes = editing?.notes          ?? defaultValues?.notes          ?? "";
 
   return (
     <AnimatePresence>
@@ -139,15 +139,6 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                     className="w-5 h-5 rounded accent-emerald-600" />
                   <label htmlFor="paid" className="text-sm font-bold text-slate-700">Já está pago?</label>
                 </div>
-
-                {/* Quem lançou (info only) */}
-                {(editing?.created_by || currentUser) && (
-                  <p className="text-[10px] text-slate-400 font-medium">
-                    {editing?.created_by
-                      ? `Lançado por: ${editing.created_by}`
-                      : `Lançando como: ${currentUser?.name}`}
-                  </p>
-                )}
 
                 {/* Ações */}
                 <div className="flex gap-3 pt-4">

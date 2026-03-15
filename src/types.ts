@@ -23,11 +23,6 @@ export interface Expense {
   created_by?: string;
 }
 
-export interface User {
-  id: string;
-  name: string;
-}
-
 export interface UserProfile {
   id?: string;
   name: string;

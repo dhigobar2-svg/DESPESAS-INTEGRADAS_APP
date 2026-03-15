@@ -81,7 +81,7 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
     doc.setFontSize(9);
     doc.text(filterLabel, 14, 22);
     autoTable(doc, {
-      head: [["Vencimento", "Descrição", "Categoria", "Valor", "Responsável", "Status", "Lançado por"]],
+      head: [["Vencimento", "Descrição", "Categoria", "Valor", "Responsável", "Status", "Notas"]],
       body: filtered.map(e => [
         e.due_date ? format(parseISO(e.due_date), "dd/MM/yyyy") : "—",
         e.description || "—",
@@ -89,7 +89,7 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
         `R$ ${formatCurrency(e.value)}`,
         responsibles.find(r => r.id === e.responsible_id)?.name ?? "—",
         e.paid ? "Pago" : "Pendente",
-        e.created_by || "—",
+        e.notes || "—",
       ]),
       startY: 28,
       foot: [["", "", "TOTAL", `R$ ${formatCurrency(filteredTotal)}`, "", "", ""]],
@@ -99,7 +99,7 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
 
   // ── Export CSV ────────────────────────────────────────────────────────────────
   const exportCSV = () => {
-    const header = ["Vencimento", "Descrição", "Categoria", "Valor", "Responsável", "Status", "Notas", "Lançado por"];
+    const header = ["Vencimento", "Descrição", "Categoria", "Valor", "Responsável", "Status", "Notas"];
     const rows = filtered.map(e => [
       e.due_date ? format(parseISO(e.due_date), "dd/MM/yyyy") : "",
       `"${(e.description || "").replace(/"/g, '""')}"`,
@@ -108,7 +108,6 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
       responsibles.find(r => r.id === e.responsible_id)?.name ?? "",
       e.paid ? "Pago" : "Pendente",
       `"${(e.notes || "").replace(/"/g, '""')}"`,
-      e.created_by || "",
     ]);
     const csv = [header, ...rows].map(r => r.join(";")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -289,9 +288,6 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
                           <StickyNote size={9} className="shrink-0" />
                           {expense.notes}
                         </p>
-                      )}
-                      {expense.created_by && (
-                        <p className="text-[10px] text-slate-300 font-medium mt-0.5">por {expense.created_by}</p>
                       )}
                     </td>
                     <td className="px-5 py-4">
