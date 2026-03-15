@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
-  ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
+  ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock, RefreshCw,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency } from "./lib/utils";
@@ -10,14 +10,15 @@ import Toast from "./components/Toast";
 import Dashboard from "./components/Dashboard";
 import ExpenseList from "./components/ExpenseList";
 import FutureExpenses from "./components/FutureExpenses";
+import RecurringExpensesView from "./components/RecurringExpenses";
 import Settings from "./components/Settings";
 
-type Tab = "menu" | "overview" | "expenses" | "futures" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "futures" | "recurring" | "settings";
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, expenses } = useData();
+  const { profile, isOnline, isConnected, expenses, recurring } = useData();
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   const [drillResp,  setDrillResp]  = useState<string>("");
 
@@ -36,6 +37,12 @@ function Shell() {
     try { return !e.paid && e.due_date > now.toISOString().slice(0, 10); }
     catch { return false; }
   }).length;
+
+  const recurringTotal = recurring
+    .filter(r => r.active)
+    .reduce((s, r) => s + r.value, 0);
+
+  const recurringCount = recurring.filter(r => r.active).length;
 
   const handleDrillResponsible = (respId: string) => {
     setDrillResp(respId);
@@ -145,6 +152,12 @@ function Shell() {
                         <p className="text-xl font-black">{futureCount}</p>
                       </div>
                     )}
+                    {recurringCount > 0 && (
+                      <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Recorrentes/mês</p>
+                        <p className="text-xl font-black">R$ {formatCurrency(recurringTotal)}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
@@ -156,6 +169,8 @@ function Shell() {
                 onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500" />
               <MenuButton icon={CalendarClock} title="Despesas Futuras"  subtitle="Próximos vencimentos"
                 onClick={() => handleTabChange("futures")}   colorClass="bg-violet-500" badge={futureCount} />
+              <MenuButton icon={RefreshCw}    title="Recorrentes"       subtitle={recurringCount > 0 ? `${recurringCount} ativa${recurringCount > 1 ? "s" : ""} · R$ ${formatCurrency(recurringTotal)}/mês` : "Geradas automaticamente todo mês"}
+                onClick={() => handleTabChange("recurring")} colorClass="bg-orange-500" badge={recurringCount} />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
                 onClick={() => handleTabChange("settings")}  colorClass="bg-slate-700" />
             </div>
@@ -167,8 +182,9 @@ function Shell() {
           {activeTab === "expenses" && (
             <ExpenseList initialResponsibleFilter={drillResp} />
           )}
-          {activeTab === "futures"  && <FutureExpenses />}
-          {activeTab === "settings" && <Settings />}
+          {activeTab === "futures"   && <FutureExpenses />}
+          {activeTab === "recurring" && <RecurringExpensesView />}
+          {activeTab === "settings"  && <Settings />}
         </AnimatePresence>
       </main>
 
