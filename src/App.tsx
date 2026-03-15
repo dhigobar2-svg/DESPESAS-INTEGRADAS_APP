@@ -1,46 +1,73 @@
 import React, { useState } from "react";
 import { AnimatePresence } from "motion/react";
-import { BarChart3, ListOrdered, Settings as SettingsIcon, ChevronLeft, ChevronRight, Wifi, WifiOff } from "lucide-react";
+import {
+  BarChart3, ListOrdered, Settings as SettingsIcon,
+  ChevronLeft, ChevronRight, Wifi, WifiOff, LogOut, CalendarClock,
+} from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency } from "./lib/utils";
 import Toast from "./components/Toast";
 import Dashboard from "./components/Dashboard";
 import ExpenseList from "./components/ExpenseList";
+import FutureExpenses from "./components/FutureExpenses";
 import Settings from "./components/Settings";
+import LoginScreen from "./components/LoginScreen";
 
-type Tab = "menu" | "overview" | "expenses" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "futures" | "settings";
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, expenses, categories } = useData();
-  const [activeTab, setActiveTab] = useState<Tab>("menu");
+  const { profile, isOnline, isConnected, expenses, currentUser, logout } = useData();
+  const [activeTab,  setActiveTab]  = useState<Tab>("menu");
+  const [drillResp,  setDrillResp]  = useState<string>("");
 
-  const totalMonth = (() => {
-    const now = new Date();
-    const mm  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    return expenses
-      .filter(e => e.due_date?.startsWith(mm))
-      .reduce((s, e) => s + e.value, 0);
-  })();
+  // Show login screen if no user is logged in
+  if (!currentUser) return <LoginScreen />;
 
-  const pendingMonth = (() => {
-    const now = new Date();
-    const mm  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    return expenses
-      .filter(e => e.due_date?.startsWith(mm) && !e.paid)
-      .reduce((s, e) => s + e.value, 0);
-  })();
+  const now = new Date();
+  const mm  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const totalMonth = expenses
+    .filter(e => e.due_date?.startsWith(mm))
+    .reduce((s, e) => s + e.value, 0);
+
+  const pendingMonth = expenses
+    .filter(e => e.due_date?.startsWith(mm) && !e.paid)
+    .reduce((s, e) => s + e.value, 0);
+
+  const futureCount = expenses.filter(e => {
+    try { return !e.paid && e.due_date > now.toISOString().slice(0, 10); }
+    catch { return false; }
+  }).length;
+
+  const handleDrillResponsible = (respId: string) => {
+    setDrillResp(respId);
+    setActiveTab("expenses");
+  };
+
+  const handleTabChange = (tab: Tab) => {
+    if (tab !== "expenses") setDrillResp("");
+    setActiveTab(tab);
+  };
 
   const MenuButton = ({
-    icon: Icon, title, subtitle, onClick, colorClass,
-  }: { icon: React.ElementType; title: string; subtitle: string; onClick: () => void; colorClass: string }) => (
+    icon: Icon, title, subtitle, onClick, colorClass, badge,
+  }: {
+    icon: React.ElementType; title: string; subtitle: string;
+    onClick: () => void; colorClass: string; badge?: number;
+  }) => (
     <button
       onClick={onClick}
       className="w-full bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex items-center gap-6 text-left group active:scale-[0.98]"
     >
-      <div className={cn("p-4 rounded-2xl text-white shadow-lg transition-transform group-hover:scale-110", colorClass)}>
+      <div className={cn("p-4 rounded-2xl text-white shadow-lg transition-transform group-hover:scale-110 relative", colorClass)}>
         <Icon size={32} />
+        {badge !== undefined && badge > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">
+            {badge > 9 ? "9+" : badge}
+          </span>
+        )}
       </div>
       <div className="flex-1">
         <h3 className="text-lg font-black tracking-tighter uppercase">{title}</h3>
@@ -57,7 +84,7 @@ function Shell() {
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="w-10">
             {activeTab !== "menu" && (
-              <button onClick={() => setActiveTab("menu")}
+              <button onClick={() => handleTabChange("menu")}
                 className="p-2 -ml-2 text-slate-400 hover:text-slate-900 transition-colors">
                 <ChevronLeft size={24} />
               </button>
@@ -68,7 +95,7 @@ function Shell() {
             Despesas Integradas
           </h1>
 
-          {/* Connection status */}
+          {/* Right side: connection + user + logout */}
           <div className="flex items-center gap-2">
             {isOnline ? (
               <div className="flex items-center gap-1.5" title={isConnected ? "Conectado" : "Reconectando…"}>
@@ -84,6 +111,22 @@ function Shell() {
                 <div className="w-2 h-2 rounded-full bg-red-500" />
               </div>
             )}
+
+            {/* User avatar + logout */}
+            <div className="flex items-center gap-1 ml-1">
+              <div className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center">
+                <span className="text-xs font-black text-emerald-700">
+                  {currentUser.name[0].toUpperCase()}
+                </span>
+              </div>
+              <button
+                onClick={logout}
+                title="Sair"
+                className="p-1.5 text-slate-400 hover:text-red-500 transition-colors rounded-lg hover:bg-slate-100"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -106,7 +149,7 @@ function Shell() {
               <div className="bg-emerald-600 p-8 rounded-[2.5rem] text-white mb-8 shadow-2xl shadow-emerald-200 relative overflow-hidden">
                 <div className="relative z-10">
                   <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80 mb-1">Bem-vindo de volta,</p>
-                  <h2 className="text-3xl font-black tracking-tighter mb-5">{profile.name}</h2>
+                  <h2 className="text-3xl font-black tracking-tighter mb-5">{currentUser.name}</h2>
                   <div className="flex gap-3 flex-wrap">
                     <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Total Mês</p>
@@ -116,23 +159,37 @@ function Shell() {
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Pendentes</p>
                       <p className="text-xl font-black">R$ {formatCurrency(pendingMonth)}</p>
                     </div>
+                    {futureCount > 0 && (
+                      <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Futuras</p>
+                        <p className="text-xl font-black">{futureCount}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
               </div>
 
-              <MenuButton icon={BarChart3}    title="Visão Geral"      subtitle="Gráficos e Estatísticas"
-                onClick={() => setActiveTab("overview")}  colorClass="bg-blue-500" />
-              <MenuButton icon={ListOrdered}  title="Minhas Despesas"  subtitle="Lista e Histórico"
-                onClick={() => setActiveTab("expenses")}  colorClass="bg-emerald-500" />
-              <MenuButton icon={SettingsIcon} title="Configurações"    subtitle="Ajustes e Perfil"
-                onClick={() => setActiveTab("settings")}  colorClass="bg-slate-700" />
+              <MenuButton icon={BarChart3}    title="Visão Geral"       subtitle="Gráficos e Estatísticas"
+                onClick={() => handleTabChange("overview")} colorClass="bg-blue-500" />
+              <MenuButton icon={ListOrdered}  title="Minhas Despesas"   subtitle="Lista e Histórico"
+                onClick={() => handleTabChange("expenses")} colorClass="bg-emerald-500" />
+              <MenuButton icon={CalendarClock} title="Despesas Futuras" subtitle="Próximos vencimentos"
+                onClick={() => handleTabChange("futures")} colorClass="bg-violet-500"
+                badge={futureCount} />
+              <MenuButton icon={SettingsIcon} title="Configurações"     subtitle="Ajustes e Perfil"
+                onClick={() => handleTabChange("settings")} colorClass="bg-slate-700" />
             </div>
           )}
 
-          {activeTab === "overview"  && <Dashboard />}
-          {activeTab === "expenses"  && <ExpenseList />}
-          {activeTab === "settings"  && <Settings />}
+          {activeTab === "overview" && (
+            <Dashboard onDrillResponsible={handleDrillResponsible} />
+          )}
+          {activeTab === "expenses" && (
+            <ExpenseList initialResponsibleFilter={drillResp} />
+          )}
+          {activeTab === "futures" && <FutureExpenses />}
+          {activeTab === "settings" && <Settings />}
         </AnimatePresence>
       </main>
 
