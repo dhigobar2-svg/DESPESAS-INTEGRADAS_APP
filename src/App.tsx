@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
-  ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock, RefreshCw,
+  ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency } from "./lib/utils";
@@ -10,10 +10,9 @@ import Toast from "./components/Toast";
 import Dashboard from "./components/Dashboard";
 import ExpenseList from "./components/ExpenseList";
 import FutureExpenses from "./components/FutureExpenses";
-import RecurringExpensesView from "./components/RecurringExpenses";
 import Settings from "./components/Settings";
 
-type Tab = "menu" | "overview" | "expenses" | "futures" | "recurring" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "futures" | "settings";
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
@@ -169,8 +168,6 @@ function Shell() {
                 onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500" />
               <MenuButton icon={CalendarClock} title="Despesas Futuras"  subtitle="Próximos vencimentos"
                 onClick={() => handleTabChange("futures")}   colorClass="bg-violet-500" badge={futureCount} />
-              <MenuButton icon={RefreshCw}    title="Recorrentes"       subtitle={recurringCount > 0 ? `${recurringCount} ativa${recurringCount > 1 ? "s" : ""} · R$ ${formatCurrency(recurringTotal)}/mês` : "Geradas automaticamente todo mês"}
-                onClick={() => handleTabChange("recurring")} colorClass="bg-orange-500" badge={recurringCount} />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
                 onClick={() => handleTabChange("settings")}  colorClass="bg-slate-700" />
             </div>
@@ -182,9 +179,8 @@ function Shell() {
           {activeTab === "expenses" && (
             <ExpenseList initialResponsibleFilter={drillResp} />
           )}
-          {activeTab === "futures"   && <FutureExpenses />}
-          {activeTab === "recurring" && <RecurringExpensesView />}
-          {activeTab === "settings"  && <Settings />}
+          {activeTab === "futures"  && <FutureExpenses />}
+          {activeTab === "settings" && <Settings />}
         </AnimatePresence>
       </main>
 
