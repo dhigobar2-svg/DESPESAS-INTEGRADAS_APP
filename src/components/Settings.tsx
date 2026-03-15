@@ -291,6 +291,26 @@ export default function Settings() {
       {/* ── Recurring expenses ────────────────────────────────────────────────── */}
       <section className="card p-6">
         <h3 className="section-title"><RefreshCw size={16} /> Despesas Recorrentes</h3>
+        {recurring.length > 0 && (() => {
+          const activeRec = recurring.filter(r => r.active);
+          const totalMonthly = activeRec.reduce((s, r) => s + r.value, 0);
+          return (
+            <div className="flex gap-2 mb-4">
+              <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-0.5">Ativas</p>
+                <p className="text-lg font-black text-orange-700">{activeRec.length}</p>
+              </div>
+              <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-0.5">Total/mês</p>
+                <p className="text-lg font-black text-orange-700">R$ {totalMonthly.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+              <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-0.5">Total/ano</p>
+                <p className="text-lg font-black text-orange-700">R$ {(totalMonthly * 12).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+          );
+        })()}
         <p className="text-xs text-slate-500 mb-4">
           São lançadas automaticamente todo mês no dia configurado.
         </p>
