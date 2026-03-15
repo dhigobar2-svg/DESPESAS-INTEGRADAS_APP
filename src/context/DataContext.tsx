@@ -6,7 +6,7 @@ import { io, Socket } from "socket.io-client";
 import { format } from "date-fns";
 import {
   Category, Responsible, Expense, UserProfile,
-  Budget, RecurringExpense, ToastMessage,
+  Budget, RecurringExpense, ToastMessage, User,
 } from "../types";
 import { generateId, compressImage } from "../lib/utils";
 
@@ -20,6 +20,8 @@ interface DataContextValue {
   profile:      UserProfile;
   budgets:      Budget[];
   recurring:    RecurringExpense[];
+  users:        User[];
+  currentUser:  User | null;
   isOnline:     boolean;
   isConnected:  boolean;
   toasts:       ToastMessage[];
@@ -36,6 +38,9 @@ interface DataContextValue {
   readPhoto:        (file: File) => Promise<string>;
   addToast:         (type: ToastMessage["type"], message: string) => void;
   dismissToast:     (id: string) => void;
+  login:            (name: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  register:         (name: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  logout:           () => void;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -67,6 +72,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [profile,      setProfile]      = useState<UserProfile>({ name: "Usuário" });
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [recurring,    setRecurring]    = useState<RecurringExpense[]>([]);
+  const [users,        setUsers]        = useState<User[]>([]);
+  const [currentUser,  setCurrentUser]  = useState<User | null>(() => lsGet<User | null>("currentUser", null));
   const [isOnline,     setIsOnline]     = useState(navigator.onLine);
   const [isConnected,  setIsConnected]  = useState(false);
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
@@ -135,6 +142,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           value:          rec.value,
           responsible_id: rec.responsible_id,
           paid:           0,
+          created_by:     "Recorrente",
         });
       }
     }
@@ -167,6 +175,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (data.profile) setProfile(data.profile);
       setBudgets(data.budgets ?? []);
       setRecurring(data.recurring ?? []);
+      setUsers(data.users ?? []);
 
       // Persist to localStorage for offline use
       lsSet("expenses",     exps);
@@ -175,6 +184,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       lsSet("profile",      data.profile);
       lsSet("budgets",      data.budgets);
       lsSet("recurring",    data.recurring);
+      lsSet("users",        data.users);
     } catch (err) {
       console.error("Fetch failed, using local data", err);
       setExpenses(    lsGet("expenses",     []));
@@ -184,6 +194,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (p) setProfile(p);
       setBudgets( lsGet("budgets",  []));
       setRecurring(lsGet("recurring", []));
+      setUsers(   lsGet("users",    []));
     }
   }, [applyRecurring, syncWithServer]);
 
@@ -225,22 +236,71 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // ── Auth handlers ─────────────────────────────────────────────────────────────
+
+  const login = useCallback(async (name: string, pin: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await fetch("/api/users/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error };
+      const user = data.user as User;
+      setCurrentUser(user);
+      lsSet("currentUser", user);
+      return { success: true };
+    } catch {
+      return { success: false, error: "Erro de conexão." };
+    }
+  }, []);
+
+  const register = useCallback(async (name: string, pin: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const id = generateId();
+      const res = await fetch("/api/users/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name, pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error };
+      const user = data.user as User;
+      setCurrentUser(user);
+      lsSet("currentUser", user);
+      setUsers(prev => [...prev, user]);
+      return { success: true };
+    } catch {
+      return { success: false, error: "Erro de conexão." };
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    setCurrentUser(null);
+    localStorage.removeItem("currentUser");
+  }, []);
+
   // ── CRUD handlers ─────────────────────────────────────────────────────────────
 
   const saveExpense = useCallback((expense: Expense, isEdit: boolean) => {
+    // Attach created_by if this is a new expense and user is logged in
+    const expenseWithAuthor: Expense = isEdit
+      ? expense
+      : { ...expense, created_by: expense.created_by ?? currentUser?.name ?? "" };
+
     setExpenses(prev => {
       const updated = isEdit
-        ? prev.map(e => e.id === expense.id ? expense : e)
-        : [...prev, expense];
+        ? prev.map(e => e.id === expenseWithAuthor.id ? expenseWithAuthor : e)
+        : [...prev, expenseWithAuthor];
       lsSet("expenses", updated);
       syncWithServer({ expenses: updated });
       return updated;
     });
     addToast("success", isEdit ? "Despesa atualizada!" : "Despesa adicionada!");
-  }, [syncWithServer, addToast]);
+  }, [syncWithServer, addToast, currentUser]);
 
   const deleteItem = useCallback(async (table: string, id: string) => {
-    // Snapshots for rollback
     const snap = {
       expenses:     expenses,
       categories:   categories,
@@ -271,7 +331,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`/api/${table}/${id}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json();
-        // Rollback
         setExpenses(snap.expenses);
         setCategories(snap.categories);
         setResponsibles(snap.responsibles);
@@ -351,10 +410,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const value: DataContextValue = {
     expenses, categories, responsibles, profile, budgets, recurring,
+    users, currentUser,
     isOnline, isConnected, toasts,
     saveExpense, deleteItem, togglePaid, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
     readPhoto, addToast, dismissToast,
+    login, register, logout,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

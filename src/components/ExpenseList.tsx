@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Plus, FileText, Share2, Search, Trash2, Edit2, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Plus, FileText, Share2, Search, Trash2, Edit2,
+  ChevronLeft, ChevronRight, Copy, Download, StickyNote,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -13,28 +16,42 @@ import { Expense } from "../types";
 
 const PAGE_SIZE = 10;
 
-export default function ExpenseList() {
+interface Props {
+  initialResponsibleFilter?: string;
+}
+
+export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
   const { expenses, categories, responsibles, togglePaid, deleteItem } = useData();
 
-  const [showModal,    setShowModal]    = useState(false);
-  const [editingExp,   setEditingExp]   = useState<Expense | null>(null);
-  const [confirmId,    setConfirmId]    = useState<string | null>(null);
-  const [page,         setPage]         = useState(1);
-  const [search,       setSearch]       = useState("");
-  const [filterMonth,  setFilterMonth]  = useState("");
-  const [filterCat,    setFilterCat]    = useState("");
-  const [filterResp,   setFilterResp]   = useState("");
-  const [filterPaid,   setFilterPaid]   = useState("");
+  const [showModal,        setShowModal]        = useState(false);
+  const [editingExp,       setEditingExp]        = useState<Expense | null>(null);
+  const [duplicateDefaults, setDuplicateDefaults] = useState<Partial<Expense> | undefined>();
+  const [confirmId,        setConfirmId]        = useState<string | null>(null);
+  const [page,             setPage]             = useState(1);
+  const [search,           setSearch]           = useState("");
+  const [filterMonth,      setFilterMonth]      = useState("");
+  const [filterCat,        setFilterCat]        = useState("");
+  const [filterResp,       setFilterResp]       = useState(initialResponsibleFilter);
+  const [filterPaid,       setFilterPaid]       = useState("");
+
+  // Sync external drill-down filter
+  useEffect(() => {
+    if (initialResponsibleFilter) {
+      setFilterResp(initialResponsibleFilter);
+      setPage(1);
+    }
+  }, [initialResponsibleFilter]);
 
   // ── Filtering ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    let list = [...expenses];
+    let list = [...expenses].sort((a, b) => b.due_date.localeCompare(a.due_date));
 
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(e =>
         (e.description ?? "").toLowerCase().includes(q) ||
-        (categories.find(c => c.id === e.category_id)?.name ?? "").toLowerCase().includes(q),
+        (categories.find(c => c.id === e.category_id)?.name ?? "").toLowerCase().includes(q) ||
+        (e.notes ?? "").toLowerCase().includes(q),
       );
     }
     if (filterMonth) list = list.filter(e => e.due_date?.startsWith(filterMonth));
@@ -47,16 +64,24 @@ export default function ExpenseList() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const filteredTotal = filtered.reduce((s, e) => s + e.value, 0);
 
   const resetPage = () => setPage(1);
 
-  // ── Export ────────────────────────────────────────────────────────────────────
+  // ── Export PDF ────────────────────────────────────────────────────────────────
   const generatePDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(14);
     doc.text("Relatório de Despesas — DESPESAS INTEGRADAS", 14, 15);
+    const filterLabel = filterResp
+      ? `Responsável: ${responsibles.find(r => r.id === filterResp)?.name ?? ""}`
+      : filterMonth
+      ? `Mês: ${format(new Date(filterMonth + "-01"), "MMMM yyyy", { locale: ptBR })}`
+      : "Todas as despesas";
+    doc.setFontSize(9);
+    doc.text(filterLabel, 14, 22);
     autoTable(doc, {
-      head: [["Vencimento", "Descrição", "Categoria", "Valor", "Responsável", "Status"]],
+      head: [["Vencimento", "Descrição", "Categoria", "Valor", "Responsável", "Status", "Lançado por"]],
       body: filtered.map(e => [
         e.due_date ? format(parseISO(e.due_date), "dd/MM/yyyy") : "—",
         e.description || "—",
@@ -64,12 +89,36 @@ export default function ExpenseList() {
         `R$ ${formatCurrency(e.value)}`,
         responsibles.find(r => r.id === e.responsible_id)?.name ?? "—",
         e.paid ? "Pago" : "Pendente",
+        e.created_by || "—",
       ]),
-      startY: 25,
+      startY: 28,
+      foot: [["", "", "TOTAL", `R$ ${formatCurrency(filteredTotal)}`, "", "", ""]],
     });
     doc.save("relatorio-despesas.pdf");
   };
 
+  // ── Export CSV ────────────────────────────────────────────────────────────────
+  const exportCSV = () => {
+    const header = ["Vencimento", "Descrição", "Categoria", "Valor", "Responsável", "Status", "Notas", "Lançado por"];
+    const rows = filtered.map(e => [
+      e.due_date ? format(parseISO(e.due_date), "dd/MM/yyyy") : "",
+      `"${(e.description || "").replace(/"/g, '""')}"`,
+      categories.find(c => c.id === e.category_id)?.name ?? "",
+      e.value.toFixed(2).replace(".", ","),
+      responsibles.find(r => r.id === e.responsible_id)?.name ?? "",
+      e.paid ? "Pago" : "Pendente",
+      `"${(e.notes || "").replace(/"/g, '""')}"`,
+      e.created_by || "",
+    ]);
+    const csv = [header, ...rows].map(r => r.join(";")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url; a.download = "despesas.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── WhatsApp ──────────────────────────────────────────────────────────────────
   const shareWhatsApp = () => {
     const lines = filtered.map(e =>
       `*${e.due_date ? format(parseISO(e.due_date), "dd/MM/yyyy") : "—"}* ` +
@@ -78,12 +127,43 @@ export default function ExpenseList() {
       `R$ ${formatCurrency(e.value)} ` +
       `(${e.paid ? "Pago" : "Pendente"})`,
     ).join("\n");
-    window.open(`https://wa.me/?text=${encodeURIComponent("Relatório de Despesas:\n\n" + lines)}`, "_blank");
+    const total = `\n\n*Total: R$ ${formatCurrency(filteredTotal)}*`;
+    window.open(`https://wa.me/?text=${encodeURIComponent("Relatório de Despesas:\n\n" + lines + total)}`, "_blank");
   };
 
-  const openEdit = (e: Expense) => { setEditingExp(e); setShowModal(true); };
-  const openAdd  = () => { setEditingExp(null); setShowModal(true); };
-  const closeModal = () => { setShowModal(false); setEditingExp(null); };
+  // ── Modal helpers ─────────────────────────────────────────────────────────────
+  const openEdit = (e: Expense) => {
+    setDuplicateDefaults(undefined);
+    setEditingExp(e);
+    setShowModal(true);
+  };
+
+  const openDuplicate = (e: Expense) => {
+    const today = format(new Date(), "yyyy-MM-dd");
+    setEditingExp(null);
+    setDuplicateDefaults({
+      category_id:    e.category_id,
+      description:    e.description,
+      value:          e.value,
+      responsible_id: e.responsible_id,
+      date:           today,
+      due_date:       today,
+      notes:          e.notes,
+    });
+    setShowModal(true);
+  };
+
+  const openAdd = () => {
+    setEditingExp(null);
+    setDuplicateDefaults(undefined);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingExp(null);
+    setDuplicateDefaults(undefined);
+  };
 
   // Available months from expenses
   const availableMonths = useMemo(() => {
@@ -100,10 +180,14 @@ export default function ExpenseList() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">Minhas Despesas</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button onClick={generatePDF}
             className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors">
             <FileText size={14} /> PDF
+          </button>
+          <button onClick={exportCSV}
+            className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors">
+            <Download size={14} /> CSV
           </button>
           <button onClick={shareWhatsApp}
             className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-3 py-2 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-colors">
@@ -114,17 +198,15 @@ export default function ExpenseList() {
 
       {/* Filters */}
       <div className="card p-4 space-y-3">
-        {/* Search */}
         <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
-            type="text" placeholder="Buscar por descrição ou categoria…"
+            type="text" placeholder="Buscar por descrição, categoria ou notas…"
             value={search} onChange={e => { setSearch(e.target.value); resetPage(); }}
             className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
           />
         </div>
 
-        {/* Filter row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <select value={filterMonth} onChange={e => { setFilterMonth(e.target.value); resetPage(); }}
             className="input py-2 text-xs">
@@ -156,11 +238,10 @@ export default function ExpenseList() {
           </select>
         </div>
 
-        {/* Active filter count */}
         {(search || filterMonth || filterCat || filterResp || filterPaid !== "") && (
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-500 font-medium">
-              {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
+              {filtered.length} resultado{filtered.length !== 1 ? "s" : ""} · Total: R$ {formatCurrency(filteredTotal)}
             </span>
             <button
               onClick={() => { setSearch(""); setFilterMonth(""); setFilterCat(""); setFilterResp(""); setFilterPaid(""); resetPage(); }}
@@ -197,12 +278,21 @@ export default function ExpenseList() {
                       </p>
                       <p className="text-[10px] text-slate-400 uppercase font-medium">{resp?.name ?? "—"}</p>
                     </td>
-                    <td className="px-5 py-4">
-                      <p className="text-sm font-bold text-slate-900">{expense.description || "—"}</p>
+                    <td className="px-5 py-4 max-w-[200px]">
+                      <p className="text-sm font-bold text-slate-900 truncate">{expense.description || "—"}</p>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat?.color ?? "#cbd5e1" }} />
-                        <p className="text-[10px] font-medium text-slate-500 uppercase">{cat?.name ?? "Outros"}</p>
+                        <p className="text-[10px] font-medium text-slate-500 uppercase truncate">{cat?.name ?? "Outros"}</p>
                       </div>
+                      {expense.notes && (
+                        <p className="text-[10px] text-slate-400 italic mt-0.5 flex items-center gap-1 truncate">
+                          <StickyNote size={9} className="shrink-0" />
+                          {expense.notes}
+                        </p>
+                      )}
+                      {expense.created_by && (
+                        <p className="text-[10px] text-slate-300 font-medium mt-0.5">por {expense.created_by}</p>
+                      )}
                     </td>
                     <td className="px-5 py-4">
                       <p className="text-sm font-black">R$ {formatCurrency(expense.value)}</p>
@@ -219,12 +309,19 @@ export default function ExpenseList() {
                       </button>
                     </td>
                     <td className="px-5 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1">
+                        <button onClick={() => openDuplicate(expense)}
+                          title="Duplicar"
+                          className="p-2 text-slate-400 hover:text-violet-600 transition-colors bg-slate-50 rounded-lg">
+                          <Copy size={14} />
+                        </button>
                         <button onClick={() => openEdit(expense)}
+                          title="Editar"
                           className="p-2 text-slate-400 hover:text-blue-600 transition-colors bg-slate-50 rounded-lg">
                           <Edit2 size={14} />
                         </button>
                         <button onClick={() => setConfirmId(expense.id)}
+                          title="Excluir"
                           className="p-2 text-slate-400 hover:text-red-600 transition-colors bg-slate-50 rounded-lg">
                           <Trash2 size={14} />
                         </button>
@@ -272,7 +369,12 @@ export default function ExpenseList() {
         <Plus size={24} />
       </button>
 
-      <ExpenseModal open={showModal} editing={editingExp} onClose={closeModal} />
+      <ExpenseModal
+        open={showModal}
+        editing={editingExp}
+        defaultValues={duplicateDefaults}
+        onClose={closeModal}
+      />
 
       <ConfirmModal
         open={!!confirmId}

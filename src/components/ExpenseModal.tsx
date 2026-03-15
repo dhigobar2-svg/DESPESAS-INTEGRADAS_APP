@@ -6,13 +6,14 @@ import { useData } from "../context/DataContext";
 import { generateId } from "../lib/utils";
 
 interface Props {
-  open:    boolean;
-  editing: Expense | null;
-  onClose: () => void;
+  open:          boolean;
+  editing:       Expense | null;
+  defaultValues?: Partial<Expense>;  // used when duplicating
+  onClose:       () => void;
 }
 
-export default function ExpenseModal({ open, editing, onClose }: Props) {
-  const { categories, responsibles, saveExpense } = useData();
+export default function ExpenseModal({ open, editing, defaultValues, onClose }: Props) {
+  const { categories, responsibles, saveExpense, currentUser } = useData();
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -26,12 +27,24 @@ export default function ExpenseModal({ open, editing, onClose }: Props) {
       value:          parseFloat(fd.get("value") as string),
       responsible_id: fd.get("responsible") as string,
       paid:           fd.get("paid") === "on" ? 1 : 0,
+      notes:          (fd.get("notes") as string) || undefined,
+      created_by:     editing?.created_by ?? currentUser?.name ?? "",
     };
     saveExpense(expense, !!editing);
     onClose();
   };
 
   const today = format(new Date(), "yyyy-MM-dd");
+
+  // Resolve default values: editing > defaultValues > empty
+  const defCat  = editing?.category_id  ?? defaultValues?.category_id  ?? categories[0]?.id ?? "";
+  const defDesc = editing?.description  ?? defaultValues?.description  ?? "";
+  const defDate = editing?.date         ?? defaultValues?.date         ?? today;
+  const defDue  = editing?.due_date     ?? defaultValues?.due_date     ?? today;
+  const defVal  = editing?.value        ?? defaultValues?.value;
+  const defResp = editing?.responsible_id ?? defaultValues?.responsible_id ?? responsibles[0]?.id ?? "";
+  const defPaid = editing?.paid === 1;
+  const defNotes = editing?.notes ?? defaultValues?.notes ?? "";
 
   return (
     <AnimatePresence>
@@ -50,7 +63,7 @@ export default function ExpenseModal({ open, editing, onClose }: Props) {
           >
             <div className="p-8">
               <h2 className="text-xl font-black tracking-tighter uppercase mb-6">
-                {editing ? "Editar Despesa" : "Nova Despesa"}
+                {editing ? "Editar Despesa" : defaultValues ? "Duplicar Despesa" : "Nova Despesa"}
               </h2>
 
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -59,7 +72,7 @@ export default function ExpenseModal({ open, editing, onClose }: Props) {
                   <label className="label">Descrição</label>
                   <input
                     type="text" name="description"
-                    defaultValue={editing?.description}
+                    defaultValue={defDesc}
                     placeholder="Ex: Aluguel, Supermercado…"
                     required
                     className="input"
@@ -69,7 +82,7 @@ export default function ExpenseModal({ open, editing, onClose }: Props) {
                 {/* Categoria */}
                 <div>
                   <label className="label">Categoria</label>
-                  <select name="category" defaultValue={editing?.category_id} required className="input">
+                  <select name="category" defaultValue={defCat} required className="input">
                     {categories.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
@@ -82,12 +95,12 @@ export default function ExpenseModal({ open, editing, onClose }: Props) {
                   <div>
                     <label className="label">Lançamento</label>
                     <input type="date" name="date" required className="input"
-                      defaultValue={editing?.date ?? today} />
+                      defaultValue={defDate} />
                   </div>
                   <div>
                     <label className="label">Vencimento</label>
                     <input type="date" name="due_date" required className="input"
-                      defaultValue={editing?.due_date ?? today} />
+                      defaultValue={defDue} />
                   </div>
                 </div>
 
@@ -95,25 +108,46 @@ export default function ExpenseModal({ open, editing, onClose }: Props) {
                 <div>
                   <label className="label">Valor (R$)</label>
                   <input type="number" step="0.01" min="0.01" name="value"
-                    defaultValue={editing?.value} placeholder="0,00" required className="input font-black" />
+                    defaultValue={defVal} placeholder="0,00" required className="input font-black" />
                 </div>
 
                 {/* Responsável */}
                 <div>
                   <label className="label">Responsável</label>
-                  <select name="responsible" defaultValue={editing?.responsible_id} required className="input">
+                  <select name="responsible" defaultValue={defResp} required className="input">
                     {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     {responsibles.length === 0 && <option value="">Nenhum cadastrado</option>}
                   </select>
                 </div>
 
+                {/* Observações */}
+                <div>
+                  <label className="label">Observações (opcional)</label>
+                  <textarea
+                    name="notes"
+                    rows={2}
+                    placeholder="Notas adicionais, número de nota fiscal, etc."
+                    defaultValue={defNotes}
+                    className="input resize-none"
+                  />
+                </div>
+
                 {/* Pago */}
                 <div className="flex items-center gap-3 py-2">
                   <input type="checkbox" name="paid" id="paid"
-                    defaultChecked={editing?.paid === 1}
+                    defaultChecked={defPaid}
                     className="w-5 h-5 rounded accent-emerald-600" />
                   <label htmlFor="paid" className="text-sm font-bold text-slate-700">Já está pago?</label>
                 </div>
+
+                {/* Quem lançou (info only) */}
+                {(editing?.created_by || currentUser) && (
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {editing?.created_by
+                      ? `Lançado por: ${editing.created_by}`
+                      : `Lançando como: ${currentUser?.name}`}
+                  </p>
+                )}
 
                 {/* Ações */}
                 <div className="flex gap-3 pt-4">

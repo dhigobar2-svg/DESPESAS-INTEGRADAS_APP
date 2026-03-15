@@ -19,6 +19,13 @@ export interface Expense {
   value: number;
   responsible_id: string;
   paid: number;       // 0 | 1
+  notes?: string;
+  created_by?: string;
+}
+
+export interface User {
+  id: string;
+  name: string;
 }
 
 export interface UserProfile {
