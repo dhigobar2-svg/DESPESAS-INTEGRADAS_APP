@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
-  ChevronLeft, ChevronRight, Wifi, WifiOff, LogOut, CalendarClock,
+  ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency } from "./lib/utils";
@@ -11,19 +11,15 @@ import Dashboard from "./components/Dashboard";
 import ExpenseList from "./components/ExpenseList";
 import FutureExpenses from "./components/FutureExpenses";
 import Settings from "./components/Settings";
-import LoginScreen from "./components/LoginScreen";
 
 type Tab = "menu" | "overview" | "expenses" | "futures" | "settings";
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, expenses, currentUser, logout } = useData();
-  const [activeTab,  setActiveTab]  = useState<Tab>("menu");
+  const { profile, isOnline, isConnected, expenses } = useData();
+  const [activeTab, setActiveTab] = useState<Tab>("menu");
   const [drillResp,  setDrillResp]  = useState<string>("");
-
-  // Show login screen if no user is logged in
-  if (!currentUser) return <LoginScreen />;
 
   const now = new Date();
   const mm  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -95,8 +91,8 @@ function Shell() {
             Despesas Integradas
           </h1>
 
-          {/* Right side: connection + user + logout */}
-          <div className="flex items-center gap-2">
+          {/* Connection status */}
+          <div className="flex items-center gap-1.5">
             {isOnline ? (
               <div className="flex items-center gap-1.5" title={isConnected ? "Conectado" : "Reconectando…"}>
                 <Wifi size={14} className={cn(isConnected ? "text-emerald-500" : "text-amber-400")} />
@@ -111,22 +107,6 @@ function Shell() {
                 <div className="w-2 h-2 rounded-full bg-red-500" />
               </div>
             )}
-
-            {/* User avatar + logout */}
-            <div className="flex items-center gap-1 ml-1">
-              <div className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center">
-                <span className="text-xs font-black text-emerald-700">
-                  {currentUser.name[0].toUpperCase()}
-                </span>
-              </div>
-              <button
-                onClick={logout}
-                title="Sair"
-                className="p-1.5 text-slate-400 hover:text-red-500 transition-colors rounded-lg hover:bg-slate-100"
-              >
-                <LogOut size={14} />
-              </button>
-            </div>
           </div>
         </div>
       </header>
@@ -149,7 +129,7 @@ function Shell() {
               <div className="bg-emerald-600 p-8 rounded-[2.5rem] text-white mb-8 shadow-2xl shadow-emerald-200 relative overflow-hidden">
                 <div className="relative z-10">
                   <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80 mb-1">Bem-vindo de volta,</p>
-                  <h2 className="text-3xl font-black tracking-tighter mb-5">{currentUser.name}</h2>
+                  <h2 className="text-3xl font-black tracking-tighter mb-5">{profile.name}</h2>
                   <div className="flex gap-3 flex-wrap">
                     <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Total Mês</p>
@@ -170,15 +150,14 @@ function Shell() {
                 <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
               </div>
 
-              <MenuButton icon={BarChart3}    title="Visão Geral"       subtitle="Gráficos e Estatísticas"
-                onClick={() => handleTabChange("overview")} colorClass="bg-blue-500" />
-              <MenuButton icon={ListOrdered}  title="Minhas Despesas"   subtitle="Lista e Histórico"
-                onClick={() => handleTabChange("expenses")} colorClass="bg-emerald-500" />
-              <MenuButton icon={CalendarClock} title="Despesas Futuras" subtitle="Próximos vencimentos"
-                onClick={() => handleTabChange("futures")} colorClass="bg-violet-500"
-                badge={futureCount} />
-              <MenuButton icon={SettingsIcon} title="Configurações"     subtitle="Ajustes e Perfil"
-                onClick={() => handleTabChange("settings")} colorClass="bg-slate-700" />
+              <MenuButton icon={BarChart3}     title="Visão Geral"       subtitle="Gráficos e Estatísticas"
+                onClick={() => handleTabChange("overview")}  colorClass="bg-blue-500" />
+              <MenuButton icon={ListOrdered}   title="Minhas Despesas"   subtitle="Lista e Histórico"
+                onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500" />
+              <MenuButton icon={CalendarClock} title="Despesas Futuras"  subtitle="Próximos vencimentos"
+                onClick={() => handleTabChange("futures")}   colorClass="bg-violet-500" badge={futureCount} />
+              <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
+                onClick={() => handleTabChange("settings")}  colorClass="bg-slate-700" />
             </div>
           )}
 
@@ -188,7 +167,7 @@ function Shell() {
           {activeTab === "expenses" && (
             <ExpenseList initialResponsibleFilter={drillResp} />
           )}
-          {activeTab === "futures" && <FutureExpenses />}
+          {activeTab === "futures"  && <FutureExpenses />}
           {activeTab === "settings" && <Settings />}
         </AnimatePresence>
       </main>
