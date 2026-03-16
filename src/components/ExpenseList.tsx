@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, subMonths, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Plus, FileText, Share2, Search, Trash2, Edit2,
@@ -164,9 +164,17 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
     setDuplicateDefaults(undefined);
   };
 
-  // Available months from expenses
+  // Available months: last 12 + next 3 months + any months from expenses
   const availableMonths = useMemo(() => {
-    const months = new Set(expenses.map(e => e.due_date?.slice(0, 7)).filter(Boolean));
+    const months = new Set<string>();
+    // All months present in expenses data
+    expenses.forEach(e => { if (e.due_date) months.add(e.due_date.slice(0, 7)); });
+    // Last 12 months + next 3 months (always show a full range)
+    const now = new Date();
+    for (let i = -12; i <= 3; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      months.add(format(d, "yyyy-MM"));
+    }
     return [...months].sort().reverse();
   }, [expenses]);
 

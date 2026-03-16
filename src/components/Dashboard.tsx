@@ -2,16 +2,16 @@ import React, { useMemo, useState } from "react";
 import {
   PieChart, Pie, Cell,
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  ResponsiveContainer, LabelList,
+  ResponsiveContainer, LabelList, ReferenceLine,
 } from "recharts";
 import {
   format, startOfMonth, endOfMonth, isWithinInterval,
-  parseISO, subMonths, addMonths, isAfter, startOfToday, differenceInDays,
+  parseISO, subMonths, addMonths, isBefore, startOfToday, differenceInDays,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   ChevronLeft, ChevronRight, Plus, TrendingDown, TrendingUp,
-  AlertCircle, Bell, ArrowUpRight, ArrowDownRight, Minus,
+  AlertCircle, Bell, ArrowUpRight, ArrowDownRight, Minus, AlertTriangle,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
@@ -43,6 +43,8 @@ export default function Dashboard({ onDrillResponsible }: Props) {
     const totalMonth   = monthExp.reduce((s, e) => s + e.value, 0);
     const pendingMonth = monthExp.filter(e => !e.paid).reduce((s, e) => s + e.value, 0);
     const paidMonth    = monthExp.filter(e =>  e.paid).reduce((s, e) => s + e.value, 0);
+    const paidPct      = totalMonth > 0 ? (paidMonth / totalMonth) * 100 : 0;
+    const ticketMedio  = monthExp.length > 0 ? totalMonth / monthExp.length : 0;
 
     const catData = categories.map(cat => ({
       name:  cat.name,
@@ -50,7 +52,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       color: cat.color,
     })).filter(d => d.value > 0);
 
-    const topExpenses = [...catData].sort((a, b) => b.value - a.value).slice(0, 5);
+    const topCategories = [...catData].sort((a, b) => b.value - a.value).slice(0, 5);
 
     const respData = responsibles.map(r => ({
       id:    r.id,
@@ -58,10 +60,23 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       value: monthExp.filter(e => e.responsible_id === r.id).reduce((s, e) => s + e.value, 0),
     })).filter(d => d.value > 0);
 
-    return { totalMonth, pendingMonth, paidMonth, catData, topExpenses, respData };
+    const top5Individual = [...monthExp]
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5)
+      .map(e => ({
+        name:  (e.description || "Sem descrição").slice(0, 24),
+        value: e.value,
+        color: categories.find(c => c.id === e.category_id)?.color ?? "#94a3b8",
+      }));
+
+    return {
+      totalMonth, pendingMonth, paidMonth, paidPct, ticketMedio,
+      catData, topCategories, respData, top5Individual,
+      count: monthExp.length,
+    };
   }, [expenses, categories, responsibles, selectedMonth]);
 
-  // ── Previous month stats (for comparison) ────────────────────────────────────
+  // ── Previous month comparison ─────────────────────────────────────────────────
   const prevMonthTotal = useMemo(() => {
     const prev  = subMonths(selectedMonth, 1);
     const start = startOfMonth(prev);
@@ -98,7 +113,14 @@ export default function Dashboard({ onDrillResponsible }: Props) {
     });
   }, [expenses]);
 
-  // ── Cashflow: paid vs pending per day in selected month ───────────────────────
+  const annualAvg = useMemo(() => {
+    const nonZero = annualData.filter(d => d.total > 0);
+    return nonZero.length > 1
+      ? nonZero.reduce((s, d) => s + d.total, 0) / nonZero.length
+      : 0;
+  }, [annualData]);
+
+  // ── Cashflow: paid vs pending per day ─────────────────────────────────────────
   const cashflowData = useMemo(() => {
     const start = startOfMonth(selectedMonth);
     const end   = endOfMonth(selectedMonth);
@@ -130,6 +152,20 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       });
   }, [budgets, monthKey, categories, stats.catData]);
 
+  // ── Overdue expenses (unpaid, past due date) ──────────────────────────────────
+  const overdue = useMemo(() => {
+    const today = startOfToday();
+    return expenses
+      .filter(e => {
+        if (e.paid) return false;
+        try { return isBefore(parseISO(e.due_date), today); }
+        catch { return false; }
+      })
+      .sort((a, b) => a.due_date.localeCompare(b.due_date));
+  }, [expenses]);
+
+  const overdueTotal = overdue.reduce((s, e) => s + e.value, 0);
+
   // ── Upcoming due dates (next 7 days, unpaid) ──────────────────────────────────
   const upcoming = useMemo(() => {
     const today   = startOfToday();
@@ -145,12 +181,42 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       .sort((a, b) => a.due_date.localeCompare(b.due_date));
   }, [expenses]);
 
-  const totalGeneral = useMemo(
-    () => expenses.reduce((s, e) => s + e.value, 0),
-    [expenses],
-  );
+  // ── Category trend: top 4 cats, last 6 months ────────────────────────────────
+  const categoryTrend = useMemo(() => {
+    const topCats = categories
+      .map(cat => ({
+        id:    cat.id,
+        name:  cat.name,
+        color: cat.color,
+        total: expenses.filter(e => e.category_id === cat.id).reduce((s, e) => s + e.value, 0),
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 4)
+      .filter(c => c.total > 0);
 
-  // ── Responsible bar click → drill-down ────────────────────────────────────────
+    const data = Array.from({ length: 6 }, (_, i) => {
+      const month = subMonths(new Date(), 5 - i);
+      const start = startOfMonth(month);
+      const end   = endOfMonth(month);
+      const monthExp = expenses.filter(e => {
+        try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
+        catch { return false; }
+      });
+      const row: Record<string, string | number> = {
+        name: format(month, "MMM/yy", { locale: ptBR }),
+      };
+      for (const cat of topCats) {
+        row[cat.name] = monthExp
+          .filter(e => e.category_id === cat.id)
+          .reduce((s, e) => s + e.value, 0);
+      }
+      return row;
+    });
+
+    return { data, topCats };
+  }, [expenses, categories]);
+
+  // ── Responsible bar click ─────────────────────────────────────────────────────
   const handleRespBarClick = (data: { id?: string; name: string }) => {
     if (!onDrillResponsible) return;
     const resp = responsibles.find(r => r.name === data.name);
@@ -161,9 +227,54 @@ export default function Dashboard({ onDrillResponsible }: Props) {
     <motion.div
       key="overview"
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-      className="space-y-6"
+      className="space-y-6 pb-8"
     >
-      {/* ── Upcoming alerts ──────────────────────────────────────────────────── */}
+
+      {/* ── Overdue alert (vencidas) ─────────────────────────────────────────── */}
+      {overdue.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={14} className="text-red-600" />
+            <h3 className="text-xs font-black uppercase tracking-widest text-red-700">
+              {overdue.length} despesa{overdue.length > 1 ? "s" : ""} vencida{overdue.length > 1 ? "s" : ""}
+              {" "}— R$ {formatCurrency(overdueTotal)}
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {overdue.slice(0, 5).map(e => {
+              const cat  = categories.find(c => c.id === e.category_id);
+              const resp = responsibles.find(r => r.id === e.responsible_id);
+              const daysLate = differenceInDays(startOfToday(), parseISO(e.due_date));
+              return (
+                <div key={e.id} className="flex items-center justify-between gap-2 bg-white/60 rounded-xl px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-black shrink-0 bg-red-500">
+                      {parseISO(e.due_date).getDate()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 truncate">{e.description}</p>
+                      <p className="text-[10px] text-slate-500">{cat?.name} · {resp?.name}</p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-black text-slate-800">R$ {formatCurrency(e.value)}</p>
+                    <p className="text-[10px] font-bold text-red-600">
+                      {daysLate === 1 ? "1 dia atrás" : `${daysLate} dias atrás`}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+            {overdue.length > 5 && (
+              <p className="text-[10px] text-red-500 font-bold text-center pt-1">
+                + {overdue.length - 5} mais vencida{overdue.length - 5 > 1 ? "s" : ""}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Upcoming alerts (próximos 7 dias) ────────────────────────────────── */}
       {upcoming.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -174,10 +285,10 @@ export default function Dashboard({ onDrillResponsible }: Props) {
           </div>
           <div className="space-y-2">
             {upcoming.map(e => {
-              const cat      = categories.find(c => c.id === e.category_id);
-              const resp     = responsibles.find(r => r.id === e.responsible_id);
-              const dueDate  = parseISO(e.due_date);
-              const days     = differenceInDays(dueDate, startOfToday());
+              const cat     = categories.find(c => c.id === e.category_id);
+              const resp    = responsibles.find(r => r.id === e.responsible_id);
+              const dueDate = parseISO(e.due_date);
+              const days    = differenceInDays(dueDate, startOfToday());
               return (
                 <div key={e.id} className="flex items-center justify-between gap-2 bg-white/60 rounded-xl px-3 py-2">
                   <div className="flex items-center gap-2 min-w-0">
@@ -194,10 +305,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-xs font-black text-slate-800">R$ {formatCurrency(e.value)}</p>
-                    <p className={cn(
-                      "text-[10px] font-bold",
-                      days === 0 ? "text-red-600" : "text-amber-600",
-                    )}>
+                    <p className={cn("text-[10px] font-bold", days === 0 ? "text-red-600" : "text-amber-600")}>
                       {days === 0 ? "Hoje!" : days === 1 ? "Amanhã" : `Em ${days} dias`}
                     </p>
                   </div>
@@ -208,7 +316,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
         </div>
       )}
 
-      {/* ── Month nav + add button ────────────────────────────────────────────── */}
+      {/* ── Month nav + add ───────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-slate-100 transition-colors">
@@ -229,10 +337,11 @@ export default function Dashboard({ onDrillResponsible }: Props) {
         </button>
       </div>
 
-      {/* ── Stats cards with month comparison ────────────────────────────────── */}
+      {/* ── Stats cards ──────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Total do mês with comparison */}
-        <div className="card p-5 md:col-span-2">
+
+        {/* Total do mês + comparativo + % pago */}
+        <div className="card p-5 col-span-2">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total do Mês</p>
           <p className="text-2xl font-black tracking-tighter text-slate-900">
             R$ {formatCurrency(stats.totalMonth)}
@@ -253,8 +362,23 @@ export default function Dashboard({ onDrillResponsible }: Props) {
               </span>
             </div>
           )}
-          {monthDelta === null && prevMonthTotal === 0 && stats.totalMonth > 0 && (
-            <p className="text-[10px] text-slate-400 mt-1">Sem dados do mês anterior</p>
+          {/* Barra de progresso de pagamento */}
+          {stats.totalMonth > 0 && (
+            <div className="mt-3">
+              <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5">
+                <span>{stats.paidPct.toFixed(0)}% pago</span>
+                <span>R$ {formatCurrency(stats.paidMonth)} / R$ {formatCurrency(stats.totalMonth)}</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2">
+                <div
+                  className={cn(
+                    "h-2 rounded-full transition-all",
+                    stats.paidPct >= 100 ? "bg-emerald-500" : stats.paidPct >= 50 ? "bg-blue-500" : "bg-amber-400",
+                  )}
+                  style={{ width: `${Math.min(stats.paidPct, 100)}%` }}
+                />
+              </div>
+            </div>
           )}
         </div>
 
@@ -271,6 +395,19 @@ export default function Dashboard({ onDrillResponsible }: Props) {
             R$ {formatCurrency(stats.paidMonth)}
           </p>
         </div>
+
+        {/* Ticket médio */}
+        {stats.count > 0 && (
+          <div className="card p-5 col-span-2">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ticket Médio</p>
+            <p className="text-2xl font-black tracking-tighter text-violet-600">
+              R$ {formatCurrency(stats.ticketMedio)}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {stats.count} despesa{stats.count !== 1 ? "s" : ""} no mês
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── Budget progress ────────────────────────────────────────────────────── */}
@@ -286,7 +423,10 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                     <span className="text-xs font-bold text-slate-700">{b.catName}</span>
                     {b.pct >= 100 && <AlertCircle size={14} className="text-red-500" />}
                   </div>
-                  <span className={cn("text-xs font-black", b.pct >= 100 ? "text-red-600" : b.pct >= 80 ? "text-amber-600" : "text-slate-600")}>
+                  <span className={cn(
+                    "text-xs font-black",
+                    b.pct >= 100 ? "text-red-600" : b.pct >= 80 ? "text-amber-600" : "text-slate-600",
+                  )}>
                     R$ {formatCurrency(b.spent)} / R$ {formatCurrency(b.limit_value)}
                   </span>
                 </div>
@@ -305,9 +445,10 @@ export default function Dashboard({ onDrillResponsible }: Props) {
         </div>
       )}
 
-      {/* ── Charts row 1 ─────────────────────────────────────────────────────── */}
+      {/* ── Charts ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Pie: Categories */}
+
+        {/* Pie: categorias do mês */}
         <div className="card p-6">
           <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Categorias do Mês</h3>
           {stats.catData.length === 0 ? (
@@ -316,11 +457,12 @@ export default function Dashboard({ onDrillResponsible }: Props) {
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={stats.catData} innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value"
-                    label={({ value }) => `R$ ${formatCurrency(value)}`} labelLine={false}>
-                    {stats.catData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
+                  <Pie
+                    data={stats.catData} innerRadius={55} outerRadius={80}
+                    paddingAngle={4} dataKey="value"
+                    label={({ value }) => `R$ ${formatCurrency(value)}`} labelLine={false}
+                  >
+                    {stats.catData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   <Legend />
@@ -330,20 +472,22 @@ export default function Dashboard({ onDrillResponsible }: Props) {
           )}
         </div>
 
-        {/* Bar: Top categories */}
+        {/* Bar: maiores categorias */}
         <div className="card p-6">
           <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Maiores Categorias</h3>
-          {stats.topExpenses.length === 0 ? (
+          {stats.topCategories.length === 0 ? (
             <p className="text-center text-slate-400 text-sm py-10">Sem despesas neste mês</p>
           ) : (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.topExpenses} margin={{ top: 24, bottom: 24 }}>
+                <BarChart data={stats.topCategories} margin={{ top: 24, bottom: 24 }}>
                   <XAxis dataKey="name" fontSize={10} hide />
                   <YAxis fontSize={10} hide />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Bar dataKey="value" fill="#10b981" radius={[4, 4, 0, 0]}>
-                    <LabelList dataKey="value" position="top" fontSize={10} formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {stats.topCategories.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    <LabelList dataKey="value" position="top" fontSize={10}
+                      formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                     <LabelList dataKey="name" position="insideBottom" fontSize={9} offset={8} fill="#fff" />
                   </Bar>
                 </BarChart>
@@ -352,29 +496,23 @@ export default function Dashboard({ onDrillResponsible }: Props) {
           )}
         </div>
 
-        {/* Horizontal bar: By responsible — CLICKABLE */}
-        {stats.respData.length > 0 && (
-          <div className="card p-6 md:col-span-2">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Por Responsável</h3>
-              {onDrillResponsible && (
-                <p className="text-[10px] text-slate-400 font-medium">Clique na barra para ver detalhes</p>
-              )}
-            </div>
+        {/* Horizontal bar: top 5 despesas individuais */}
+        {stats.top5Individual.length > 0 && (
+          <div className="card p-6">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">
+              Top 5 Maiores Despesas do Mês
+            </h3>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.respData} layout="vertical" margin={{ right: 80 }}>
+                <BarChart data={stats.top5Individual} layout="vertical" margin={{ right: 80 }}>
                   <XAxis type="number" fontSize={10} hide />
-                  <YAxis dataKey="name" type="category" fontSize={11} axisLine={false} tickLine={false} width={90} />
+                  <YAxis dataKey="name" type="category" fontSize={10}
+                    axisLine={false} tickLine={false} width={110} />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Bar
-                    dataKey="value"
-                    fill="#3b82f6"
-                    radius={[0, 4, 4, 0]}
-                    style={{ cursor: onDrillResponsible ? "pointer" : "default" }}
-                    onClick={handleRespBarClick}
-                  >
-                    <LabelList dataKey="value" position="right" fontSize={10} formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                    {stats.top5Individual.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    <LabelList dataKey="value" position="right" fontSize={10}
+                      formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -382,7 +520,37 @@ export default function Dashboard({ onDrillResponsible }: Props) {
           </div>
         )}
 
-        {/* Cashflow: paid vs pending by day ─────────────────────────────────── */}
+        {/* Horizontal bar: por responsável — clicável */}
+        {stats.respData.length > 0 && (
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Por Responsável</h3>
+              {onDrillResponsible && (
+                <p className="text-[10px] text-slate-400 font-medium">Clique para filtrar</p>
+              )}
+            </div>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.respData} layout="vertical" margin={{ right: 80 }}>
+                  <XAxis type="number" fontSize={10} hide />
+                  <YAxis dataKey="name" type="category" fontSize={11}
+                    axisLine={false} tickLine={false} width={90} />
+                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                  <Bar
+                    dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]}
+                    style={{ cursor: onDrillResponsible ? "pointer" : "default" }}
+                    onClick={handleRespBarClick}
+                  >
+                    <LabelList dataKey="value" position="right" fontSize={10}
+                      formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* Cashflow: pago vs pendente por dia */}
         {cashflowData.length > 0 && (
           <div className="card p-6 md:col-span-2">
             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">
@@ -404,11 +572,45 @@ export default function Dashboard({ onDrillResponsible }: Props) {
           </div>
         )}
 
-        {/* Annual history */}
+        {/* Tendência por categoria — últimos 6 meses */}
+        {categoryTrend.topCats.length > 0 && (
+          <div className="card p-6 md:col-span-2">
+            <div className="flex items-center gap-2 mb-6">
+              <TrendingUp size={16} className="text-slate-400" />
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                Tendência por Categoria — Últimos 6 Meses
+              </h3>
+            </div>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={categoryTrend.data} margin={{ top: 10 }}>
+                  <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
+                  <YAxis fontSize={10} hide />
+                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  {categoryTrend.topCats.map(cat => (
+                    <Bar key={cat.id} dataKey={cat.name} fill={cat.color} radius={[3, 3, 0, 0]} />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* Histórico 12 meses com linha de média */}
         <div className="card p-6 md:col-span-2">
-          <div className="flex items-center gap-2 mb-6">
-            <TrendingDown size={16} className="text-slate-400" />
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Histórico dos Últimos 12 Meses</h3>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <TrendingDown size={16} className="text-slate-400" />
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                Histórico — Últimos 12 Meses
+              </h3>
+            </div>
+            {annualAvg > 0 && (
+              <span className="text-[10px] text-slate-400 font-bold">
+                Média: R$ {formatCurrency(annualAvg)}
+              </span>
+            )}
           </div>
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
@@ -416,6 +618,19 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                 <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
                 <YAxis fontSize={10} hide />
                 <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                {annualAvg > 0 && (
+                  <ReferenceLine
+                    y={annualAvg}
+                    stroke="#94a3b8"
+                    strokeDasharray="5 3"
+                    label={{
+                      value: "Média",
+                      position: "insideTopRight",
+                      fontSize: 9,
+                      fill: "#94a3b8",
+                    }}
+                  />
+                )}
                 <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                   {annualData.map((entry, i) => (
                     <Cell key={i} fill={entry.isCurrent ? "#10b981" : "#cbd5e1"} />
@@ -431,6 +646,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
             </ResponsiveContainer>
           </div>
         </div>
+
       </div>
 
       <ExpenseModal open={showModal} editing={null} onClose={() => setShowModal(false)} />
