@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { format, parseISO, subMonths, addMonths } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Plus, FileText, Share2, Search, Trash2, Edit2,
@@ -28,7 +28,8 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
   const [confirmId,        setConfirmId]        = useState<string | null>(null);
   const [page,             setPage]             = useState(1);
   const [search,           setSearch]           = useState("");
-  const [filterMonth,      setFilterMonth]      = useState("");
+  const [filterDateFrom,   setFilterDateFrom]   = useState("");
+  const [filterDateTo,     setFilterDateTo]     = useState("");
   const [filterCat,        setFilterCat]        = useState("");
   const [filterResp,       setFilterResp]       = useState(initialResponsibleFilter);
   const [filterPaid,       setFilterPaid]       = useState("");
@@ -53,13 +54,14 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
         (e.notes ?? "").toLowerCase().includes(q),
       );
     }
-    if (filterMonth) list = list.filter(e => e.due_date?.startsWith(filterMonth));
-    if (filterCat)   list = list.filter(e => e.category_id === filterCat);
-    if (filterResp)  list = list.filter(e => e.responsible_id === filterResp);
+    if (filterDateFrom) list = list.filter(e => e.due_date >= filterDateFrom);
+    if (filterDateTo)   list = list.filter(e => e.due_date <= filterDateTo);
+    if (filterCat)      list = list.filter(e => e.category_id === filterCat);
+    if (filterResp)     list = list.filter(e => e.responsible_id === filterResp);
     if (filterPaid !== "") list = list.filter(e => String(e.paid) === filterPaid);
 
     return list;
-  }, [expenses, search, filterMonth, filterCat, filterResp, filterPaid, categories]);
+  }, [expenses, search, filterDateFrom, filterDateTo, filterCat, filterResp, filterPaid, categories]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -74,8 +76,8 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
     doc.text("Relatório de Despesas — DESPESAS INTEGRADAS", 14, 15);
     const filterLabel = filterResp
       ? `Responsável: ${responsibles.find(r => r.id === filterResp)?.name ?? ""}`
-      : filterMonth
-      ? `Mês: ${format(new Date(filterMonth + "-01"), "MMMM yyyy", { locale: ptBR })}`
+      : filterDateFrom || filterDateTo
+      ? `Período: ${filterDateFrom ? format(parseISO(filterDateFrom), "dd/MM/yyyy") : "início"} até ${filterDateTo ? format(parseISO(filterDateTo), "dd/MM/yyyy") : "hoje"}`
       : "Todas as despesas";
     doc.setFontSize(9);
     doc.text(filterLabel, 14, 22);
@@ -145,19 +147,6 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
     setEditingExp(null);
   };
 
-  // Available months: last 12 + next 3 months + any months from expenses
-  const availableMonths = useMemo(() => {
-    const months = new Set<string>();
-    // All months present in expenses data
-    expenses.forEach(e => { if (e.due_date) months.add(e.due_date.slice(0, 7)); });
-    // Last 12 months + next 3 months (always show a full range)
-    const now = new Date();
-    for (let i = -12; i <= 3; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      months.add(format(d, "yyyy-MM"));
-    }
-    return [...months].sort().reverse();
-  }, [expenses]);
 
   return (
     <motion.div
@@ -196,15 +185,25 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <select value={filterMonth} onChange={e => { setFilterMonth(e.target.value); resetPage(); }}
-            className="input py-2 text-xs">
-            <option value="">Todos os meses</option>
-            {availableMonths.map(m => (
-              <option key={m} value={m}>
-                {format(new Date(m + "-01"), "MMM yyyy", { locale: ptBR })}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5 col-span-2 md:col-span-2">
+            <div className="relative flex-1">
+              <label className="absolute -top-2 left-2 bg-white px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">De</label>
+              <input
+                type="date" value={filterDateFrom}
+                onChange={e => { setFilterDateFrom(e.target.value); resetPage(); }}
+                className="input py-2 text-xs w-full"
+              />
+            </div>
+            <span className="text-slate-300 font-bold shrink-0">→</span>
+            <div className="relative flex-1">
+              <label className="absolute -top-2 left-2 bg-white px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Até</label>
+              <input
+                type="date" value={filterDateTo}
+                onChange={e => { setFilterDateTo(e.target.value); resetPage(); }}
+                className="input py-2 text-xs w-full"
+              />
+            </div>
+          </div>
 
           <select value={filterCat} onChange={e => { setFilterCat(e.target.value); resetPage(); }}
             className="input py-2 text-xs">
@@ -226,13 +225,13 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
           </select>
         </div>
 
-        {(search || filterMonth || filterCat || filterResp || filterPaid !== "") && (
+        {(search || filterDateFrom || filterDateTo || filterCat || filterResp || filterPaid !== "") && (
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-500 font-medium">
               {filtered.length} resultado{filtered.length !== 1 ? "s" : ""} · Total: R$ {formatCurrency(filteredTotal)}
             </span>
             <button
-              onClick={() => { setSearch(""); setFilterMonth(""); setFilterCat(""); setFilterResp(""); setFilterPaid(""); resetPage(); }}
+              onClick={() => { setSearch(""); setFilterDateFrom(""); setFilterDateTo(""); setFilterCat(""); setFilterResp(""); setFilterPaid(""); resetPage(); }}
               className="text-xs text-emerald-600 font-bold hover:underline"
             >
               Limpar filtros
