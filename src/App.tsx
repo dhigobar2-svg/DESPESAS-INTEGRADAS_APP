@@ -32,8 +32,15 @@ function Shell() {
     .filter(e => e.due_date?.startsWith(mm) && !e.paid)
     .reduce((s, e) => s + e.value, 0);
 
+  const today = now.toISOString().slice(0, 10);
+
   const futureCount = expenses.filter(e => {
-    try { return !e.paid && e.due_date > now.toISOString().slice(0, 10); }
+    try { return !e.paid && e.due_date > today; }
+    catch { return false; }
+  }).length;
+
+  const overdueCount = expenses.filter(e => {
+    try { return !e.paid && e.due_date < today; }
     catch { return false; }
   }).length;
 
@@ -157,13 +164,19 @@ function Shell() {
                         <p className="text-xl font-black">R$ {formatCurrency(recurringTotal)}</p>
                       </div>
                     )}
+                    {overdueCount > 0 && (
+                      <div className="bg-red-500/40 backdrop-blur-md p-3 rounded-2xl border border-red-300/40">
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">Vencidas</p>
+                        <p className="text-xl font-black">{overdueCount}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
               </div>
 
               <MenuButton icon={BarChart3}     title="Visão Geral"       subtitle="Gráficos e Estatísticas"
-                onClick={() => handleTabChange("overview")}  colorClass="bg-blue-500" />
+                onClick={() => handleTabChange("overview")}  colorClass="bg-blue-500" badge={overdueCount} />
               <MenuButton icon={ListOrdered}   title="Minhas Despesas"   subtitle="Lista e Histórico"
                 onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500" />
               <MenuButton icon={CalendarClock} title="Despesas Futuras"  subtitle="Próximos vencimentos"
