@@ -3,7 +3,7 @@ import { format, parseISO, subMonths, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Plus, FileText, Share2, Search, Trash2, Edit2,
-  ChevronLeft, ChevronRight, Copy, Download, StickyNote,
+  ChevronLeft, ChevronRight, CheckCircle2, Download, StickyNote,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { jsPDF } from "jspdf";
@@ -25,7 +25,6 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
 
   const [showModal,        setShowModal]        = useState(false);
   const [editingExp,       setEditingExp]        = useState<Expense | null>(null);
-  const [duplicateDefaults, setDuplicateDefaults] = useState<Partial<Expense> | undefined>();
   const [confirmId,        setConfirmId]        = useState<string | null>(null);
   const [page,             setPage]             = useState(1);
   const [search,           setSearch]           = useState("");
@@ -132,36 +131,18 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
 
   // ── Modal helpers ─────────────────────────────────────────────────────────────
   const openEdit = (e: Expense) => {
-    setDuplicateDefaults(undefined);
     setEditingExp(e);
-    setShowModal(true);
-  };
-
-  const openDuplicate = (e: Expense) => {
-    const today = format(new Date(), "yyyy-MM-dd");
-    setEditingExp(null);
-    setDuplicateDefaults({
-      category_id:    e.category_id,
-      description:    e.description,
-      value:          e.value,
-      responsible_id: e.responsible_id,
-      date:           today,
-      due_date:       today,
-      notes:          e.notes,
-    });
     setShowModal(true);
   };
 
   const openAdd = () => {
     setEditingExp(null);
-    setDuplicateDefaults(undefined);
     setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setEditingExp(null);
-    setDuplicateDefaults(undefined);
   };
 
   // Available months: last 12 + next 3 months + any months from expenses
@@ -314,10 +295,17 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => openDuplicate(expense)}
-                          title="Duplicar"
-                          className="p-2 text-slate-400 hover:text-violet-600 transition-colors bg-slate-50 rounded-lg">
-                          <Copy size={14} />
+                        <button
+                          onClick={() => togglePaid(expense.id)}
+                          title={expense.paid ? "Marcar como pendente" : "Marcar como pago"}
+                          className={cn(
+                            "p-2 transition-colors bg-slate-50 rounded-lg",
+                            expense.paid
+                              ? "text-emerald-600 hover:text-amber-500"
+                              : "text-slate-400 hover:text-emerald-600",
+                          )}
+                        >
+                          <CheckCircle2 size={14} />
                         </button>
                         <button onClick={() => openEdit(expense)}
                           title="Editar"
@@ -376,7 +364,7 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
       <ExpenseModal
         open={showModal}
         editing={editingExp}
-        defaultValues={duplicateDefaults}
+
         onClose={closeModal}
       />
 
