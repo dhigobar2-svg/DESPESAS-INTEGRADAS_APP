@@ -141,7 +141,7 @@ function Shell() {
               {/* Welcome card */}
               <div className="bg-emerald-600 p-8 rounded-[2.5rem] text-white mb-8 shadow-2xl shadow-emerald-200 relative overflow-hidden">
                 <div className="relative z-10">
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80 mb-1">Bem-vindo de volta,</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80 mb-1">Bem-vindo(a) novamente,</p>
                   <h2 className="text-3xl font-black tracking-tighter mb-5">{profile.name}</h2>
                   <div className="flex gap-3 flex-wrap">
                     <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">

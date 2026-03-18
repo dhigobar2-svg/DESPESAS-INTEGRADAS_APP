@@ -23,7 +23,7 @@ interface Props {
 }
 
 export default function Dashboard({ onDrillResponsible }: Props) {
-  const { expenses, categories, responsibles, budgets } = useData();
+  const { expenses, categories, responsibles, budgets, recurring } = useData();
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [showModal,     setShowModal]     = useState(false);
 
@@ -32,13 +32,40 @@ export default function Dashboard({ onDrillResponsible }: Props) {
 
   // ── Month stats ───────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const start = startOfMonth(selectedMonth);
-    const end   = endOfMonth(selectedMonth);
+    const start    = startOfMonth(selectedMonth);
+    const end      = endOfMonth(selectedMonth);
+    const monthKey = format(selectedMonth, "yyyy-MM");
+    const nowKey   = format(new Date(), "yyyy-MM");
+    const isFuture = monthKey > nowKey;
 
     const monthExp = expenses.filter(e => {
       try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
       catch { return false; }
     });
+
+    // For future months, project recurring expenses not yet generated
+    if (isFuture) {
+      for (const rec of recurring) {
+        if (!rec.active) continue;
+        const dayPadded = String(rec.day_of_month).padStart(2, "0");
+        const dueDate = `${monthKey}-${dayPadded}`;
+        const alreadyExists = monthExp.some(
+          e => e.description === rec.description && e.due_date === dueDate && e.value === rec.value,
+        );
+        if (!alreadyExists) {
+          monthExp.push({
+            id:             `proj-${rec.id}-${monthKey}`,
+            category_id:    rec.category_id,
+            description:    rec.description,
+            date:           dueDate,
+            due_date:       dueDate,
+            value:          rec.value,
+            responsible_id: rec.responsible_id,
+            paid:           0,
+          });
+        }
+      }
+    }
 
     const totalMonth   = monthExp.reduce((s, e) => s + e.value, 0);
     const pendingMonth = monthExp.filter(e => !e.paid).reduce((s, e) => s + e.value, 0);
