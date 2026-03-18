@@ -2,15 +2,18 @@ import React, { useMemo, useState } from "react";
 import { format, parseISO, isAfter, startOfToday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
-import { CheckCircle2, Clock, Plus, StickyNote } from "lucide-react";
+import { CheckCircle2, Clock, Plus, StickyNote, Edit2, Trash2 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { formatCurrency, cn } from "../lib/utils";
 import { Expense } from "../types";
 import ExpenseModal from "./ExpenseModal";
+import ConfirmModal from "./ConfirmModal";
 
 export default function FutureExpenses() {
-  const { expenses, categories, responsibles, togglePaid } = useData();
-  const [showModal, setShowModal] = useState(false);
+  const { expenses, categories, responsibles, togglePaid, deleteItem } = useData();
+  const [showModal,   setShowModal]   = useState(false);
+  const [editingExp,  setEditingExp]  = useState<Expense | null>(null);
+  const [confirmId,   setConfirmId]   = useState<string | null>(null);
 
   const today = startOfToday();
 
@@ -39,6 +42,8 @@ export default function FutureExpenses() {
 
   const monthCount  = Object.keys(grouped).length;
   const expCount    = (Object.values(grouped) as Expense[][]).flat().length;
+
+  const confirmLabel = expenses.find(e => e.id === confirmId)?.description ?? "";
 
   return (
     <motion.div
@@ -75,7 +80,9 @@ export default function FutureExpenses() {
         </div>
       ) : (
         Object.entries(grouped).map(([month, exps]: [string, Expense[]]) => {
-          const monthDate  = new Date(month + "-01");
+          // Parse the month key as a local date to avoid UTC timezone shift
+          const [yearStr, monthStr] = month.split("-");
+          const monthDate  = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
           const monthTotal = exps.reduce((s, e) => s + e.value, 0);
 
           return (
@@ -146,15 +153,31 @@ export default function FutureExpenses() {
                         )}
                       </div>
 
-                      {/* Value + Pay button */}
-                      <div className="text-right shrink-0">
+                      {/* Value + actions */}
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <p className="text-sm font-black text-slate-900">R$ {formatCurrency(e.value)}</p>
-                        <button
-                          onClick={() => togglePaid(e.id)}
-                          className="mt-1 px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-widest rounded-full hover:bg-emerald-100 transition-colors"
-                        >
-                          Pagar
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => togglePaid(e.id)}
+                            className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-widest rounded-full hover:bg-emerald-100 transition-colors"
+                          >
+                            Pagar
+                          </button>
+                          <button
+                            onClick={() => setEditingExp(e)}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            onClick={() => setConfirmId(e.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -173,7 +196,21 @@ export default function FutureExpenses() {
         <Plus size={24} />
       </button>
 
-      <ExpenseModal open={showModal} editing={null} onClose={() => setShowModal(false)} />
+      <ExpenseModal
+        open={showModal || !!editingExp}
+        editing={editingExp}
+        onClose={() => { setShowModal(false); setEditingExp(null); }}
+      />
+
+      <ConfirmModal
+        open={!!confirmId}
+        message={`Excluir "${confirmLabel}"? Esta ação não pode ser desfeita.`}
+        onConfirm={() => {
+          if (confirmId) deleteItem("expenses", confirmId);
+          setConfirmId(null);
+        }}
+        onCancel={() => setConfirmId(null)}
+      />
     </motion.div>
   );
 }

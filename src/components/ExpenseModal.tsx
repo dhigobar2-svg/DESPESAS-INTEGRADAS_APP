@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
+import { RefreshCw } from "lucide-react";
 import { Expense } from "../types";
 import { useData } from "../context/DataContext";
 import { generateId } from "../lib/utils";
@@ -13,17 +14,19 @@ interface Props {
 }
 
 export default function ExpenseModal({ open, editing, defaultValues, onClose }: Props) {
-  const { categories, responsibles, saveExpense } = useData();
+  const { categories, responsibles, saveExpense, saveRecurring } = useData();
+  const [isRecurring, setIsRecurring] = useState(false);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+    const dueDate = fd.get("due_date") as string;
     const expense: Expense = {
       id:             editing?.id ?? generateId(),
       category_id:    fd.get("category")    as string,
       description:    fd.get("description") as string,
       date:           fd.get("date")        as string,
-      due_date:       fd.get("due_date")    as string,
+      due_date:       dueDate,
       value:          parseFloat(fd.get("value") as string),
       responsible_id: fd.get("responsible") as string,
       paid:           fd.get("paid") === "on" ? 1 : 0,
@@ -31,6 +34,22 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       created_by:     editing?.created_by,
     };
     saveExpense(expense, !!editing);
+
+    // If marked as recurring and it's a new expense, also save as recurring
+    if (!editing && isRecurring && dueDate) {
+      const dayOfMonth = parseInt(dueDate.slice(8, 10), 10);
+      saveRecurring({
+        id:             generateId(),
+        category_id:    expense.category_id,
+        description:    expense.description,
+        value:          expense.value,
+        responsible_id: expense.responsible_id,
+        day_of_month:   dayOfMonth,
+        active:         1,
+      }, false);
+    }
+
+    setIsRecurring(false);
     onClose();
   };
 
@@ -133,12 +152,41 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                 </div>
 
                 {/* Pago */}
-                <div className="flex items-center gap-3 py-2">
+                <div className="flex items-center gap-3 py-1">
                   <input type="checkbox" name="paid" id="paid"
                     defaultChecked={defPaid}
                     className="w-5 h-5 rounded accent-emerald-600" />
                   <label htmlFor="paid" className="text-sm font-bold text-slate-700">Já está pago?</label>
                 </div>
+
+                {/* Recorrente — somente para novas despesas */}
+                {!editing && (
+                  <div
+                    onClick={() => setIsRecurring(v => !v)}
+                    className={`flex items-center gap-3 py-3 px-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                      isRecurring
+                        ? "border-orange-400 bg-orange-50"
+                        : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                    }`}
+                  >
+                    <RefreshCw size={18} className={isRecurring ? "text-orange-500" : "text-slate-400"} />
+                    <div className="flex-1">
+                      <p className={`text-sm font-bold ${isRecurring ? "text-orange-700" : "text-slate-600"}`}>
+                        É uma despesa recorrente?
+                      </p>
+                      {isRecurring && (
+                        <p className="text-[11px] text-orange-500 mt-0.5">
+                          Será adicionada automaticamente às recorrentes todo mês no mesmo dia do vencimento.
+                        </p>
+                      )}
+                    </div>
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                      isRecurring ? "bg-orange-500 border-orange-500" : "border-slate-300"
+                    }`}>
+                      {isRecurring && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                    </div>
+                  </div>
+                )}
 
                 {/* Ações */}
                 <div className="flex gap-3 pt-4">
