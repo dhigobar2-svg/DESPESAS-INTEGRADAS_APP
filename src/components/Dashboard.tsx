@@ -481,26 +481,35 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       {/* ── Charts ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* Bar: todas as categorias */}
+        {/* Horizontal bar: todas as categorias em ordem decrescente */}
         <div className="card p-6 md:col-span-2">
           <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Categorias</h3>
           {stats.allCatData.length === 0 ? (
             <p className="text-center text-slate-400 text-sm py-10">Nenhuma categoria cadastrada</p>
           ) : (
-            <div className="h-72">
+            <div style={{ height: Math.max(200, stats.allCatData.length * 52) }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.allCatData} margin={{ top: 32, bottom: 8, left: 8, right: 8 }}>
-                  <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
-                  <YAxis fontSize={10} hide />
+                <BarChart
+                  data={[...stats.allCatData].sort((a, b) => b.value - a.value)}
+                  layout="vertical"
+                  margin={{ top: 4, right: 110, left: 8, bottom: 4 }}
+                >
+                  <XAxis type="number" fontSize={10} hide />
+                  <YAxis
+                    dataKey="name" type="category" fontSize={12} fontWeight={600}
+                    axisLine={false} tickLine={false} width={120}
+                  />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                    {stats.allCatData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                    {[...stats.allCatData]
+                      .sort((a, b) => b.value - a.value)
+                      .map((entry, i) => <Cell key={i} fill={entry.color} />)}
                     <LabelList
                       dataKey="value"
-                      position="top"
+                      position="right"
                       fontSize={11}
                       fontWeight={700}
-                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""}
+                      formatter={(v: number) => `R$ ${formatCurrency(v)}`}
                     />
                   </Bar>
                 </BarChart>
