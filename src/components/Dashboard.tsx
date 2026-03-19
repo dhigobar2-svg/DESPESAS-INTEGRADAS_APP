@@ -572,61 +572,86 @@ export default function Dashboard({ onDrillResponsible }: Props) {
           </div>
         )}
 
-        {/* Cashflow: pago vs pendente por dia */}
-        {cashflowData.length > 0 && (
-          <div className="card p-6 md:col-span-2">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">
-              Fluxo de Caixa — {format(selectedMonth, "MMMM yyyy", { locale: ptBR })}
-            </h3>
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={cashflowData} margin={{ top: 10, right: 10 }}>
-                  <XAxis dataKey="dia" fontSize={10} axisLine={false} tickLine={false}
-                    label={{ value: "Dia", position: "insideBottom", offset: -2, fontSize: 10 }} />
-                  <YAxis fontSize={10} hide />
-                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="Pago" fill="#10b981" radius={[0, 0, 0, 0]} stackId="a">
-                    <LabelList dataKey="Pago" position="center" fontSize={9} fill="#fff" fontWeight={700}
-                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
-                  </Bar>
-                  <Bar dataKey="Pendente" fill="#f87171" radius={[4, 4, 0, 0]} stackId="a">
-                    <LabelList dataKey="Pendente" position="top" fontSize={10} fontWeight={700}
-                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
-        {/* Tendência por categoria — últimos 6 meses */}
-        {categoryTrend.topCats.length > 0 && (
-          <div className="card p-6 md:col-span-2">
-            <div className="flex items-center gap-2 mb-6">
-              <TrendingUp size={16} className="text-slate-400" />
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                Tendência por Categoria — Últimos 6 Meses
+        {/* Cashflow: pago vs pendente por dia — horizontal, ordem decrescente */}
+        {cashflowData.length > 0 && (() => {
+          const sorted = [...cashflowData]
+            .map(d => ({ ...d, total: d.Pago + d.Pendente }))
+            .sort((a, b) => b.total - a.total);
+          return (
+            <div className="card p-6 md:col-span-2">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">
+                Fluxo de Caixa — {format(selectedMonth, "MMMM yyyy", { locale: ptBR })}
               </h3>
-            </div>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={categoryTrend.data} margin={{ top: 28, right: 8 }}>
-                  <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
-                  <YAxis fontSize={10} hide />
-                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {categoryTrend.topCats.map(cat => (
-                    <Bar key={cat.id} dataKey={cat.name} fill={cat.color} radius={[3, 3, 0, 0]}>
-                      <LabelList dataKey={cat.name} position="top" fontSize={9} fontWeight={700}
+              <div style={{ height: Math.max(200, sorted.length * 56) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sorted} layout="vertical" margin={{ top: 4, right: 100, left: 8, bottom: 4 }}>
+                    <XAxis type="number" fontSize={10} hide />
+                    <YAxis
+                      dataKey="dia" type="category" fontSize={12} fontWeight={600}
+                      axisLine={false} tickLine={false} width={40}
+                      tickFormatter={(v: string) => `Dia ${v}`}
+                    />
+                    <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="Pago" fill="#10b981" radius={[0, 4, 4, 0]}>
+                      <LabelList dataKey="Pago" position="right" fontSize={10} fontWeight={700}
                         formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
                     </Bar>
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
+                    <Bar dataKey="Pendente" fill="#f87171" radius={[0, 4, 4, 0]}>
+                      <LabelList dataKey="Pendente" position="right" fontSize={10} fontWeight={700}
+                        formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
+
+        {/* Tendência por categoria — últimos 6 meses — horizontal, ordem decrescente */}
+        {categoryTrend.topCats.length > 0 && (() => {
+          const trendBars = categoryTrend.topCats
+            .map(cat => ({
+              name:  cat.name,
+              color: cat.color,
+              value: categoryTrend.data.reduce(
+                (s, month) => s + ((month[cat.name] as number) ?? 0), 0,
+              ),
+            }))
+            .sort((a, b) => b.value - a.value);
+          return (
+            <div className="card p-6 md:col-span-2">
+              <div className="flex items-center gap-2 mb-6">
+                <TrendingUp size={16} className="text-slate-400" />
+                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                  Tendência por Categoria — Últimos 6 Meses
+                </h3>
+              </div>
+              <div style={{ height: Math.max(200, trendBars.length * 56) }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={trendBars} layout="vertical" margin={{ top: 4, right: 110, left: 8, bottom: 4 }}>
+                    <XAxis type="number" fontSize={10} hide />
+                    <YAxis
+                      dataKey="name" type="category" fontSize={12} fontWeight={600}
+                      axisLine={false} tickLine={false} width={120}
+                    />
+                    <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                    <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                      {trendBars.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      <LabelList
+                        dataKey="value"
+                        position="right"
+                        fontSize={11}
+                        fontWeight={700}
+                        formatter={(v: number) => `R$ ${formatCurrency(v)}`}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Histórico 12 meses com linha de média */}
         <div className="card p-6 md:col-span-2">
