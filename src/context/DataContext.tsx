@@ -267,7 +267,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const res = await fetch(`/api/${table}/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/delete/${table}/${id}`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json();
         setExpenses(snap.expenses);

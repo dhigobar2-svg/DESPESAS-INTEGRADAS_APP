@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
-  PieChart, Pie, Cell,
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, Cell,
   ResponsiveContainer, LabelList, ReferenceLine,
 } from "recharts";
 import {
@@ -79,6 +78,13 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       color: cat.color,
     })).filter(d => d.value > 0);
 
+    // All registered categories (including zero-value) for the Categorias chart
+    const allCatData = categories.map(cat => ({
+      name:  cat.name,
+      value: monthExp.filter(e => e.category_id === cat.id).reduce((s, e) => s + e.value, 0),
+      color: cat.color,
+    }));
+
     const topCategories = [...catData].sort((a, b) => b.value - a.value).slice(0, 5);
 
     const respData = responsibles.map(r => ({
@@ -98,7 +104,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
 
     return {
       totalMonth, pendingMonth, paidMonth, paidPct, ticketMedio,
-      catData, topCategories, respData, top5Individual,
+      catData, allCatData, topCategories, respData, top5Individual,
       count: monthExp.length,
     };
   }, [expenses, categories, responsibles, selectedMonth]);
@@ -475,47 +481,27 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       {/* ── Charts ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-        {/* Pie: categorias do mês */}
-        <div className="card p-6">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Categorias do Mês</h3>
-          {stats.catData.length === 0 ? (
-            <p className="text-center text-slate-400 text-sm py-10">Sem despesas neste mês</p>
+        {/* Bar: todas as categorias */}
+        <div className="card p-6 md:col-span-2">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Categorias</h3>
+          {stats.allCatData.length === 0 ? (
+            <p className="text-center text-slate-400 text-sm py-10">Nenhuma categoria cadastrada</p>
           ) : (
-            <div className="h-64">
+            <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={stats.catData} innerRadius={55} outerRadius={80}
-                    paddingAngle={4} dataKey="value"
-                    label={({ value }) => `R$ ${formatCurrency(value)}`} labelLine={false}
-                  >
-                    {stats.catData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-
-        {/* Bar: maiores categorias */}
-        <div className="card p-6">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Maiores Categorias</h3>
-          {stats.topCategories.length === 0 ? (
-            <p className="text-center text-slate-400 text-sm py-10">Sem despesas neste mês</p>
-          ) : (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.topCategories} margin={{ top: 24, bottom: 24 }}>
-                  <XAxis dataKey="name" fontSize={10} hide />
+                <BarChart data={stats.allCatData} margin={{ top: 32, bottom: 8, left: 8, right: 8 }}>
+                  <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
                   <YAxis fontSize={10} hide />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                    {stats.topCategories.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    <LabelList dataKey="value" position="top" fontSize={10}
-                      formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                    <LabelList dataKey="name" position="insideBottom" fontSize={9} offset={8} fill="#fff" />
+                    {stats.allCatData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    <LabelList
+                      dataKey="value"
+                      position="top"
+                      fontSize={11}
+                      fontWeight={700}
+                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""}
+                    />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -531,14 +517,14 @@ export default function Dashboard({ onDrillResponsible }: Props) {
             </h3>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.top5Individual} layout="vertical" margin={{ right: 80 }}>
+                <BarChart data={stats.top5Individual} layout="vertical" margin={{ right: 90, left: 4 }}>
                   <XAxis type="number" fontSize={10} hide />
                   <YAxis dataKey="name" type="category" fontSize={10}
                     axisLine={false} tickLine={false} width={110} />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                     {stats.top5Individual.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    <LabelList dataKey="value" position="right" fontSize={10}
+                    <LabelList dataKey="value" position="right" fontSize={10} fontWeight={700}
                       formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   </Bar>
                 </BarChart>
@@ -568,7 +554,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                     style={{ cursor: onDrillResponsible ? "pointer" : "default" }}
                     onClick={handleRespBarClick}
                   >
-                    <LabelList dataKey="value" position="right" fontSize={10}
+                    <LabelList dataKey="value" position="right" fontSize={10} fontWeight={700}
                       formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   </Bar>
                 </BarChart>
@@ -591,8 +577,14 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                   <YAxis fontSize={10} hide />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="Pago"     fill="#10b981" radius={[4, 4, 0, 0]} stackId="a" />
-                  <Bar dataKey="Pendente" fill="#f87171" radius={[4, 4, 0, 0]} stackId="a" />
+                  <Bar dataKey="Pago" fill="#10b981" radius={[0, 0, 0, 0]} stackId="a">
+                    <LabelList dataKey="Pago" position="center" fontSize={9} fill="#fff" fontWeight={700}
+                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
+                  </Bar>
+                  <Bar dataKey="Pendente" fill="#f87171" radius={[4, 4, 0, 0]} stackId="a">
+                    <LabelList dataKey="Pendente" position="top" fontSize={10} fontWeight={700}
+                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -608,15 +600,18 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                 Tendência por Categoria — Últimos 6 Meses
               </h3>
             </div>
-            <div className="h-56">
+            <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={categoryTrend.data} margin={{ top: 10 }}>
+                <BarChart data={categoryTrend.data} margin={{ top: 28, right: 8 }}>
                   <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
                   <YAxis fontSize={10} hide />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   {categoryTrend.topCats.map(cat => (
-                    <Bar key={cat.id} dataKey={cat.name} fill={cat.color} radius={[3, 3, 0, 0]} />
+                    <Bar key={cat.id} dataKey={cat.name} fill={cat.color} radius={[3, 3, 0, 0]}>
+                      <LabelList dataKey={cat.name} position="top" fontSize={9} fontWeight={700}
+                        formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
+                    </Bar>
                   ))}
                 </BarChart>
               </ResponsiveContainer>
@@ -639,9 +634,9 @@ export default function Dashboard({ onDrillResponsible }: Props) {
               </span>
             )}
           </div>
-          <div className="h-56">
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={annualData} margin={{ top: 16 }}>
+              <BarChart data={annualData} margin={{ top: 28, right: 8 }}>
                 <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
                 <YAxis fontSize={10} hide />
                 <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
@@ -665,7 +660,8 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                   <LabelList
                     dataKey="total"
                     position="top"
-                    fontSize={9}
+                    fontSize={10}
+                    fontWeight={700}
                     formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""}
                   />
                 </Bar>

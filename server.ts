@@ -185,6 +185,26 @@ async function startServer() {
     }
   });
 
+  // POST /api/delete/:table/:id — fallback for environments that block HTTP DELETE
+  app.post("/api/delete/:table/:id", (req, res) => {
+    const { table, id } = req.params;
+    const validTables = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses"];
+    if (!validTables.includes(table)) {
+      return res.status(400).json({ error: "Tabela inválida." });
+    }
+    try {
+      db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+      io.emit("data_updated");
+      res.json({ success: true });
+    } catch (err: any) {
+      if (err.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
+        res.status(400).json({ error: "Não é possível excluir: item está sendo usado em uma despesa." });
+      } else {
+        res.status(500).json({ error: "Erro ao excluir item." });
+      }
+    }
+  });
+
   // PUT /api/categories/:id — inline editing
   app.put("/api/categories/:id", (req, res) => {
     const { id } = req.params;
