@@ -46,6 +46,12 @@ export interface RecurringExpense {
   active: number; // 0 | 1
 }
 
+export interface IncomeType {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface Income {
   id: string;
   description: string;

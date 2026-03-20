@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { format, parseISO, startOfMonth, endOfMonth, subMonths, getYear } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Plus, FileText, Share2, Search, Trash2, Edit2,
@@ -68,23 +68,6 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
   const filteredTotal = filtered.reduce((s, e) => s + e.value, 0);
 
   const resetPage = () => setPage(1);
-
-  // ── Quick period shortcuts ─────────────────────────────────────────────────────
-  const setQuickPeriod = (preset: "thisMonth" | "lastMonth" | "thisYear") => {
-    const now = new Date();
-    if (preset === "thisMonth") {
-      setFilterDateFrom(format(startOfMonth(now), "yyyy-MM-dd"));
-      setFilterDateTo(format(endOfMonth(now), "yyyy-MM-dd"));
-    } else if (preset === "lastMonth") {
-      const prev = subMonths(now, 1);
-      setFilterDateFrom(format(startOfMonth(prev), "yyyy-MM-dd"));
-      setFilterDateTo(format(endOfMonth(prev), "yyyy-MM-dd"));
-    } else if (preset === "thisYear") {
-      setFilterDateFrom(`${getYear(now)}-01-01`);
-      setFilterDateTo(`${getYear(now)}-12-31`);
-    }
-    resetPage();
-  };
 
   // ── Export PDF ────────────────────────────────────────────────────────────────
   const generatePDF = () => {
@@ -174,7 +157,7 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">Minhas Despesas</h2>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           <button onClick={generatePDF}
             className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors">
             <FileText size={14} /> PDF
@@ -186,6 +169,10 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
           <button onClick={shareWhatsApp}
             className="flex items-center gap-1.5 bg-emerald-50 text-emerald-600 px-3 py-2 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-colors">
             <Share2 size={14} /> WhatsApp
+          </button>
+          <button onClick={openAdd}
+            className="flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm">
+            <Plus size={14} /> Nova
           </button>
         </div>
       </div>
@@ -199,23 +186,6 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
             value={search} onChange={e => { setSearch(e.target.value); resetPage(); }}
             className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
           />
-        </div>
-
-        {/* Quick period shortcuts */}
-        <div className="flex gap-2 flex-wrap">
-          {[
-            { label: "Este mês",   preset: "thisMonth"  as const },
-            { label: "Mês ant.",   preset: "lastMonth"  as const },
-            { label: "Este ano",   preset: "thisYear"   as const },
-          ].map(({ label, preset }) => (
-            <button
-              key={preset}
-              onClick={() => setQuickPeriod(preset)}
-              className="px-3 py-1.5 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
-            >
-              {label}
-            </button>
-          ))}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -241,19 +211,19 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
 
           <select value={filterCat} onChange={e => { setFilterCat(e.target.value); resetPage(); }}
             className="input py-2 text-xs">
-            <option value="">Todas as categorias</option>
+            <option value="">Todas categorias</option>
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
 
           <select value={filterResp} onChange={e => { setFilterResp(e.target.value); resetPage(); }}
             className="input py-2 text-xs">
-            <option value="">Todos os responsáveis</option>
+            <option value="">Todos responsáveis</option>
             {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
 
           <select value={filterPaid} onChange={e => { setFilterPaid(e.target.value); resetPage(); }}
             className="input py-2 text-xs">
-            <option value="">Todos os status</option>
+            <option value="">Todos status</option>
             <option value="1">Pago</option>
             <option value="0">Pendente</option>
           </select>
@@ -385,14 +355,6 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
           </div>
         )}
       </div>
-
-      {/* FAB */}
-      <button
-        onClick={openAdd}
-        className="fixed bottom-6 right-6 bg-emerald-600 text-white p-4 rounded-full shadow-xl shadow-emerald-500/30 hover:bg-emerald-700 active:scale-95 transition-all z-40"
-      >
-        <Plus size={24} />
-      </button>
 
       <ExpenseModal
         open={showModal}

@@ -11,17 +11,6 @@ import { generateId, formatCurrency, cn } from "../lib/utils";
 import { Income } from "../types";
 import ConfirmModal from "./ConfirmModal";
 
-const INCOME_TYPE_LABELS: Record<string, string> = {
-  salario:     "Salário",
-  renda_extra: "Renda Extra",
-  outro:       "Outro",
-};
-
-const INCOME_TYPE_COLORS: Record<string, string> = {
-  salario:     "bg-blue-100 text-blue-700",
-  renda_extra: "bg-emerald-100 text-emerald-700",
-  outro:       "bg-slate-100 text-slate-700",
-};
 
 const emptyForm = (): Partial<Income> => ({
   description: "",
@@ -34,7 +23,7 @@ const emptyForm = (): Partial<Income> => ({
 });
 
 export default function Incomes() {
-  const { incomes, expenses, responsibles, saveIncome, deleteItem } = useData();
+  const { incomes, expenses, responsibles, incomeTypes, saveIncome, deleteItem } = useData();
 
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [showForm,      setShowForm]      = useState(false);
@@ -192,20 +181,7 @@ export default function Incomes() {
                   />
                 </div>
 
-                <div>
-                  <label className="label">Tipo</label>
-                  <select
-                    value={form.type ?? "salario"}
-                    onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-                    className="input text-sm py-2"
-                  >
-                    <option value="salario">Salário</option>
-                    <option value="renda_extra">Renda Extra</option>
-                    <option value="outro">Outro</option>
-                  </select>
-                </div>
-
-                <div>
+                <div className="col-span-2">
                   <label className="label">Data</label>
                   <input
                     type="date" required
@@ -213,6 +189,20 @@ export default function Incomes() {
                     onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
                     className="input text-sm py-2"
                   />
+                </div>
+
+                <div>
+                  <label className="label">Tipo</label>
+                  <select
+                    value={form.type ?? (incomeTypes[0]?.id ?? "outro")}
+                    onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                    className="input text-sm py-2"
+                  >
+                    {incomeTypes.map(it => (
+                      <option key={it.id} value={it.id}>{it.name}</option>
+                    ))}
+                    {incomeTypes.length === 0 && <option value="outro">Outro</option>}
+                  </select>
                 </div>
 
                 <div>
@@ -225,12 +215,12 @@ export default function Incomes() {
                   />
                 </div>
 
-                <div>
+                <div className="col-span-2">
                   <label className="label">Responsável</label>
                   <select
                     value={form.responsible_id ?? ""}
                     onChange={e => setForm(f => ({ ...f, responsible_id: e.target.value }))}
-                    className="input text-sm py-2"
+                    className="input py-3 text-sm"
                   >
                     <option value="">— nenhum —</option>
                     {responsibles.map(r => (
@@ -305,12 +295,19 @@ export default function Incomes() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-900 truncate">{inc.description}</p>
                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className={cn(
-                          "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest",
-                          INCOME_TYPE_COLORS[inc.type] ?? INCOME_TYPE_COLORS.outro,
-                        )}>
-                          {INCOME_TYPE_LABELS[inc.type] ?? inc.type}
-                        </span>
+                        {(() => {
+                          const it = incomeTypes.find(t => t.id === inc.type);
+                          return (
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
+                              style={it
+                                ? { backgroundColor: it.color + "22", color: it.color }
+                                : { backgroundColor: "#64748b22", color: "#64748b" }}
+                            >
+                              {it?.name ?? inc.type}
+                            </span>
+                          );
+                        })()}
                         {resp && (
                           <p className="text-[10px] text-slate-500 uppercase font-medium">{resp.name}</p>
                         )}
