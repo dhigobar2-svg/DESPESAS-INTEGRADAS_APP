@@ -6,7 +6,7 @@ import { io, Socket } from "socket.io-client";
 import { format } from "date-fns";
 import {
   Category, Responsible, Expense, UserProfile,
-  Budget, RecurringExpense, ToastMessage,
+  Budget, RecurringExpense, Income, ToastMessage,
 } from "../types";
 import { generateId, compressImage } from "../lib/utils";
 
@@ -20,6 +20,7 @@ interface DataContextValue {
   profile:      UserProfile;
   budgets:      Budget[];
   recurring:    RecurringExpense[];
+  incomes:      Income[];
   isOnline:     boolean;
   isConnected:  boolean;
   toasts:       ToastMessage[];
@@ -33,6 +34,7 @@ interface DataContextValue {
   saveResponsible:  (resp: Responsible, isEdit: boolean) => void;
   saveBudget:       (budget: Budget) => void;
   saveRecurring:    (rec: RecurringExpense, isEdit: boolean) => void;
+  saveIncome:       (inc: Income, isEdit: boolean) => void;
   readPhoto:        (file: File) => Promise<string>;
   addToast:         (type: ToastMessage["type"], message: string) => void;
   dismissToast:     (id: string) => void;
@@ -67,12 +69,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [profile,      setProfile]      = useState<UserProfile>({ name: "Família" });
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [recurring,    setRecurring]    = useState<RecurringExpense[]>([]);
+  const [incomes,      setIncomes]      = useState<Income[]>([]);
   const [isOnline,     setIsOnline]     = useState(navigator.onLine);
   const [isConnected,  setIsConnected]  = useState(false);
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
 
   const socketRef        = useRef<Socket | null>(null);
   const recurringApplied = useRef(false);
+  const notifiedRef      = useRef(false);
 
   // ── Toast ────────────────────────────────────────────────────────────────────
 
@@ -95,6 +99,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     profile?: UserProfile;
     budgets?: Budget[];
     recurring?: RecurringExpense[];
+    incomes?: Income[];
   }) => {
     if (!navigator.onLine) return;
     try {
@@ -167,6 +172,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (data.profile) setProfile(data.profile);
       setBudgets(data.budgets ?? []);
       setRecurring(data.recurring ?? []);
+      setIncomes(data.incomes ?? []);
 
       // Persist to localStorage for offline use
       lsSet("expenses",     exps);
@@ -175,6 +181,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       lsSet("profile",      data.profile);
       lsSet("budgets",      data.budgets);
       lsSet("recurring",    data.recurring);
+      lsSet("incomes",      data.incomes);
     } catch (err) {
       console.error("Fetch failed, using local data", err);
       setExpenses(    lsGet("expenses",     []));
@@ -184,8 +191,45 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (p) setProfile(p);
       setBudgets( lsGet("budgets",  []));
       setRecurring(lsGet("recurring", []));
+      setIncomes(  lsGet("incomes",  []));
     }
   }, [applyRecurring, syncWithServer]);
+
+  // ── Browser notifications for upcoming/overdue expenses ──────────────────────
+
+  useEffect(() => {
+    if (notifiedRef.current || !expenses.length) return;
+    if (!("Notification" in window) || Notification.permission === "denied") return;
+
+    notifiedRef.current = true;
+
+    const notify = async () => {
+      let perm = Notification.permission;
+      if (perm === "default") {
+        perm = await Notification.requestPermission();
+      }
+      if (perm !== "granted") return;
+
+      const today  = new Date().toISOString().slice(0, 10);
+      const in7    = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
+      const overdue  = expenses.filter(e => !e.paid && e.due_date < today).length;
+      const upcoming = expenses.filter(e => !e.paid && e.due_date >= today && e.due_date <= in7).length;
+
+      if (overdue === 0 && upcoming === 0) return;
+
+      const parts: string[] = [];
+      if (overdue  > 0) parts.push(`${overdue} vencida${overdue  > 1 ? "s" : ""}`);
+      if (upcoming > 0) parts.push(`${upcoming} vencem em até 7 dias`);
+
+      new Notification("Despesas Integradas", {
+        body: parts.join(" · "),
+        icon: "/vite.svg",
+        tag:  "despesas-alerta",
+      });
+    };
+
+    notify().catch(() => { /* silently ignore permission errors */ });
+  }, [expenses]);
 
   // ── Socket + lifecycle ────────────────────────────────────────────────────────
 
@@ -246,6 +290,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       responsibles: responsibles,
       budgets:      budgets,
       recurring:    recurring,
+      incomes:      incomes,
     };
 
     // Optimistic local removal
@@ -259,6 +304,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setBudgets(p => { const u = p.filter(b => b.id !== id); lsSet("budgets", u); return u; });
     } else if (table === "recurring_expenses") {
       setRecurring(p => { const u = p.filter(r => r.id !== id); lsSet("recurring", u); return u; });
+    } else if (table === "incomes") {
+      setIncomes(p => { const u = p.filter(i => i.id !== id); lsSet("incomes", u); return u; });
     }
 
     if (!navigator.onLine) {
@@ -275,6 +322,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setResponsibles(snap.responsibles);
         setBudgets(snap.budgets);
         setRecurring(snap.recurring);
+        setIncomes(snap.incomes);
         addToast("error", data.error ?? "Erro ao excluir.");
       } else {
         addToast("success", "Item excluído.");
@@ -282,7 +330,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } catch {
       addToast("error", "Erro de conexão ao excluir.");
     }
-  }, [expenses, categories, responsibles, budgets, recurring, addToast]);
+  }, [expenses, categories, responsibles, budgets, recurring, incomes, addToast]);
 
   const togglePaid = useCallback((id: string) => {
     setExpenses(prev => {
@@ -347,11 +395,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addToast("success", isEdit ? "Recorrente atualizado!" : "Recorrente adicionado!");
   }, [syncWithServer, addToast]);
 
+  const saveIncome = useCallback((inc: Income, isEdit: boolean) => {
+    setIncomes(prev => {
+      const updated = isEdit
+        ? prev.map(i => i.id === inc.id ? inc : i)
+        : [...prev, inc];
+      lsSet("incomes", updated);
+      syncWithServer({ incomes: updated });
+      return updated;
+    });
+    addToast("success", isEdit ? "Entrada atualizada!" : "Entrada adicionada!");
+  }, [syncWithServer, addToast]);
+
   const value: DataContextValue = {
-    expenses, categories, responsibles, profile, budgets, recurring,
+    expenses, categories, responsibles, profile, budgets, recurring, incomes,
     isOnline, isConnected, toasts,
     saveExpense, deleteItem, togglePaid, saveProfile,
-    saveCategory, saveResponsible, saveBudget, saveRecurring,
+    saveCategory, saveResponsible, saveBudget, saveRecurring, saveIncome,
     readPhoto, addToast, dismissToast,
   };
 

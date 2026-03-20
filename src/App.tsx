@@ -3,6 +3,7 @@ import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
+  TrendingUp, Bell,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency } from "./lib/utils";
@@ -10,14 +11,15 @@ import Toast from "./components/Toast";
 import Dashboard from "./components/Dashboard";
 import ExpenseList from "./components/ExpenseList";
 import FutureExpenses from "./components/FutureExpenses";
+import Incomes from "./components/Incomes";
 import Settings from "./components/Settings";
 
-type Tab = "menu" | "overview" | "expenses" | "futures" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "settings";
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, expenses, recurring } = useData();
+  const { profile, isOnline, isConnected, expenses, recurring, incomes } = useData();
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   const [drillResp,  setDrillResp]  = useState<string>("");
 
@@ -32,10 +34,17 @@ function Shell() {
     .filter(e => e.due_date?.startsWith(mm) && !e.paid)
     .reduce((s, e) => s + e.value, 0);
 
-  const today = now.toISOString().slice(0, 10);
+  const today   = now.toISOString().slice(0, 10);
+  const in7days = new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
 
   const futureCount = expenses.filter(e => {
     try { return !e.paid && e.due_date > today; }
+    catch { return false; }
+  }).length;
+
+  // Expenses due within the next 7 days (urgent alert)
+  const urgentFutureCount = expenses.filter(e => {
+    try { return !e.paid && e.due_date > today && e.due_date <= in7days; }
     catch { return false; }
   }).length;
 
@@ -50,6 +59,13 @@ function Shell() {
 
   const recurringCount = recurring.filter(r => r.active).length;
 
+  // Income for current month
+  const incomeMonth = incomes
+    .filter(i => i.date?.startsWith(mm))
+    .reduce((s, i) => s + i.value, 0);
+
+  const balanceMonth = incomeMonth - totalMonth;
+
   const handleDrillResponsible = (respId: string) => {
     setDrillResp(respId);
     setActiveTab("expenses");
@@ -61,10 +77,11 @@ function Shell() {
   };
 
   const MenuButton = ({
-    icon: Icon, title, subtitle, onClick, colorClass, badge,
+    icon: Icon, title, subtitle, onClick, colorClass, badge, badgeUrgent, alertIcon,
   }: {
     icon: React.ElementType; title: string; subtitle: string;
-    onClick: () => void; colorClass: string; badge?: number;
+    onClick: () => void; colorClass: string;
+    badge?: number; badgeUrgent?: boolean; alertIcon?: boolean;
   }) => (
     <button
       onClick={onClick}
@@ -72,15 +89,30 @@ function Shell() {
     >
       <div className={cn("p-4 rounded-2xl text-white shadow-lg transition-transform group-hover:scale-110 relative", colorClass)}>
         <Icon size={32} />
+        {/* Numeric badge — amber when urgent, red otherwise */}
         {badge !== undefined && badge > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center">
+          <span className={cn(
+            "absolute -top-1.5 -right-1.5 w-5 h-5 text-white text-[10px] font-black rounded-full flex items-center justify-center",
+            badgeUrgent ? "bg-amber-500" : "bg-red-500",
+          )}>
             {badge > 9 ? "9+" : badge}
+          </span>
+        )}
+        {/* Bell icon overlay for urgent alert */}
+        {alertIcon && (
+          <span className="absolute -top-2 -left-2 bg-amber-400 text-white p-0.5 rounded-full shadow animate-pulse">
+            <Bell size={10} />
           </span>
         )}
       </div>
       <div className="flex-1">
         <h3 className="text-lg font-black tracking-tighter uppercase">{title}</h3>
         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{subtitle}</p>
+        {badgeUrgent && badge !== undefined && badge > 0 && (
+          <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-0.5">
+            ⚠ {badge} vence{badge > 1 ? "m" : ""} em até 7 dias
+          </p>
+        )}
       </div>
       <ChevronRight className="text-slate-300 group-hover:text-slate-600 transition-colors" />
     </button>
@@ -152,10 +184,38 @@ function Shell() {
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Pendentes</p>
                       <p className="text-xl font-black">R$ {formatCurrency(pendingMonth)}</p>
                     </div>
-                    {futureCount > 0 && (
+                    {incomeMonth > 0 && (
                       <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
-                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Futuras</p>
-                        <p className="text-xl font-black">{futureCount}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Entradas</p>
+                        <p className="text-xl font-black">R$ {formatCurrency(incomeMonth)}</p>
+                      </div>
+                    )}
+                    {incomeMonth > 0 && (
+                      <div className={cn(
+                        "backdrop-blur-md p-3 rounded-2xl border",
+                        balanceMonth >= 0
+                          ? "bg-white/20 border-white/20"
+                          : "bg-red-500/40 border-red-300/40",
+                      )}>
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Saldo</p>
+                        <p className="text-xl font-black">
+                          {balanceMonth >= 0 ? "+" : ""}R$ {formatCurrency(balanceMonth)}
+                        </p>
+                      </div>
+                    )}
+                    {futureCount > 0 && (
+                      <div className={cn(
+                        "backdrop-blur-md p-3 rounded-2xl border",
+                        urgentFutureCount > 0
+                          ? "bg-amber-500/40 border-amber-300/40"
+                          : "bg-white/20 border-white/0",
+                      )}>
+                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
+                          {urgentFutureCount > 0 ? "⚠ Vence em breve" : "Futuras"}
+                        </p>
+                        <p className="text-xl font-black">
+                          {urgentFutureCount > 0 ? urgentFutureCount : futureCount}
+                        </p>
                       </div>
                     )}
                     {recurringCount > 0 && (
@@ -180,7 +240,13 @@ function Shell() {
               <MenuButton icon={ListOrdered}   title="Minhas Despesas"   subtitle="Lista e Histórico"
                 onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500" />
               <MenuButton icon={CalendarClock} title="Despesas Futuras"  subtitle="Próximos vencimentos"
-                onClick={() => handleTabChange("futures")}   colorClass="bg-violet-500" badge={futureCount} />
+                onClick={() => handleTabChange("futures")}   colorClass="bg-violet-500"
+                badge={futureCount}
+                badgeUrgent={urgentFutureCount > 0}
+                alertIcon={urgentFutureCount > 0}
+              />
+              <MenuButton icon={TrendingUp}    title="Entradas / Receitas" subtitle="Salário e rendas"
+                onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
                 onClick={() => handleTabChange("settings")}  colorClass="bg-slate-700" />
             </div>
@@ -193,6 +259,7 @@ function Shell() {
             <ExpenseList initialResponsibleFilter={drillResp} />
           )}
           {activeTab === "futures"  && <FutureExpenses />}
+          {activeTab === "incomes"  && <Incomes />}
           {activeTab === "settings" && <Settings />}
         </AnimatePresence>
       </main>
