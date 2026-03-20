@@ -159,23 +159,24 @@ export default function FutureExpenses() {
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => togglePaid(e.id)}
-                            className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold uppercase tracking-widest rounded-full hover:bg-emerald-100 transition-colors"
+                            title="Marcar como pago"
+                            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                           >
-                            Pagar
+                            <CheckCircle2 size={15} />
                           </button>
                           <button
                             onClick={() => setEditingExp(e)}
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                             title="Editar"
                           >
-                            <Edit2 size={13} />
+                            <Edit2 size={15} />
                           </button>
                           <button
                             onClick={() => setConfirmId(e.id)}
                             className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             title="Excluir"
                           >
-                            <Trash2 size={13} />
+                            <Trash2 size={15} />
                           </button>
                         </div>
                       </div>

@@ -6,7 +6,7 @@ import { io, Socket } from "socket.io-client";
 import { format } from "date-fns";
 import {
   Category, Responsible, Expense, UserProfile,
-  Budget, RecurringExpense, Income, ToastMessage,
+  Budget, RecurringExpense, Income, IncomeType, ToastMessage,
 } from "../types";
 import { generateId, compressImage } from "../lib/utils";
 
@@ -21,6 +21,7 @@ interface DataContextValue {
   budgets:      Budget[];
   recurring:    RecurringExpense[];
   incomes:      Income[];
+  incomeTypes:  IncomeType[];
   isOnline:     boolean;
   isConnected:  boolean;
   toasts:       ToastMessage[];
@@ -35,6 +36,7 @@ interface DataContextValue {
   saveBudget:       (budget: Budget) => void;
   saveRecurring:    (rec: RecurringExpense, isEdit: boolean) => void;
   saveIncome:       (inc: Income, isEdit: boolean) => void;
+  saveIncomeType:   (it: IncomeType, isEdit: boolean) => void;
   readPhoto:        (file: File) => Promise<string>;
   addToast:         (type: ToastMessage["type"], message: string) => void;
   dismissToast:     (id: string) => void;
@@ -70,6 +72,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [recurring,    setRecurring]    = useState<RecurringExpense[]>([]);
   const [incomes,      setIncomes]      = useState<Income[]>([]);
+  const [incomeTypes,  setIncomeTypes]  = useState<IncomeType[]>([]);
   const [isOnline,     setIsOnline]     = useState(navigator.onLine);
   const [isConnected,  setIsConnected]  = useState(false);
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
@@ -100,6 +103,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     budgets?: Budget[];
     recurring?: RecurringExpense[];
     incomes?: Income[];
+    incomeTypes?: IncomeType[];
   }) => {
     if (!navigator.onLine) return;
     try {
@@ -173,6 +177,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setBudgets(data.budgets ?? []);
       setRecurring(data.recurring ?? []);
       setIncomes(data.incomes ?? []);
+      setIncomeTypes(data.incomeTypes ?? []);
 
       // Persist to localStorage for offline use
       lsSet("expenses",     exps);
@@ -182,6 +187,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       lsSet("budgets",      data.budgets);
       lsSet("recurring",    data.recurring);
       lsSet("incomes",      data.incomes);
+      lsSet("incomeTypes",  data.incomeTypes);
     } catch (err) {
       console.error("Fetch failed, using local data", err);
       setExpenses(    lsGet("expenses",     []));
@@ -192,6 +198,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setBudgets( lsGet("budgets",  []));
       setRecurring(lsGet("recurring", []));
       setIncomes(  lsGet("incomes",  []));
+      setIncomeTypes(lsGet("incomeTypes", []));
     }
   }, [applyRecurring, syncWithServer]);
 
@@ -291,6 +298,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       budgets:      budgets,
       recurring:    recurring,
       incomes:      incomes,
+      incomeTypes:  incomeTypes,
     };
 
     // Optimistic local removal
@@ -306,6 +314,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecurring(p => { const u = p.filter(r => r.id !== id); lsSet("recurring", u); return u; });
     } else if (table === "incomes") {
       setIncomes(p => { const u = p.filter(i => i.id !== id); lsSet("incomes", u); return u; });
+    } else if (table === "income_types") {
+      setIncomeTypes(p => { const u = p.filter(it => it.id !== id); lsSet("incomeTypes", u); return u; });
     }
 
     if (!navigator.onLine) {
@@ -323,6 +333,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setBudgets(snap.budgets);
         setRecurring(snap.recurring);
         setIncomes(snap.incomes);
+        setIncomeTypes(snap.incomeTypes);
         addToast("error", data.error ?? "Erro ao excluir.");
       } else {
         addToast("success", "Item excluído.");
@@ -330,7 +341,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } catch {
       addToast("error", "Erro de conexão ao excluir.");
     }
-  }, [expenses, categories, responsibles, budgets, recurring, incomes, addToast]);
+  }, [expenses, categories, responsibles, budgets, recurring, incomes, incomeTypes, addToast]);
 
   const togglePaid = useCallback((id: string) => {
     setExpenses(prev => {
@@ -407,11 +418,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addToast("success", isEdit ? "Entrada atualizada!" : "Entrada adicionada!");
   }, [syncWithServer, addToast]);
 
+  const saveIncomeType = useCallback((it: IncomeType, isEdit: boolean) => {
+    setIncomeTypes(prev => {
+      const updated = isEdit
+        ? prev.map(t => t.id === it.id ? it : t)
+        : [...prev, it];
+      lsSet("incomeTypes", updated);
+      syncWithServer({ incomeTypes: updated });
+      return updated;
+    });
+    addToast("success", isEdit ? "Tipo atualizado!" : "Tipo adicionado!");
+  }, [syncWithServer, addToast]);
+
   const value: DataContextValue = {
-    expenses, categories, responsibles, profile, budgets, recurring, incomes,
+    expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes,
     isOnline, isConnected, toasts,
     saveExpense, deleteItem, togglePaid, saveProfile,
-    saveCategory, saveResponsible, saveBudget, saveRecurring, saveIncome,
+    saveCategory, saveResponsible, saveBudget, saveRecurring, saveIncome, saveIncomeType,
     readPhoto, addToast, dismissToast,
   };
 

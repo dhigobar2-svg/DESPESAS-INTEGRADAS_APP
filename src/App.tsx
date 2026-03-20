@@ -180,8 +180,15 @@ function Shell() {
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Total Mês</p>
                       <p className="text-xl font-black">R$ {formatCurrency(totalMonth)}</p>
                     </div>
-                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Pendentes</p>
+                    <div className={cn(
+                      "backdrop-blur-md p-3 rounded-2xl border",
+                      pendingMonth > 0
+                        ? "bg-red-500/40 border-red-300/40"
+                        : "bg-white/20 border-white/0",
+                    )}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
+                        {pendingMonth > 0 ? "⚠ Pendentes" : "Pendentes"}
+                      </p>
                       <p className="text-xl font-black">R$ {formatCurrency(pendingMonth)}</p>
                     </div>
                     {incomeMonth > 0 && (

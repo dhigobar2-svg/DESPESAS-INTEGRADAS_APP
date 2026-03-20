@@ -91,7 +91,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       id:    r.id,
       name:  r.name,
       value: monthExp.filter(e => e.responsible_id === r.id).reduce((s, e) => s + e.value, 0),
-    })).filter(d => d.value > 0);
+    })).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
 
     const top5Individual = [...monthExp]
       .sort((a, b) => b.value - a.value)
@@ -744,7 +744,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                   <YAxis fontSize={10} hide />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="Entradas" fill="#14b8a6" radius={[4, 4, 0, 0]}>
+                  <Bar dataKey="Entradas" fill="#10b981" radius={[4, 4, 0, 0]}>
                     <LabelList dataKey="Entradas" position="top" fontSize={9} fontWeight={700}
                       formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
                   </Bar>
