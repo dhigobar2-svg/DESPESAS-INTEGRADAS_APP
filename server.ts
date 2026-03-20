@@ -74,6 +74,18 @@ db.exec(`
     pin TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS incomes (
+    id TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    value REAL NOT NULL,
+    date TEXT NOT NULL,
+    type TEXT DEFAULT 'outro',
+    responsible_id TEXT,
+    notes TEXT,
+    recurring INTEGER DEFAULT 0,
+    FOREIGN KEY(responsible_id) REFERENCES responsibles(id) ON DELETE SET NULL
+  );
+
   INSERT OR IGNORE INTO categories (id, name, color) VALUES
     ('1', 'Alimentação', '#ef4444'),
     ('2', 'Transporte', '#3b82f6'),
@@ -98,6 +110,7 @@ const ALLOWED_COLUMNS: Record<string, string[]> = {
   responsibles:        ["id", "name", "photo"],
   budgets:             ["id", "category_id", "month", "limit_value"],
   recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active"],
+  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring"],
 };
 
 // Safe upsert: only uses whitelisted columns
@@ -138,18 +151,20 @@ async function startServer() {
     const budgets      = db.prepare("SELECT * FROM budgets").all();
     const recurring    = db.prepare("SELECT * FROM recurring_expenses ORDER BY description").all();
     const users        = db.prepare("SELECT id, name FROM users ORDER BY name").all();
-    res.json({ expenses, categories, responsibles, profile, budgets, recurring, users });
+    const incomes      = db.prepare("SELECT * FROM incomes ORDER BY date DESC").all();
+    res.json({ expenses, categories, responsibles, profile, budgets, recurring, users, incomes });
   });
 
   // POST /api/sync — validated upsert of all client state
   app.post("/api/sync", (req, res) => {
-    const { expenses, categories, responsibles, profile, budgets, recurring } = req.body;
+    const { expenses, categories, responsibles, profile, budgets, recurring, incomes } = req.body;
     try {
       if (categories?.length)   syncItems("categories",         categories);
       if (responsibles?.length) syncItems("responsibles",       responsibles);
       if (expenses?.length)     syncItems("expenses",           expenses);
       if (budgets?.length)      syncItems("budgets",            budgets);
       if (recurring?.length)    syncItems("recurring_expenses", recurring);
+      if (incomes?.length)      syncItems("incomes",            incomes);
 
       if (profile && typeof profile === "object") {
         const p = profile as Record<string, unknown>;
@@ -168,7 +183,7 @@ async function startServer() {
   // DELETE /api/:table/:id
   app.delete("/api/:table/:id", (req, res) => {
     const { table, id } = req.params;
-    const validTables = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses"];
+    const validTables = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes"];
     if (!validTables.includes(table)) {
       return res.status(400).json({ error: "Tabela inválida." });
     }
@@ -188,7 +203,7 @@ async function startServer() {
   // POST /api/delete/:table/:id — fallback for environments that block HTTP DELETE
   app.post("/api/delete/:table/:id", (req, res) => {
     const { table, id } = req.params;
-    const validTables = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses"];
+    const validTables = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes"];
     if (!validTables.includes(table)) {
       return res.status(400).json({ error: "Tabela inválida." });
     }

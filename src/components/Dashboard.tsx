@@ -22,7 +22,7 @@ interface Props {
 }
 
 export default function Dashboard({ onDrillResponsible }: Props) {
-  const { expenses, categories, responsibles, budgets, recurring } = useData();
+  const { expenses, categories, responsibles, budgets, recurring, incomes } = useData();
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [showModal,     setShowModal]     = useState(false);
 
@@ -213,6 +213,48 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       })
       .sort((a, b) => a.due_date.localeCompare(b.due_date));
   }, [expenses]);
+
+  // ── Income for selected month ─────────────────────────────────────────────────
+  const monthIncomeTotal = useMemo(() => {
+    const start = startOfMonth(selectedMonth);
+    const end   = endOfMonth(selectedMonth);
+    return incomes
+      .filter(i => {
+        try { return isWithinInterval(parseISO(i.date), { start, end }); }
+        catch { return false; }
+      })
+      .reduce((s, i) => s + i.value, 0);
+  }, [incomes, selectedMonth]);
+
+  const monthBalance = monthIncomeTotal - stats.totalMonth;
+
+  // ── Income vs Expenses — last 6 months ───────────────────────────────────────
+  const incomeVsExpenses = useMemo(() => {
+    return Array.from({ length: 6 }, (_, i) => {
+      const month = subMonths(new Date(), 5 - i);
+      const start = startOfMonth(month);
+      const end   = endOfMonth(month);
+      const exp = expenses
+        .filter(e => {
+          try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
+          catch { return false; }
+        })
+        .reduce((s, e) => s + e.value, 0);
+      const inc = incomes
+        .filter(inc => {
+          try { return isWithinInterval(parseISO(inc.date), { start, end }); }
+          catch { return false; }
+        })
+        .reduce((s, inc) => s + inc.value, 0);
+      return {
+        name:    format(month, "MMM/yy", { locale: ptBR }),
+        Entradas: inc,
+        Saídas:   exp,
+      };
+    });
+  }, [expenses, incomes]);
+
+  const hasIncomeData = incomeVsExpenses.some(d => d.Entradas > 0);
 
   // ── Category trend: top 4 cats, last 6 months ────────────────────────────────
   const categoryTrend = useMemo(() => {
@@ -441,6 +483,39 @@ export default function Dashboard({ onDrillResponsible }: Props) {
             </p>
           </div>
         )}
+
+        {/* Entradas do mês */}
+        {monthIncomeTotal > 0 && (
+          <div className="card p-5 col-span-2">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Entradas do Mês</p>
+            <p className="text-2xl font-black tracking-tighter text-teal-600">
+              R$ {formatCurrency(monthIncomeTotal)}
+            </p>
+            <div className={`flex items-center gap-1 mt-1 text-[10px] font-bold ${monthBalance >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+              <span>
+                Saldo: {monthBalance >= 0 ? "+" : ""}R$ {formatCurrency(monthBalance)}
+              </span>
+            </div>
+            {stats.totalMonth > 0 && monthIncomeTotal > 0 && (
+              <div className="mt-3">
+                <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5">
+                  <span>Comprometimento</span>
+                  <span>{Math.min((stats.totalMonth / monthIncomeTotal) * 100, 999).toFixed(0)}% da renda</span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all ${
+                      stats.totalMonth / monthIncomeTotal > 0.9 ? "bg-red-500"
+                      : stats.totalMonth / monthIncomeTotal > 0.7 ? "bg-amber-400"
+                      : "bg-emerald-500"
+                    }`}
+                    style={{ width: `${Math.min((stats.totalMonth / monthIncomeTotal) * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Budget progress ────────────────────────────────────────────────────── */}
@@ -652,6 +727,36 @@ export default function Dashboard({ onDrillResponsible }: Props) {
             </div>
           );
         })()}
+
+        {/* Entradas vs Saídas — últimos 6 meses */}
+        {hasIncomeData && (
+          <div className="card p-6 md:col-span-2">
+            <div className="flex items-center gap-2 mb-6">
+              <TrendingUp size={16} className="text-teal-500" />
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                Entradas vs Saídas — Últimos 6 Meses
+              </h3>
+            </div>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={incomeVsExpenses} margin={{ top: 20, right: 8, left: 0, bottom: 0 }}>
+                  <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
+                  <YAxis fontSize={10} hide />
+                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Entradas" fill="#14b8a6" radius={[4, 4, 0, 0]}>
+                    <LabelList dataKey="Entradas" position="top" fontSize={9} fontWeight={700}
+                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
+                  </Bar>
+                  <Bar dataKey="Saídas" fill="#f87171" radius={[4, 4, 0, 0]}>
+                    <LabelList dataKey="Saídas" position="top" fontSize={9} fontWeight={700}
+                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
 
         {/* Histórico 12 meses com linha de média */}
         <div className="card p-6 md:col-span-2">

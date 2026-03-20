@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, subMonths, getYear } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Plus, FileText, Share2, Search, Trash2, Edit2,
@@ -68,6 +68,23 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
   const filteredTotal = filtered.reduce((s, e) => s + e.value, 0);
 
   const resetPage = () => setPage(1);
+
+  // ── Quick period shortcuts ─────────────────────────────────────────────────────
+  const setQuickPeriod = (preset: "thisMonth" | "lastMonth" | "thisYear") => {
+    const now = new Date();
+    if (preset === "thisMonth") {
+      setFilterDateFrom(format(startOfMonth(now), "yyyy-MM-dd"));
+      setFilterDateTo(format(endOfMonth(now), "yyyy-MM-dd"));
+    } else if (preset === "lastMonth") {
+      const prev = subMonths(now, 1);
+      setFilterDateFrom(format(startOfMonth(prev), "yyyy-MM-dd"));
+      setFilterDateTo(format(endOfMonth(prev), "yyyy-MM-dd"));
+    } else if (preset === "thisYear") {
+      setFilterDateFrom(`${getYear(now)}-01-01`);
+      setFilterDateTo(`${getYear(now)}-12-31`);
+    }
+    resetPage();
+  };
 
   // ── Export PDF ────────────────────────────────────────────────────────────────
   const generatePDF = () => {
@@ -182,6 +199,23 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
             value={search} onChange={e => { setSearch(e.target.value); resetPage(); }}
             className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
           />
+        </div>
+
+        {/* Quick period shortcuts */}
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { label: "Este mês",   preset: "thisMonth"  as const },
+            { label: "Mês ant.",   preset: "lastMonth"  as const },
+            { label: "Este ano",   preset: "thisYear"   as const },
+          ].map(({ label, preset }) => (
+            <button
+              key={preset}
+              onClick={() => setQuickPeriod(preset)}
+              className="px-3 py-1.5 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-emerald-100 hover:text-emerald-700 transition-colors"
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

@@ -46,6 +46,17 @@ export interface RecurringExpense {
   active: number; // 0 | 1
 }
 
+export interface Income {
+  id: string;
+  description: string;
+  value: number;
+  date: string;         // yyyy-MM-dd
+  type: string;         // 'salario' | 'renda_extra' | 'outro'
+  responsible_id?: string;
+  notes?: string;
+  recurring: number;    // 0 | 1
+}
+
 export type ToastType = "success" | "error" | "info";
 
 export interface ToastMessage {
