@@ -10,7 +10,7 @@ import {
 import { ptBR } from "date-fns/locale";
 import {
   ChevronLeft, ChevronRight, Plus, TrendingDown, TrendingUp,
-  AlertCircle, Bell, ArrowUpRight, ArrowDownRight, Minus, AlertTriangle,
+  AlertCircle, ArrowUpRight, ArrowDownRight, Minus, AlertTriangle,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
@@ -199,21 +199,6 @@ export default function Dashboard({ onDrillResponsible }: Props) {
 
   const overdueTotal = overdue.reduce((s, e) => s + e.value, 0);
 
-  // ── Upcoming due dates (next 7 days, unpaid) ──────────────────────────────────
-  const upcoming = useMemo(() => {
-    const today   = startOfToday();
-    const in7days = new Date(today.getTime() + 7 * 86_400_000);
-    return expenses
-      .filter(e => {
-        if (e.paid) return false;
-        try {
-          const d = parseISO(e.due_date);
-          return d >= today && d <= in7days;
-        } catch { return false; }
-      })
-      .sort((a, b) => a.due_date.localeCompare(b.due_date));
-  }, [expenses]);
-
   // ── Income for selected month ─────────────────────────────────────────────────
   const monthIncomeTotal = useMemo(() => {
     const start = startOfMonth(selectedMonth);
@@ -343,48 +328,6 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                 + {overdue.length - 5} mais vencida{overdue.length - 5 > 1 ? "s" : ""}
               </p>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Upcoming alerts (próximos 7 dias) ────────────────────────────────── */}
-      {upcoming.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Bell size={14} className="text-amber-600" />
-            <h3 className="text-xs font-black uppercase tracking-widest text-amber-700">
-              Vencimentos nos Próximos 7 Dias
-            </h3>
-          </div>
-          <div className="space-y-2">
-            {upcoming.map(e => {
-              const cat     = categories.find(c => c.id === e.category_id);
-              const resp    = responsibles.find(r => r.id === e.responsible_id);
-              const dueDate = parseISO(e.due_date);
-              const days    = differenceInDays(dueDate, startOfToday());
-              return (
-                <div key={e.id} className="flex items-center justify-between gap-2 bg-white/60 rounded-xl px-3 py-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className={cn(
-                      "w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-black shrink-0",
-                      days === 0 ? "bg-red-500" : days <= 2 ? "bg-orange-500" : "bg-amber-500",
-                    )}>
-                      {dueDate.getDate()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate">{e.description}</p>
-                      <p className="text-[10px] text-slate-500">{cat?.name} · {resp?.name}</p>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-black text-slate-800">R$ {formatCurrency(e.value)}</p>
-                    <p className={cn("text-[10px] font-bold", days === 0 ? "text-red-600" : "text-amber-600")}>
-                      {days === 0 ? "Hoje!" : days === 1 ? "Amanhã" : `Em ${days} dias`}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
       )}
