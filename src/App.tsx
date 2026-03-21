@@ -92,6 +92,7 @@ function Shell() {
   const handleTabChange = (tab: Tab) => {
     if (tab !== "expenses") setDrillResp("");
     setActiveTab(tab);
+    window.scrollTo(0, 0);
   };
 
   const MenuButton = ({

@@ -190,20 +190,23 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <div className="flex items-center gap-1.5 col-span-2 md:col-span-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0">De</span>
-            <input
-              type="date" value={filterDateFrom}
-              onChange={e => { setFilterDateFrom(e.target.value); resetPage(); }}
-              className="input py-2 text-xs flex-1 min-w-0"
-            />
-            <span className="text-slate-300 font-bold shrink-0 text-xs">→</span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest shrink-0">Até</span>
-            <input
-              type="date" value={filterDateTo}
-              onChange={e => { setFilterDateTo(e.target.value); resetPage(); }}
-              className="input py-2 text-xs flex-1 min-w-0"
-            />
+          <div className="flex gap-2 col-span-2 md:col-span-2">
+            <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-emerald-400 transition-colors">
+              <span className="pl-3 pr-1.5 text-sm font-medium text-slate-400 shrink-0 select-none">De</span>
+              <input
+                type="date" value={filterDateFrom}
+                onChange={e => { setFilterDateFrom(e.target.value); resetPage(); }}
+                className="flex-1 py-2.5 pr-3 bg-transparent text-sm text-slate-700 outline-none min-w-0"
+              />
+            </div>
+            <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500/30 focus-within:border-emerald-400 transition-colors">
+              <span className="pl-3 pr-1.5 text-sm font-medium text-slate-400 shrink-0 select-none">Até</span>
+              <input
+                type="date" value={filterDateTo}
+                onChange={e => { setFilterDateTo(e.target.value); resetPage(); }}
+                className="flex-1 py-2.5 pr-3 bg-transparent text-sm text-slate-700 outline-none min-w-0"
+              />
+            </div>
           </div>
 
           <select value={filterCat} onChange={e => { setFilterCat(e.target.value); resetPage(); }}
