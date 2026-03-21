@@ -727,34 +727,33 @@ export default function Dashboard({ onDrillResponsible }: Props) {
         })()}
 
         {/* Entradas vs Saídas — últimos 6 meses */}
-        {(
-          <div className="card p-6 md:col-span-2">
-            <div className="flex items-center gap-2 mb-6">
-              <TrendingUp size={16} className="text-teal-500" />
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                Entradas vs Saídas — Últimos 6 Meses
-              </h3>
-            </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={incomeVsExpenses} margin={{ top: 20, right: 8, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
-                  <YAxis fontSize={10} hide />
-                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="Entradas" fill="#10b981" radius={[4, 4, 0, 0]}>
-                    <LabelList dataKey="Entradas" position="top" fontSize={9} fontWeight={700}
-                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
-                  </Bar>
-                  <Bar dataKey="Saídas" fill="#f87171" radius={[4, 4, 0, 0]}>
-                    <LabelList dataKey="Saídas" position="top" fontSize={9} fontWeight={700}
-                      formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+        <div className="card p-6 md:col-span-2">
+          <div className="flex items-center gap-2 mb-6">
+            <TrendingUp size={16} className="text-teal-500" />
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
+              Entradas vs Saídas — Últimos 6 Meses
+            </h3>
           </div>
-        )}  {/* end Entradas vs Saídas */}
+          <div style={{ height: Math.max(260, incomeVsExpenses.length * 60) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={incomeVsExpenses} layout="vertical" margin={{ top: 4, right: 100, left: 8, bottom: 4 }}>
+                <XAxis type="number" fontSize={10} hide />
+                <YAxis dataKey="name" type="category" fontSize={11} fontWeight={600}
+                  axisLine={false} tickLine={false} width={55} />
+                <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Entradas" fill="#10b981" radius={[0, 4, 4, 0]}>
+                  <LabelList dataKey="Entradas" position="right" fontSize={9} fontWeight={700}
+                    formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
+                </Bar>
+                <Bar dataKey="Saídas" fill="#f87171" radius={[0, 4, 4, 0]}>
+                  <LabelList dataKey="Saídas" position="right" fontSize={9} fontWeight={700}
+                    formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
 
         {/* Histórico 12 meses com linha de média */}
         <div className="card p-6 md:col-span-2">
@@ -771,32 +770,28 @@ export default function Dashboard({ onDrillResponsible }: Props) {
               </span>
             )}
           </div>
-          <div className="h-64">
+          <div style={{ height: Math.max(320, annualData.length * 44) }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={annualData} margin={{ top: 28, right: 8 }}>
-                <XAxis dataKey="name" fontSize={11} axisLine={false} tickLine={false} />
-                <YAxis fontSize={10} hide />
+              <BarChart data={annualData} layout="vertical" margin={{ top: 4, right: 110, left: 8, bottom: 4 }}>
+                <XAxis type="number" fontSize={10} hide />
+                <YAxis dataKey="name" type="category" fontSize={11} fontWeight={600}
+                  axisLine={false} tickLine={false} width={38} />
                 <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                 {annualAvg > 0 && (
                   <ReferenceLine
-                    y={annualAvg}
+                    x={annualAvg}
                     stroke="#94a3b8"
                     strokeDasharray="5 3"
-                    label={{
-                      value: "Média",
-                      position: "insideTopRight",
-                      fontSize: 9,
-                      fill: "#94a3b8",
-                    }}
+                    label={{ value: "Média", position: "top", fontSize: 9, fill: "#94a3b8" }}
                   />
                 )}
-                <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                <Bar dataKey="total" radius={[0, 4, 4, 0]}>
                   {annualData.map((entry, i) => (
                     <Cell key={i} fill={entry.isCurrent ? "#10b981" : "#f87171"} />
                   ))}
                   <LabelList
                     dataKey="total"
-                    position="top"
+                    position="right"
                     fontSize={10}
                     fontWeight={700}
                     formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""}

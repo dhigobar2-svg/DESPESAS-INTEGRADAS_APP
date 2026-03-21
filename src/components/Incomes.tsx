@@ -126,30 +126,32 @@ export default function Incomes() {
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="card p-4">
-          <div className="flex items-center gap-1.5 mb-1">
-            <TrendingUp size={12} className="text-emerald-500" />
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entradas</p>
+      {/* Summary cards — triângulo: Despesas em cima, Entradas + Saldo embaixo */}
+      <div className="space-y-3">
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-1.5">
+            <ArrowDownRight size={14} className="text-red-500" />
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Despesas do mês</p>
           </div>
-          <p className="text-sm font-black text-emerald-600 truncate">R$ {formatCurrency(totalIncome)}</p>
+          <p className="text-xl font-black text-red-500">R$ {formatCurrency(monthExpenses)}</p>
         </div>
-        <div className="card p-4">
-          <div className="flex items-center gap-1.5 mb-1">
-            <ArrowDownRight size={12} className="text-red-500" />
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Despesas</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="card p-4">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <TrendingUp size={12} className="text-emerald-500" />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entradas</p>
+            </div>
+            <p className="text-base font-black text-emerald-600 truncate">R$ {formatCurrency(totalIncome)}</p>
           </div>
-          <p className="text-sm font-black text-red-500 truncate">R$ {formatCurrency(monthExpenses)}</p>
-        </div>
-        <div className="card p-4">
-          <div className="flex items-center gap-1.5 mb-1">
-            <Wallet size={12} className={balance >= 0 ? "text-emerald-600" : "text-red-500"} />
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saldo</p>
+          <div className="card p-4">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Wallet size={12} className={balance >= 0 ? "text-emerald-600" : "text-red-500"} />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saldo</p>
+            </div>
+            <p className={cn("text-base font-black truncate", balance >= 0 ? "text-emerald-600" : "text-red-500")}>
+              {balance >= 0 ? "+" : "-"}R$ {formatCurrency(Math.abs(balance))}
+            </p>
           </div>
-          <p className={cn("text-sm font-black truncate", balance >= 0 ? "text-emerald-600" : "text-red-500")}>
-            {balance >= 0 ? "" : "-"}R$ {formatCurrency(Math.abs(balance))}
-          </p>
         </div>
       </div>
 
