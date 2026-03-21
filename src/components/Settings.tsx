@@ -4,19 +4,19 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
 import {
   User, Tag, Users, Camera, Trash2, Edit2, Check, X,
-  RefreshCw, DollarSign, Plus, TrendingUp,
+  DollarSign, Plus, TrendingUp,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, cn } from "../lib/utils";
-import { Category, Responsible, Budget, RecurringExpense, IncomeType } from "../types";
+import { Category, Responsible, Budget, IncomeType } from "../types";
 import ConfirmModal from "./ConfirmModal";
 
 type DeleteTarget = { table: string; id: string; label: string } | null;
 
 export default function Settings() {
   const {
-    categories, responsibles, profile, budgets, recurring, incomeTypes,
-    saveProfile, saveCategory, saveResponsible, saveBudget, saveRecurring, saveIncomeType,
+    categories, responsibles, profile, budgets, incomeTypes,
+    saveProfile, saveCategory, saveResponsible, saveBudget, saveIncomeType,
     deleteItem, readPhoto,
   } = useData();
 
@@ -92,41 +92,6 @@ export default function Settings() {
       month:       budgetMonth,
       limit_value: limit,
     });
-  };
-
-  // ── Recurring ─────────────────────────────────────────────────────────────────
-  const [editingRecId,   setEditingRecId]   = useState<string | null>(null);
-  const [editRecForm,    setEditRecForm]    = useState<Partial<RecurringExpense>>({});
-
-  const startEditRec = (rec: RecurringExpense) => {
-    setEditingRecId(rec.id);
-    setEditRecForm({ ...rec });
-  };
-  const cancelEditRec = () => { setEditingRecId(null); setEditRecForm({}); };
-  const saveEditRec = () => {
-    if (!editingRecId || !editRecForm.description?.trim() || !editRecForm.value || !editRecForm.day_of_month) return;
-    saveRecurring(editRecForm as RecurringExpense, true);
-    cancelEditRec();
-  };
-
-  const handleAddRecurring = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const rec: RecurringExpense = {
-      id:             generateId(),
-      category_id:    fd.get("category")    as string,
-      description:    (fd.get("description") as string).trim(),
-      value:          parseFloat(fd.get("value") as string),
-      responsible_id: fd.get("responsible") as string,
-      day_of_month:   parseInt(fd.get("day") as string, 10),
-      active:         1,
-    };
-    saveRecurring(rec, false);
-    e.currentTarget.reset();
-  };
-
-  const toggleRecurringActive = (rec: RecurringExpense) => {
-    saveRecurring({ ...rec, active: rec.active ? 0 : 1 }, true);
   };
 
   // ── Income Types ──────────────────────────────────────────────────────────────
@@ -327,166 +292,6 @@ export default function Settings() {
             );
           })}
         </div>
-      </section>
-
-      {/* ── Recurring expenses ────────────────────────────────────────────────── */}
-      <section className="card p-6">
-        <h3 className="section-title"><RefreshCw size={16} /> Despesas Recorrentes</h3>
-        {recurring.length > 0 && (() => {
-          const activeRec = recurring.filter(r => r.active);
-          const totalMonthly = activeRec.reduce((s, r) => s + r.value, 0);
-          return (
-            <div className="flex gap-2 mb-4">
-              <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-0.5">Ativas</p>
-                <p className="text-lg font-black text-orange-700">{activeRec.length}</p>
-              </div>
-              <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-0.5">Total/mês</p>
-                <p className="text-lg font-black text-orange-700">R$ {totalMonthly.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-              </div>
-              <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-3 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-0.5">Total/ano</p>
-                <p className="text-lg font-black text-orange-700">R$ {(totalMonthly * 12).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-              </div>
-            </div>
-          );
-        })()}
-        <p className="text-xs text-slate-500 mb-4">
-          São lançadas automaticamente todo mês no dia configurado.
-        </p>
-        <div className="space-y-2 mb-5">
-          {recurring.map(rec => {
-            const cat  = categories.find(c => c.id === rec.category_id);
-            const resp = responsibles.find(r => r.id === rec.responsible_id);
-
-            if (editingRecId === rec.id) {
-              return (
-                <div key={rec.id} className="p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="col-span-2">
-                      <label className="label">Descrição</label>
-                      <input
-                        type="text" required className="input text-sm"
-                        value={editRecForm.description ?? ""}
-                        onChange={e => setEditRecForm(f => ({ ...f, description: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="label">Categoria</label>
-                      <select className="input text-sm py-2"
-                        value={editRecForm.category_id ?? ""}
-                        onChange={e => setEditRecForm(f => ({ ...f, category_id: e.target.value }))}>
-                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="label">Responsável</label>
-                      <select className="input text-sm py-2"
-                        value={editRecForm.responsible_id ?? ""}
-                        onChange={e => setEditRecForm(f => ({ ...f, responsible_id: e.target.value }))}>
-                        {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="label">Valor (R$)</label>
-                      <input type="number" step="0.01" min="0.01" className="input text-sm font-black"
-                        value={editRecForm.value ?? ""}
-                        onChange={e => setEditRecForm(f => ({ ...f, value: parseFloat(e.target.value) }))} />
-                    </div>
-                    <div>
-                      <label className="label">Dia do mês</label>
-                      <input type="number" min="1" max="28" className="input text-sm"
-                        value={editRecForm.day_of_month ?? ""}
-                        onChange={e => setEditRecForm(f => ({ ...f, day_of_month: parseInt(e.target.value, 10) }))} />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={cancelEditRec}
-                      className="flex-1 bg-slate-100 text-slate-600 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors flex items-center justify-center gap-1">
-                      <X size={13} /> Cancelar
-                    </button>
-                    <button onClick={saveEditRec}
-                      className="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1">
-                      <Check size={13} /> Salvar
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-
-            return (
-              <div key={rec.id} className={cn(
-                "flex items-center justify-between p-3 rounded-xl border",
-                rec.active ? "bg-slate-50 border-slate-100" : "bg-slate-50/50 border-slate-100 opacity-60",
-              )}>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold truncate">{rec.description}</p>
-                  <p className="text-[10px] text-slate-500 uppercase font-medium">
-                    Dia {rec.day_of_month} · {cat?.name ?? "—"} · {resp?.name ?? "—"} · R$ {rec.value.toFixed(2)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 ml-2 shrink-0">
-                  <button
-                    onClick={() => toggleRecurringActive(rec)}
-                    className={cn(
-                      "px-2 py-1 rounded-lg text-[10px] font-bold uppercase transition-colors",
-                      rec.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500",
-                    )}
-                  >
-                    {rec.active ? "Ativo" : "Inativo"}
-                  </button>
-                  <button onClick={() => startEditRec(rec)}
-                    className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
-                    title="Editar">
-                    <Edit2 size={14} />
-                  </button>
-                  <button onClick={() => setDeleteTarget({ table: "recurring_expenses", id: rec.id, label: rec.description })}
-                    className="p-1.5 text-slate-400 hover:text-red-600 transition-colors">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          {recurring.length === 0 && (
-            <p className="text-sm text-slate-400 text-center py-4">Nenhuma despesa recorrente cadastrada.</p>
-          )}
-        </div>
-
-        {/* Add recurring form */}
-        <form onSubmit={handleAddRecurring} className="space-y-3 border-t border-slate-100 pt-5">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="label">Descrição</label>
-              <input name="description" placeholder="Ex: Aluguel, Netflix…" required className="input text-sm" />
-            </div>
-            <div>
-              <label className="label">Categoria</label>
-              <select name="category" required className="input text-sm py-2">
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Responsável</label>
-              <select name="responsible" required className="input text-sm py-2">
-                {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                {responsibles.length === 0 && <option value="">—</option>}
-              </select>
-            </div>
-            <div>
-              <label className="label">Valor (R$)</label>
-              <input type="number" step="0.01" min="0.01" name="value" placeholder="0,00" required className="input text-sm font-black" />
-            </div>
-            <div>
-              <label className="label">Dia do mês</label>
-              <input type="number" name="day" min="1" max="28" placeholder="1–28" required className="input text-sm" />
-            </div>
-          </div>
-          <button type="submit" className="btn-primary w-full py-3">
-            Adicionar Recorrente
-          </button>
-        </form>
       </section>
 
       {/* ── Income Types ──────────────────────────────────────────────────────── */}
