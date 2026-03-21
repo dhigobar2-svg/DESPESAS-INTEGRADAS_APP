@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
 import { CheckCircle2, Clock, Plus, StickyNote, Edit2, Trash2, RefreshCw } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn } from "../lib/utils";
+import { formatCurrency, cn, generateId } from "../lib/utils";
 import { Expense } from "../types";
 import ExpenseModal from "./ExpenseModal";
 import ConfirmModal from "./ConfirmModal";
@@ -12,26 +12,32 @@ import ConfirmModal from "./ConfirmModal";
 type FutureEntry = Expense & { isVirtual?: boolean };
 
 export default function FutureExpenses() {
-  const { expenses, categories, responsibles, recurring, togglePaid, deleteItem } = useData();
-  const [showModal,   setShowModal]   = useState(false);
-  const [editingExp,  setEditingExp]  = useState<Expense | null>(null);
-  const [confirmId,   setConfirmId]   = useState<string | null>(null);
+  const { expenses, categories, responsibles, recurring, togglePaid, deleteItem, saveExpense } = useData();
+  const [showModal,      setShowModal]      = useState(false);
+  const [editingExp,     setEditingExp]     = useState<Expense | null>(null);
+  const [confirmId,      setConfirmId]      = useState<string | null>(null);
+  const [virtualDefaults, setVirtualDefaults] = useState<Partial<Expense> | null>(null);
 
   const today = startOfToday();
   const todayStr = format(today, "yyyy-MM-dd");
+  const currentMonthStr = format(today, "yyyy-MM");
+  const nextMonthStr = format(new Date(today.getFullYear(), today.getMonth() + 1, 1), "yyyy-MM");
 
   // All future unpaid expenses + virtual recurring entries sorted by due_date ascending
   const grouped = useMemo(() => {
     const future: FutureEntry[] = expenses
       .filter(e => {
-        try { return !e.paid && isAfter(parseISO(e.due_date), today); }
+        try {
+          const mo = e.due_date.slice(0, 7);
+          return !e.paid && isAfter(parseISO(e.due_date), today) && (mo === currentMonthStr || mo === nextMonthStr);
+        }
         catch { return false; }
       })
       .map(e => ({ ...e }));
 
-    // Add virtual recurring entries for upcoming months not yet auto-created
+    // Add virtual recurring entries for current and next month only
     for (const rec of recurring.filter(r => r.active)) {
-      for (let monthOffset = 0; monthOffset <= 2; monthOffset++) {
+      for (let monthOffset = 0; monthOffset <= 1; monthOffset++) {
         const d = new Date(today.getFullYear(), today.getMonth() + monthOffset, rec.day_of_month);
         if (d.getDate() !== rec.day_of_month) continue; // day overflow (e.g. Feb 31)
         const yr = String(d.getFullYear());
@@ -68,7 +74,7 @@ export default function FutureExpenses() {
       groups[month].push(e);
     }
     return groups;
-  }, [expenses, recurring, today, todayStr]);
+  }, [expenses, recurring, today, todayStr, currentMonthStr, nextMonthStr]);
 
   const totalFuture = useMemo(
     () => (Object.values(grouped) as FutureEntry[][]).flat().reduce((s: number, e: FutureEntry) => s + e.value, 0),
@@ -168,7 +174,7 @@ export default function FutureExpenses() {
                           {e.isVirtual && (
                             <span className="shrink-0 flex items-center gap-0.5 text-[9px] font-bold text-violet-500 bg-violet-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
                               <RefreshCw size={8} />
-                              Recorrente
+                              REC
                             </span>
                           )}
                         </div>
@@ -202,24 +208,49 @@ export default function FutureExpenses() {
                       {/* Value + actions */}
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <p className="text-sm font-black text-slate-900">R$ {formatCurrency(e.value)}</p>
-                        {e.isVirtual ? (
-                          <p className="text-[10px] text-violet-400 font-bold uppercase tracking-widest">Automático</p>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => togglePaid(e.id)}
-                              title="Marcar como pago"
-                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                            >
-                              <CheckCircle2 size={15} />
-                            </button>
-                            <button
-                              onClick={() => setEditingExp(e)}
-                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Editar"
-                            >
-                              <Edit2 size={15} />
-                            </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              if (e.isVirtual) {
+                                saveExpense({
+                                  id: generateId(),
+                                  category_id: e.category_id,
+                                  description: e.description,
+                                  date: todayStr,
+                                  due_date: e.due_date,
+                                  value: e.value,
+                                  responsible_id: e.responsible_id,
+                                  paid: 1,
+                                }, false);
+                              } else {
+                                togglePaid(e.id);
+                              }
+                            }}
+                            title="Marcar como pago"
+                            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                          >
+                            <CheckCircle2 size={15} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (e.isVirtual) {
+                                setVirtualDefaults({
+                                  category_id: e.category_id,
+                                  description: e.description,
+                                  due_date: e.due_date,
+                                  value: e.value,
+                                  responsible_id: e.responsible_id,
+                                });
+                              } else {
+                                setEditingExp(e);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Editar"
+                          >
+                            <Edit2 size={15} />
+                          </button>
+                          {!e.isVirtual && (
                             <button
                               onClick={() => setConfirmId(e.id)}
                               className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -227,8 +258,8 @@ export default function FutureExpenses() {
                             >
                               <Trash2 size={15} />
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -248,9 +279,10 @@ export default function FutureExpenses() {
       </button>
 
       <ExpenseModal
-        open={showModal || !!editingExp}
+        open={showModal || !!editingExp || !!virtualDefaults}
         editing={editingExp}
-        onClose={() => { setShowModal(false); setEditingExp(null); }}
+        defaultValues={virtualDefaults ?? undefined}
+        onClose={() => { setShowModal(false); setEditingExp(null); setVirtualDefaults(null); }}
       />
 
       <ConfirmModal
