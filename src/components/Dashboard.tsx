@@ -254,8 +254,6 @@ export default function Dashboard({ onDrillResponsible }: Props) {
     });
   }, [expenses, incomes]);
 
-  const hasIncomeData = incomeVsExpenses.some(d => d.Entradas > 0);
-
   // ── Category trend: top 4 cats, last 6 months ────────────────────────────────
   const categoryTrend = useMemo(() => {
     const topCats = categories
@@ -729,7 +727,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
         })()}
 
         {/* Entradas vs Saídas — últimos 6 meses */}
-        {hasIncomeData && (
+        {(
           <div className="card p-6 md:col-span-2">
             <div className="flex items-center gap-2 mb-6">
               <TrendingUp size={16} className="text-teal-500" />
@@ -756,7 +754,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
               </ResponsiveContainer>
             </div>
           </div>
-        )}
+        )}  {/* end Entradas vs Saídas */}
 
         {/* Histórico 12 meses com linha de média */}
         <div className="card p-6 md:col-span-2">
@@ -764,7 +762,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
             <div className="flex items-center gap-2">
               <TrendingDown size={16} className="text-slate-400" />
               <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                Histórico — Últimos 12 Meses
+                Histórico Despesas — Últimos 12 Meses
               </h3>
             </div>
             {annualAvg > 0 && (
@@ -794,7 +792,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                 )}
                 <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                   {annualData.map((entry, i) => (
-                    <Cell key={i} fill={entry.isCurrent ? "#10b981" : "#cbd5e1"} />
+                    <Cell key={i} fill={entry.isCurrent ? "#10b981" : "#f87171"} />
                   ))}
                   <LabelList
                     dataKey="total"

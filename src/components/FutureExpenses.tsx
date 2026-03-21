@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { format, parseISO, isAfter, startOfToday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
@@ -12,11 +12,14 @@ import ConfirmModal from "./ConfirmModal";
 type FutureEntry = Expense & { isVirtual?: boolean };
 
 export default function FutureExpenses() {
-  const { expenses, categories, responsibles, recurring, togglePaid, deleteItem, saveExpense } = useData();
-  const [showModal,      setShowModal]      = useState(false);
-  const [editingExp,     setEditingExp]     = useState<Expense | null>(null);
-  const [confirmId,      setConfirmId]      = useState<string | null>(null);
-  const [virtualDefaults, setVirtualDefaults] = useState<Partial<Expense> | null>(null);
+  const { expenses, categories, responsibles, recurring, togglePaid, deleteItem, saveExpense, saveRecurring } = useData();
+  const [showModal,        setShowModal]        = useState(false);
+  const [editingExp,       setEditingExp]       = useState<Expense | null>(null);
+  const [confirmId,        setConfirmId]        = useState<string | null>(null);
+  const [virtualDefaults,  setVirtualDefaults]  = useState<Partial<Expense> | null>(null);
+  const [virtualConfirmId, setVirtualConfirmId] = useState<string | null>(null);
+
+  useEffect(() => { window.scrollTo(0, 0); }, []);
 
   const today = startOfToday();
   const todayStr = format(today, "yyyy-MM-dd");
@@ -86,6 +89,12 @@ export default function FutureExpenses() {
 
   const confirmLabel = expenses.find(e => e.id === confirmId)?.description ?? "";
 
+  const virtualConfirmLabel = useMemo(() => {
+    if (!virtualConfirmId) return "";
+    const recId = virtualConfirmId.replace(/^virtual-/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
+    return recurring.find(r => r.id === recId)?.description ?? "";
+  }, [virtualConfirmId, recurring]);
+
   return (
     <motion.div
       key="futures"
@@ -100,15 +109,15 @@ export default function FutureExpenses() {
       <div className="grid grid-cols-3 gap-3">
         <div className="card p-4">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Previsto</p>
-          <p className="text-xl font-black text-red-500">R$ {formatCurrency(totalFuture)}</p>
+          <p className="text-sm font-black text-red-500">R$ {formatCurrency(totalFuture)}</p>
         </div>
         <div className="card p-4">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Despesas</p>
-          <p className="text-xl font-black text-slate-800">{expCount}</p>
+          <p className="text-sm font-black text-slate-800">{expCount}</p>
         </div>
         <div className="card p-4">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Meses</p>
-          <p className="text-xl font-black text-slate-800">{monthCount}</p>
+          <p className="text-sm font-black text-slate-800">{monthCount}</p>
         </div>
       </div>
 
@@ -250,15 +259,13 @@ export default function FutureExpenses() {
                           >
                             <Edit2 size={15} />
                           </button>
-                          {!e.isVirtual && (
-                            <button
-                              onClick={() => setConfirmId(e.id)}
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="Excluir"
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          )}
+                          <button
+                            onClick={() => e.isVirtual ? setVirtualConfirmId(e.id) : setConfirmId(e.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Excluir"
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -293,6 +300,20 @@ export default function FutureExpenses() {
           setConfirmId(null);
         }}
         onCancel={() => setConfirmId(null)}
+      />
+
+      <ConfirmModal
+        open={!!virtualConfirmId}
+        message={`Desativar a recorrente "${virtualConfirmLabel}"? Ela não será mais gerada nos próximos meses.`}
+        onConfirm={() => {
+          if (virtualConfirmId) {
+            const recId = virtualConfirmId.replace(/^virtual-/, "").replace(/-\d{4}-\d{2}-\d{2}$/, "");
+            const rec = recurring.find(r => r.id === recId);
+            if (rec) saveRecurring({ ...rec, active: 0 }, true);
+          }
+          setVirtualConfirmId(null);
+        }}
+        onCancel={() => setVirtualConfirmId(null)}
       />
     </motion.div>
   );
