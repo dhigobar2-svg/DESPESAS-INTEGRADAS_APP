@@ -3,7 +3,7 @@ import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
-  TrendingUp, Bell,
+  TrendingUp,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency } from "./lib/utils";
@@ -37,16 +37,34 @@ function Shell() {
   const today   = now.toISOString().slice(0, 10);
   const in7days = new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
 
+  // Virtual future dates from active recurring expenses (not yet auto-created as real expenses)
+  const virtualRecurringFutureDates: string[] = [];
+  for (const rec of recurring.filter(r => r.active)) {
+    for (let mo = 0; mo <= 2; mo++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + mo, rec.day_of_month);
+      if (d.getDate() !== rec.day_of_month) continue; // overflow (e.g. Feb 31)
+      const yr = String(d.getFullYear());
+      const mn = String(d.getMonth() + 1).padStart(2, "0");
+      const dy = String(d.getDate()).padStart(2, "0");
+      const dateStr = `${yr}-${mn}-${dy}`;
+      if (dateStr <= today) continue;
+      const alreadyExists = expenses.some(
+        e => !e.paid && e.description === rec.description && e.due_date === dateStr && e.value === rec.value,
+      );
+      if (!alreadyExists) virtualRecurringFutureDates.push(dateStr);
+    }
+  }
+
   const futureCount = expenses.filter(e => {
     try { return !e.paid && e.due_date > today; }
     catch { return false; }
-  }).length;
+  }).length + virtualRecurringFutureDates.length;
 
   // Expenses due within the next 7 days (urgent alert)
   const urgentFutureCount = expenses.filter(e => {
     try { return !e.paid && e.due_date > today && e.due_date <= in7days; }
     catch { return false; }
-  }).length;
+  }).length + virtualRecurringFutureDates.filter(d => d <= in7days).length;
 
   const overdueCount = expenses.filter(e => {
     try { return !e.paid && e.due_date < today; }
@@ -77,11 +95,11 @@ function Shell() {
   };
 
   const MenuButton = ({
-    icon: Icon, title, subtitle, onClick, colorClass, badge, badgeUrgent, alertIcon,
+    icon: Icon, title, subtitle, onClick, colorClass, badge, badgeUrgent, urgentCount,
   }: {
     icon: React.ElementType; title: string; subtitle: string;
     onClick: () => void; colorClass: string;
-    badge?: number; badgeUrgent?: boolean; alertIcon?: boolean;
+    badge?: number; badgeUrgent?: boolean; urgentCount?: number;
   }) => (
     <button
       onClick={onClick}
@@ -98,19 +116,13 @@ function Shell() {
             {badge > 9 ? "9+" : badge}
           </span>
         )}
-        {/* Bell icon overlay for urgent alert */}
-        {alertIcon && (
-          <span className="absolute -top-2 -left-2 bg-amber-400 text-white p-0.5 rounded-full shadow animate-pulse">
-            <Bell size={10} />
-          </span>
-        )}
       </div>
       <div className="flex-1">
         <h3 className="text-lg font-black tracking-tighter uppercase">{title}</h3>
         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{subtitle}</p>
-        {badgeUrgent && badge !== undefined && badge > 0 && (
+        {badgeUrgent && urgentCount !== undefined && urgentCount > 0 && (
           <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-0.5">
-            ⚠ {badge} vence{badge > 1 ? "m" : ""} em até 7 dias
+            ⚠ {urgentCount} vence{urgentCount > 1 ? "m" : ""} em até 7 dias
           </p>
         )}
       </div>
@@ -171,72 +183,58 @@ function Shell() {
           {activeTab === "menu" && (
             <div className="space-y-4 pt-4">
               {/* Welcome card */}
-              <div className="bg-emerald-600 p-8 rounded-[2.5rem] text-white mb-8 shadow-2xl shadow-emerald-200 relative overflow-hidden">
+              <div className="bg-emerald-600 p-6 rounded-[2.5rem] text-white mb-8 shadow-2xl shadow-emerald-200 relative overflow-hidden">
                 <div className="relative z-10">
                   <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80 mb-1">Bem-vindo(a) novamente,</p>
-                  <h2 className="text-3xl font-black tracking-tighter mb-5">{profile.name}</h2>
-                  <div className="flex gap-3 flex-wrap">
+                  <h2 className="text-2xl font-black tracking-tighter mb-4">{profile.name}</h2>
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* Total Geral */}
                     <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Total Mês</p>
-                      <p className="text-xl font-black">R$ {formatCurrency(totalMonth)}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Total Geral</p>
+                      <p className="text-base font-black truncate">R$ {formatCurrency(totalMonth)}</p>
                     </div>
+                    {/* Pendente */}
                     <div className={cn(
                       "backdrop-blur-md p-3 rounded-2xl border",
-                      pendingMonth > 0
-                        ? "bg-red-500/40 border-red-300/40"
-                        : "bg-white/20 border-white/0",
+                      pendingMonth > 0 ? "bg-red-500/40 border-red-300/40" : "bg-white/20 border-white/0",
                     )}>
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
-                        {pendingMonth > 0 ? "⚠ Pendentes" : "Pendentes"}
+                        {pendingMonth > 0 ? "⚠ Pendente" : "Pendente"}
                       </p>
-                      <p className="text-xl font-black">R$ {formatCurrency(pendingMonth)}</p>
+                      <p className="text-base font-black truncate">R$ {formatCurrency(pendingMonth)}</p>
                     </div>
-                    {incomeMonth > 0 && (
-                      <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
-                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Entradas</p>
-                        <p className="text-xl font-black">R$ {formatCurrency(incomeMonth)}</p>
-                      </div>
-                    )}
-                    {incomeMonth > 0 && (
-                      <div className={cn(
-                        "backdrop-blur-md p-3 rounded-2xl border",
-                        balanceMonth >= 0
-                          ? "bg-white/20 border-white/20"
-                          : "bg-red-500/40 border-red-300/40",
-                      )}>
-                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Saldo</p>
-                        <p className="text-xl font-black">
-                          {balanceMonth >= 0 ? "+" : ""}R$ {formatCurrency(balanceMonth)}
-                        </p>
-                      </div>
-                    )}
-                    {futureCount > 0 && (
-                      <div className={cn(
-                        "backdrop-blur-md p-3 rounded-2xl border",
-                        urgentFutureCount > 0
-                          ? "bg-amber-500/40 border-amber-300/40"
-                          : "bg-white/20 border-white/0",
-                      )}>
-                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
-                          {urgentFutureCount > 0 ? "⚠ Vence em breve" : "Futuras"}
-                        </p>
-                        <p className="text-xl font-black">
-                          {urgentFutureCount > 0 ? urgentFutureCount : futureCount}
-                        </p>
-                      </div>
-                    )}
-                    {recurringCount > 0 && (
-                      <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
-                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Recorrentes/mês</p>
-                        <p className="text-xl font-black">R$ {formatCurrency(recurringTotal)}</p>
-                      </div>
-                    )}
-                    {overdueCount > 0 && (
-                      <div className="bg-red-500/40 backdrop-blur-md p-3 rounded-2xl border border-red-300/40">
-                        <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">Vencidas</p>
-                        <p className="text-xl font-black">{overdueCount}</p>
-                      </div>
-                    )}
+                    {/* Entradas */}
+                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Entradas</p>
+                      <p className="text-base font-black truncate">R$ {formatCurrency(incomeMonth)}</p>
+                    </div>
+                    {/* Saldo */}
+                    <div className={cn(
+                      "backdrop-blur-md p-3 rounded-2xl border",
+                      balanceMonth >= 0 ? "bg-white/20 border-white/20" : "bg-red-500/40 border-red-300/40",
+                    )}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Saldo</p>
+                      <p className="text-base font-black truncate">
+                        {balanceMonth >= 0 ? "+" : ""}R$ {formatCurrency(balanceMonth)}
+                      </p>
+                    </div>
+                    {/* Vence em breve */}
+                    <div className={cn(
+                      "backdrop-blur-md p-3 rounded-2xl border",
+                      urgentFutureCount > 0 ? "bg-amber-500/40 border-amber-300/40" : "bg-white/20 border-white/0",
+                    )}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
+                        {urgentFutureCount > 0 ? "⚠ Vence em breve" : "Vence em breve"}
+                      </p>
+                      <p className="text-base font-black">
+                        {urgentFutureCount > 0 ? urgentFutureCount : (futureCount > 0 ? futureCount : "—")}
+                      </p>
+                    </div>
+                    {/* Recorrente/mês */}
+                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Recorrente/mês</p>
+                      <p className="text-base font-black truncate">R$ {formatCurrency(recurringTotal)}</p>
+                    </div>
                   </div>
                 </div>
                 <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
@@ -248,9 +246,9 @@ function Shell() {
                 onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500" />
               <MenuButton icon={CalendarClock} title="Despesas Futuras"  subtitle="Próximos vencimentos"
                 onClick={() => handleTabChange("futures")}   colorClass="bg-violet-500"
-                badge={futureCount}
+                badge={urgentFutureCount > 0 ? urgentFutureCount : futureCount}
                 badgeUrgent={urgentFutureCount > 0}
-                alertIcon={urgentFutureCount > 0}
+                urgentCount={urgentFutureCount}
               />
               <MenuButton icon={TrendingUp}    title="Entradas / Receitas" subtitle="Salário e rendas"
                 onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
