@@ -95,6 +95,20 @@ export default function Settings() {
   };
 
   // ── Recurring ─────────────────────────────────────────────────────────────────
+  const [editingRecId,   setEditingRecId]   = useState<string | null>(null);
+  const [editRecForm,    setEditRecForm]    = useState<Partial<RecurringExpense>>({});
+
+  const startEditRec = (rec: RecurringExpense) => {
+    setEditingRecId(rec.id);
+    setEditRecForm({ ...rec });
+  };
+  const cancelEditRec = () => { setEditingRecId(null); setEditRecForm({}); };
+  const saveEditRec = () => {
+    if (!editingRecId || !editRecForm.description?.trim() || !editRecForm.value || !editRecForm.day_of_month) return;
+    saveRecurring(editRecForm as RecurringExpense, true);
+    cancelEditRec();
+  };
+
   const handleAddRecurring = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -345,6 +359,62 @@ export default function Settings() {
           {recurring.map(rec => {
             const cat  = categories.find(c => c.id === rec.category_id);
             const resp = responsibles.find(r => r.id === rec.responsible_id);
+
+            if (editingRecId === rec.id) {
+              return (
+                <div key={rec.id} className="p-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="col-span-2">
+                      <label className="label">Descrição</label>
+                      <input
+                        type="text" required className="input text-sm"
+                        value={editRecForm.description ?? ""}
+                        onChange={e => setEditRecForm(f => ({ ...f, description: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Categoria</label>
+                      <select className="input text-sm py-2"
+                        value={editRecForm.category_id ?? ""}
+                        onChange={e => setEditRecForm(f => ({ ...f, category_id: e.target.value }))}>
+                        {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Responsável</label>
+                      <select className="input text-sm py-2"
+                        value={editRecForm.responsible_id ?? ""}
+                        onChange={e => setEditRecForm(f => ({ ...f, responsible_id: e.target.value }))}>
+                        {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Valor (R$)</label>
+                      <input type="number" step="0.01" min="0.01" className="input text-sm font-black"
+                        value={editRecForm.value ?? ""}
+                        onChange={e => setEditRecForm(f => ({ ...f, value: parseFloat(e.target.value) }))} />
+                    </div>
+                    <div>
+                      <label className="label">Dia do mês</label>
+                      <input type="number" min="1" max="28" className="input text-sm"
+                        value={editRecForm.day_of_month ?? ""}
+                        onChange={e => setEditRecForm(f => ({ ...f, day_of_month: parseInt(e.target.value, 10) }))} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={cancelEditRec}
+                      className="flex-1 bg-slate-100 text-slate-600 py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors flex items-center justify-center gap-1">
+                      <X size={13} /> Cancelar
+                    </button>
+                    <button onClick={saveEditRec}
+                      className="flex-1 bg-emerald-600 text-white py-2 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-700 transition-colors flex items-center justify-center gap-1">
+                      <Check size={13} /> Salvar
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div key={rec.id} className={cn(
                 "flex items-center justify-between p-3 rounded-xl border",
@@ -365,6 +435,11 @@ export default function Settings() {
                     )}
                   >
                     {rec.active ? "Ativo" : "Inativo"}
+                  </button>
+                  <button onClick={() => startEditRec(rec)}
+                    className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors"
+                    title="Editar">
+                    <Edit2 size={14} />
                   </button>
                   <button onClick={() => setDeleteTarget({ table: "recurring_expenses", id: rec.id, label: rec.description })}
                     className="p-1.5 text-slate-400 hover:text-red-600 transition-colors">

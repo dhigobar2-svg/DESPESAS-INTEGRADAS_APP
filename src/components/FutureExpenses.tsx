@@ -2,41 +2,76 @@ import React, { useMemo, useState } from "react";
 import { format, parseISO, isAfter, startOfToday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
-import { CheckCircle2, Clock, Plus, StickyNote, Edit2, Trash2 } from "lucide-react";
+import { CheckCircle2, Clock, Plus, StickyNote, Edit2, Trash2, RefreshCw } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { formatCurrency, cn } from "../lib/utils";
 import { Expense } from "../types";
 import ExpenseModal from "./ExpenseModal";
 import ConfirmModal from "./ConfirmModal";
 
+type FutureEntry = Expense & { isVirtual?: boolean };
+
 export default function FutureExpenses() {
-  const { expenses, categories, responsibles, togglePaid, deleteItem } = useData();
+  const { expenses, categories, responsibles, recurring, togglePaid, deleteItem } = useData();
   const [showModal,   setShowModal]   = useState(false);
   const [editingExp,  setEditingExp]  = useState<Expense | null>(null);
   const [confirmId,   setConfirmId]   = useState<string | null>(null);
 
   const today = startOfToday();
+  const todayStr = format(today, "yyyy-MM-dd");
 
-  // All future unpaid expenses sorted by due_date ascending
+  // All future unpaid expenses + virtual recurring entries sorted by due_date ascending
   const grouped = useMemo(() => {
-    const future = expenses
+    const future: FutureEntry[] = expenses
       .filter(e => {
         try { return !e.paid && isAfter(parseISO(e.due_date), today); }
         catch { return false; }
       })
-      .sort((a, b) => a.due_date.localeCompare(b.due_date));
+      .map(e => ({ ...e }));
 
-    const groups: Record<string, Expense[]> = {};
+    // Add virtual recurring entries for upcoming months not yet auto-created
+    for (const rec of recurring.filter(r => r.active)) {
+      for (let monthOffset = 0; monthOffset <= 2; monthOffset++) {
+        const d = new Date(today.getFullYear(), today.getMonth() + monthOffset, rec.day_of_month);
+        if (d.getDate() !== rec.day_of_month) continue; // day overflow (e.g. Feb 31)
+        const yr = String(d.getFullYear());
+        const mn = String(d.getMonth() + 1).padStart(2, "0");
+        const dy = String(d.getDate()).padStart(2, "0");
+        const dueDate = `${yr}-${mn}-${dy}`;
+        if (dueDate <= todayStr) continue;
+        // Skip if an actual (possibly unpaid) expense already covers this
+        const alreadyExists = expenses.some(
+          e => !e.paid && e.description === rec.description && e.due_date === dueDate && e.value === rec.value,
+        );
+        if (!alreadyExists) {
+          future.push({
+            id:             `virtual-${rec.id}-${dueDate}`,
+            category_id:    rec.category_id,
+            description:    rec.description,
+            date:           todayStr,
+            due_date:       dueDate,
+            value:          rec.value,
+            responsible_id: rec.responsible_id,
+            paid:           0,
+            isVirtual:      true,
+          } as FutureEntry);
+        }
+      }
+    }
+
+    future.sort((a, b) => a.due_date.localeCompare(b.due_date));
+
+    const groups: Record<string, FutureEntry[]> = {};
     for (const e of future) {
       const month = e.due_date.slice(0, 7);
       if (!groups[month]) groups[month] = [];
       groups[month].push(e);
     }
     return groups;
-  }, [expenses, today]);
+  }, [expenses, recurring, today, todayStr]);
 
   const totalFuture = useMemo(
-    () => (Object.values(grouped) as Expense[][]).flat().reduce((s: number, e: Expense) => s + e.value, 0),
+    () => (Object.values(grouped) as FutureEntry[][]).flat().reduce((s: number, e: FutureEntry) => s + e.value, 0),
     [grouped],
   );
 
@@ -79,7 +114,7 @@ export default function FutureExpenses() {
           <p className="text-slate-400 text-xs mt-1">Você está em dia com tudo.</p>
         </div>
       ) : (
-        Object.entries(grouped).map(([month, exps]: [string, Expense[]]) => {
+        Object.entries(grouped).map(([month, exps]: [string, FutureEntry[]]) => {
           // Parse the month key as a local date to avoid UTC timezone shift
           const [yearStr, monthStr] = month.split("-");
           const monthDate  = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
@@ -110,7 +145,10 @@ export default function FutureExpenses() {
                   return (
                     <div
                       key={e.id}
-                      className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors"
+                      className={cn(
+                        "flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition-colors",
+                        e.isVirtual && "bg-violet-50/40",
+                      )}
                     >
                       {/* Date badge */}
                       <div className={cn(
@@ -125,14 +163,22 @@ export default function FutureExpenses() {
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-900 truncate">{e.description}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-bold text-slate-900 truncate">{e.description}</p>
+                          {e.isVirtual && (
+                            <span className="shrink-0 flex items-center gap-0.5 text-[9px] font-bold text-violet-500 bg-violet-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                              <RefreshCw size={8} />
+                              Recorrente
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2 mt-0.5">
                           <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat?.color ?? "#94a3b8" }} />
                           <p className="text-[10px] text-slate-500 uppercase font-medium">
                             {cat?.name ?? "—"} · {resp?.name ?? "—"}
                           </p>
                         </div>
-                        {e.notes && (
+                        {!e.isVirtual && e.notes && (
                           <p className="text-[10px] text-slate-400 italic mt-0.5 flex items-center gap-1">
                             <StickyNote size={10} />
                             {e.notes}
@@ -156,29 +202,33 @@ export default function FutureExpenses() {
                       {/* Value + actions */}
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <p className="text-sm font-black text-slate-900">R$ {formatCurrency(e.value)}</p>
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => togglePaid(e.id)}
-                            title="Marcar como pago"
-                            className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                          >
-                            <CheckCircle2 size={15} />
-                          </button>
-                          <button
-                            onClick={() => setEditingExp(e)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Editar"
-                          >
-                            <Edit2 size={15} />
-                          </button>
-                          <button
-                            onClick={() => setConfirmId(e.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Excluir"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
+                        {e.isVirtual ? (
+                          <p className="text-[10px] text-violet-400 font-bold uppercase tracking-widest">Automático</p>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => togglePaid(e.id)}
+                              title="Marcar como pago"
+                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                            >
+                              <CheckCircle2 size={15} />
+                            </button>
+                            <button
+                              onClick={() => setEditingExp(e)}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <Edit2 size={15} />
+                            </button>
+                            <button
+                              onClick={() => setConfirmId(e.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Excluir"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

@@ -133,21 +133,21 @@ export default function Incomes() {
             <TrendingUp size={12} className="text-emerald-500" />
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entradas</p>
           </div>
-          <p className="text-xl font-black text-emerald-600">R$ {formatCurrency(totalIncome)}</p>
+          <p className="text-sm font-black text-emerald-600 truncate">R$ {formatCurrency(totalIncome)}</p>
         </div>
         <div className="card p-4">
           <div className="flex items-center gap-1.5 mb-1">
             <ArrowDownRight size={12} className="text-red-500" />
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Despesas</p>
           </div>
-          <p className="text-xl font-black text-red-500">R$ {formatCurrency(monthExpenses)}</p>
+          <p className="text-sm font-black text-red-500 truncate">R$ {formatCurrency(monthExpenses)}</p>
         </div>
         <div className="card p-4">
           <div className="flex items-center gap-1.5 mb-1">
             <Wallet size={12} className={balance >= 0 ? "text-emerald-600" : "text-red-500"} />
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saldo</p>
           </div>
-          <p className={cn("text-xl font-black", balance >= 0 ? "text-emerald-600" : "text-red-500")}>
+          <p className={cn("text-sm font-black truncate", balance >= 0 ? "text-emerald-600" : "text-red-500")}>
             {balance >= 0 ? "" : "-"}R$ {formatCurrency(Math.abs(balance))}
           </p>
         </div>
@@ -294,12 +294,12 @@ export default function Incomes() {
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-900 truncate">{inc.description}</p>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <div className="mt-0.5 space-y-0.5">
                         {(() => {
                           const it = incomeTypes.find(t => t.id === inc.type);
                           return (
                             <span
-                              className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
+                              className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
                               style={it
                                 ? { backgroundColor: it.color + "22", color: it.color }
                                 : { backgroundColor: "#64748b22", color: "#64748b" }}
