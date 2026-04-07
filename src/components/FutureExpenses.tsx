@@ -257,23 +257,7 @@ export default function FutureExpenses() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className={cn(
-          "card p-4",
-          overdue.length > 0 && "bg-red-50 border border-red-200",
-        )}>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-            {overdue.length > 0 ? "⚠ Vencidas" : "Vencidas"}
-          </p>
-          {overdue.length > 0 ? (
-            <>
-              <p className="text-sm font-black text-red-600">{overdue.length} conta{overdue.length > 1 ? "s" : ""}</p>
-              <p className="text-[10px] font-bold text-red-500 mt-0.5">R$ {formatCurrency(overdueTotal)}</p>
-            </>
-          ) : (
-            <p className="text-sm font-black text-slate-800">—</p>
-          )}
-        </div>
+      <div className="grid grid-cols-3 gap-3">
         <div className="card p-4">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Previsto</p>
           <p className="text-sm font-black text-red-500">R$ {formatCurrency(totalFuture)}</p>

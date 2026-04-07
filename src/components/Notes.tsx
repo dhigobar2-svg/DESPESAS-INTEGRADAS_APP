@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Trash2, X, NotebookPen, Search } from "lucide-react";
-import { cn } from "../lib/utils";
+import { Plus, Trash2, NotebookPen, Search } from "lucide-react";
 
 interface Note {
   id: string;
@@ -29,31 +28,35 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+// Always shows full date; adds time for notes updated today
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
-  if (diffDays === 0) {
-    return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  }
-  if (diffDays === 1) return "Ontem";
-  if (diffDays < 7) {
-    return d.toLocaleDateString("pt-BR", { weekday: "long" });
-  }
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  const dateStr = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const timeStr = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const isToday = d.toDateString() === new Date().toDateString();
+  return isToday ? `Hoje às ${timeStr} · ${dateStr}` : dateStr;
 }
 
 export default function Notes() {
-  const [notes,        setNotes]        = useState<Note[]>(() => loadNotes());
-  const [editing,      setEditing]      = useState<Note | null>(null);
-  const [isNew,        setIsNew]        = useState(false);
-  const [search,       setSearch]       = useState("");
-  const [confirmId,    setConfirmId]    = useState<string | null>(null);
+  const [notes,     setNotes]     = useState<Note[]>(() => loadNotes());
+  const [editing,   setEditing]   = useState<Note | null>(null);
+  const [isNew,     setIsNew]     = useState(false);
+  const [search,    setSearch]    = useState("");
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
   // Persist on every change
   useEffect(() => { saveNotes(notes); }, [notes]);
+
+  // Auto-grow textarea whenever content changes
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${ta.scrollHeight}px`;
+  }, [editing?.content]);
 
   const filtered = notes
     .filter(n =>
@@ -161,9 +164,9 @@ export default function Notes() {
               >
                 <div
                   onClick={() => openEdit(note)}
-                  className="group relative bg-amber-50 border border-amber-200/70 rounded-2xl px-5 py-4 cursor-pointer hover:shadow-md hover:border-amber-300 transition-all active:scale-[0.99]"
+                  className="relative bg-amber-50 border border-amber-200/70 rounded-2xl px-5 py-4 cursor-pointer hover:shadow-md hover:border-amber-300 transition-all active:scale-[0.99]"
                 >
-                  {/* Lined paper effect */}
+                  {/* Lined paper effect (decorative only) */}
                   <div
                     className="absolute inset-x-0 top-0 bottom-0 rounded-2xl pointer-events-none overflow-hidden opacity-20"
                     aria-hidden
@@ -189,9 +192,10 @@ export default function Notes() {
                           </p>
                         )}
                       </div>
+                      {/* Delete button — always visible, works on touch */}
                       <button
                         onClick={e => { e.stopPropagation(); setConfirmId(note.id); }}
-                        className="shrink-0 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                        className="shrink-0 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         title="Excluir"
                       >
                         <Trash2 size={14} />
@@ -232,11 +236,11 @@ export default function Notes() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 60, opacity: 0 }}
               transition={{ type: "spring", damping: 26, stiffness: 300 }}
-              className="w-full max-w-lg bg-amber-50 rounded-3xl overflow-hidden shadow-2xl"
-              style={{ maxHeight: "85vh" }}
+              className="w-full max-w-lg bg-amber-50 rounded-3xl overflow-hidden shadow-2xl flex flex-col"
+              style={{ maxHeight: "90vh" }}
             >
               {/* Editor toolbar */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-amber-200/60">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-amber-200/60 shrink-0">
                 <button
                   onClick={closeEditor}
                   className="text-sm font-bold text-amber-600 hover:text-amber-800 transition-colors"
@@ -246,42 +250,46 @@ export default function Notes() {
                 <span className="text-xs font-black uppercase tracking-widest text-slate-400">
                   {isNew ? "Nova nota" : "Editar nota"}
                 </span>
-                <button
-                  onClick={saveEditing}
-                  className="text-sm font-black text-amber-600 hover:text-amber-800 transition-colors"
-                >
-                  Salvar
-                </button>
+                <div className="flex items-center gap-3">
+                  {/* Delete button visible when editing an existing note */}
+                  {!isNew && (
+                    <button
+                      onClick={() => setConfirmId(editing.id)}
+                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Excluir nota"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                  <button
+                    onClick={saveEditing}
+                    className="text-sm font-black text-amber-600 hover:text-amber-800 transition-colors"
+                  >
+                    Salvar
+                  </button>
+                </div>
               </div>
 
-              {/* Editor body */}
-              <div className="overflow-y-auto" style={{ maxHeight: "calc(85vh - 64px)" }}>
-                {/* Lined paper background */}
-                <div className="relative px-5 pt-4 pb-6">
-                  <div className="absolute inset-x-0 top-0 bottom-0 pointer-events-none overflow-hidden opacity-15" aria-hidden>
-                    {Array.from({ length: 20 }).map((_, i) => (
-                      <div key={i} className="border-b border-amber-400" style={{ height: 32 }} />
-                    ))}
-                  </div>
-
-                  <div className="relative space-y-3">
-                    <input
-                      autoFocus
-                      type="text"
-                      placeholder="Título"
-                      value={editing.title}
-                      onChange={e => setEditing(prev => prev ? { ...prev, title: e.target.value } : prev)}
-                      className="w-full bg-transparent text-xl font-black text-slate-800 placeholder:text-slate-300 focus:outline-none leading-tight"
-                    />
-                    <textarea
-                      placeholder="Comece a escrever…"
-                      value={editing.content}
-                      onChange={e => setEditing(prev => prev ? { ...prev, content: e.target.value } : prev)}
-                      rows={12}
-                      className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none resize-none leading-8"
-                    />
-                  </div>
-                </div>
+              {/* Editor body — scrollable, amber background without conflicting line overlay */}
+              <div className="overflow-y-auto flex-1 bg-amber-50 px-5 pt-4 pb-8">
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Título"
+                  value={editing.title}
+                  onChange={e => setEditing(prev => prev ? { ...prev, title: e.target.value } : prev)}
+                  className="w-full bg-transparent text-xl font-black text-slate-800 placeholder:text-slate-300 focus:outline-none leading-tight mb-4 border-b border-amber-200 pb-3"
+                />
+                <textarea
+                  ref={taRef}
+                  placeholder="Comece a escrever…"
+                  value={editing.content}
+                  onChange={e => {
+                    setEditing(prev => prev ? { ...prev, content: e.target.value } : prev);
+                  }}
+                  className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none resize-none leading-relaxed"
+                  style={{ minHeight: 200, height: "auto" }}
+                />
               </div>
             </motion.div>
           </motion.div>
@@ -296,7 +304,7 @@ export default function Notes() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-60 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
