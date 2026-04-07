@@ -339,6 +339,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addToast("success", "Item excluído.");
       }
     } catch {
+      // Network error — verify server state before rolling back.
+      // The server may have completed the delete and emitted data_updated
+      // even if the HTTP response was lost (race with Socket.IO refresh).
+      try {
+        const check = await fetch("/api/data");
+        if (check.ok) {
+          const fresh = await check.json();
+          const tableKey: Record<string, string> = {
+            expenses: "expenses", categories: "categories", responsibles: "responsibles",
+            budgets: "budgets", recurring_expenses: "recurring",
+            incomes: "incomes", income_types: "incomeTypes",
+          };
+          const key = tableKey[table];
+          const items: { id: string }[] = key ? (fresh[key] ?? []) : [];
+          if (!items.some(item => item.id === id)) {
+            return; // Delete succeeded — optimistic update is correct, no error
+          }
+        }
+      } catch { /* ignore secondary fetch error */ }
+      // Item still exists on server — rollback optimistic update
+      setExpenses(snap.expenses);
+      setCategories(snap.categories);
+      setResponsibles(snap.responsibles);
+      setBudgets(snap.budgets);
+      setRecurring(snap.recurring);
+      setIncomes(snap.incomes);
+      setIncomeTypes(snap.incomeTypes);
       addToast("error", "Erro de conexão ao excluir.");
     }
   }, [expenses, categories, responsibles, budgets, recurring, incomes, incomeTypes, addToast]);
