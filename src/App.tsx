@@ -3,7 +3,7 @@ import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
-  TrendingUp,
+  TrendingUp, NotebookPen,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency } from "./lib/utils";
@@ -12,16 +12,16 @@ import Dashboard from "./components/Dashboard";
 import ExpenseList from "./components/ExpenseList";
 import FutureExpenses from "./components/FutureExpenses";
 import Incomes from "./components/Incomes";
+import Notes from "./components/Notes";
 import Settings from "./components/Settings";
 
-type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "notes" | "settings";
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
   const { profile, isOnline, isConnected, expenses, recurring, incomes } = useData();
   const [activeTab, setActiveTab] = useState<Tab>("menu");
-  const [drillResp,  setDrillResp]  = useState<string>("");
 
   const now = new Date();
   const mm  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -30,8 +30,9 @@ function Shell() {
     .filter(e => e.due_date?.startsWith(mm))
     .reduce((s, e) => s + e.value, 0);
 
+  // Pending = current month unpaid + any overdue from previous months
   const pendingMonth = expenses
-    .filter(e => e.due_date?.startsWith(mm) && !e.paid)
+    .filter(e => !e.paid && (e.due_date?.startsWith(mm) || (e.due_date && e.due_date < mm)))
     .reduce((s, e) => s + e.value, 0);
 
   const today   = now.toISOString().slice(0, 10);
@@ -66,10 +67,6 @@ function Shell() {
     catch { return false; }
   }).length + virtualRecurringFutureDates.filter(d => d <= in7days).length;
 
-  const overdueCount = expenses.filter(e => {
-    try { return !e.paid && e.due_date < today; }
-    catch { return false; }
-  }).length;
 
   const recurringTotal = recurring
     .filter(r => r.active)
@@ -84,13 +81,7 @@ function Shell() {
 
   const balanceMonth = incomeMonth - totalMonth;
 
-  const handleDrillResponsible = (respId: string) => {
-    setDrillResp(respId);
-    setActiveTab("expenses");
-  };
-
   const handleTabChange = (tab: Tab) => {
-    if (tab !== "expenses") setDrillResp("");
     setActiveTab(tab);
     window.scrollTo(0, 0);
   };
@@ -242,7 +233,7 @@ function Shell() {
               </div>
 
               <MenuButton icon={BarChart3}     title="Visão Geral"       subtitle="Gráficos e Estatísticas"
-                onClick={() => handleTabChange("overview")}  colorClass="bg-blue-500" badge={overdueCount} />
+                onClick={() => handleTabChange("overview")}  colorClass="bg-blue-500" />
               <MenuButton icon={ListOrdered}   title="Minhas Despesas"   subtitle="Lista e Histórico"
                 onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500" />
               <MenuButton icon={CalendarClock} title="Despesas Futuras"  subtitle="Próximos vencimentos"
@@ -253,20 +244,19 @@ function Shell() {
               />
               <MenuButton icon={TrendingUp}    title="Entradas / Receitas" subtitle="Salário e rendas"
                 onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
+              <MenuButton icon={NotebookPen}   title="Bloco de Notas"    subtitle="Anotações e lembretes"
+                onClick={() => handleTabChange("notes")}     colorClass="bg-amber-500" />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
                 onClick={() => handleTabChange("settings")}  colorClass="bg-slate-700" />
             </div>
           )}
 
-          {activeTab === "overview" && (
-            <Dashboard onDrillResponsible={handleDrillResponsible} />
-          )}
-          {activeTab === "expenses" && (
-            <ExpenseList initialResponsibleFilter={drillResp} />
-          )}
-          {activeTab === "futures"  && <FutureExpenses />}
-          {activeTab === "incomes"  && <Incomes />}
-          {activeTab === "settings" && <Settings />}
+          {activeTab === "overview"  && <Dashboard />}
+          {activeTab === "expenses"  && <ExpenseList />}
+          {activeTab === "futures"   && <FutureExpenses />}
+          {activeTab === "incomes"   && <Incomes />}
+          {activeTab === "notes"     && <Notes />}
+          {activeTab === "settings"  && <Settings />}
         </AnimatePresence>
       </main>
 
