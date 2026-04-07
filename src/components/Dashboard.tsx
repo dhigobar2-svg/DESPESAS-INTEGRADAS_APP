@@ -5,23 +5,19 @@ import {
 } from "recharts";
 import {
   format, startOfMonth, endOfMonth, isWithinInterval,
-  parseISO, subMonths, addMonths, isBefore, startOfToday, differenceInDays,
+  parseISO, subMonths, addMonths,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   ChevronLeft, ChevronRight, Plus, TrendingDown, TrendingUp,
-  AlertCircle, ArrowUpRight, ArrowDownRight, Minus, AlertTriangle,
+  AlertCircle, ArrowUpRight, ArrowDownRight, Minus,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
 import { formatCurrency, cn } from "../lib/utils";
 import ExpenseModal from "./ExpenseModal";
 
-interface Props {
-  onDrillResponsible?: (respId: string) => void;
-}
-
-export default function Dashboard({ onDrillResponsible }: Props) {
+export default function Dashboard() {
   const { expenses, categories, responsibles, budgets, recurring, incomes } = useData();
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [showModal,     setShowModal]     = useState(false);
@@ -185,20 +181,6 @@ export default function Dashboard({ onDrillResponsible }: Props) {
       });
   }, [budgets, monthKey, categories, stats.catData]);
 
-  // ── Overdue expenses (unpaid, past due date) ──────────────────────────────────
-  const overdue = useMemo(() => {
-    const today = startOfToday();
-    return expenses
-      .filter(e => {
-        if (e.paid) return false;
-        try { return isBefore(parseISO(e.due_date), today); }
-        catch { return false; }
-      })
-      .sort((a, b) => a.due_date.localeCompare(b.due_date));
-  }, [expenses]);
-
-  const overdueTotal = overdue.reduce((s, e) => s + e.value, 0);
-
   // ── Income for selected month ─────────────────────────────────────────────────
   const monthIncomeTotal = useMemo(() => {
     const start = startOfMonth(selectedMonth);
@@ -274,63 +256,12 @@ export default function Dashboard({ onDrillResponsible }: Props) {
     return { data, topCats };
   }, [expenses, categories]);
 
-  // ── Responsible bar click ─────────────────────────────────────────────────────
-  const handleRespBarClick = (data: { id?: string; name: string }) => {
-    if (!onDrillResponsible) return;
-    const resp = responsibles.find(r => r.name === data.name);
-    if (resp) onDrillResponsible(resp.id);
-  };
-
   return (
     <motion.div
       key="overview"
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
       className="space-y-6 pb-8"
     >
-
-      {/* ── Overdue alert (vencidas) ─────────────────────────────────────────── */}
-      {overdue.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle size={14} className="text-red-600" />
-            <h3 className="text-xs font-black uppercase tracking-widest text-red-700">
-              {overdue.length} despesa{overdue.length > 1 ? "s" : ""} vencida{overdue.length > 1 ? "s" : ""}
-              {" "}— R$ {formatCurrency(overdueTotal)}
-            </h3>
-          </div>
-          <div className="space-y-2">
-            {overdue.slice(0, 5).map(e => {
-              const cat  = categories.find(c => c.id === e.category_id);
-              const resp = responsibles.find(r => r.id === e.responsible_id);
-              const daysLate = differenceInDays(startOfToday(), parseISO(e.due_date));
-              return (
-                <div key={e.id} className="flex items-center justify-between gap-2 bg-white/60 rounded-xl px-3 py-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[10px] font-black shrink-0 bg-red-500">
-                      {parseISO(e.due_date).getDate()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-800 truncate">{e.description}</p>
-                      <p className="text-[10px] text-slate-500">{cat?.name} · {resp?.name}</p>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-black text-slate-800">R$ {formatCurrency(e.value)}</p>
-                    <p className="text-[10px] font-bold text-red-600">
-                      {daysLate === 1 ? "1 dia atrás" : `${daysLate} dias atrás`}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-            {overdue.length > 5 && (
-              <p className="text-[10px] text-red-500 font-bold text-center pt-1">
-                + {overdue.length - 5} mais vencida{overdue.length - 5 > 1 ? "s" : ""}
-              </p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ── Month nav + add ───────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
@@ -558,15 +489,10 @@ export default function Dashboard({ onDrillResponsible }: Props) {
           </div>
         )}
 
-        {/* Horizontal bar: por responsável — clicável */}
+        {/* Horizontal bar: por responsável */}
         {stats.respData.length > 0 && (
           <div className="card p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Por Responsável</h3>
-              {onDrillResponsible && (
-                <p className="text-[10px] text-slate-400 font-medium">Clique para filtrar</p>
-              )}
-            </div>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Por Responsável</h3>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats.respData} layout="vertical" margin={{ right: 80 }}>
@@ -574,11 +500,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                   <YAxis dataKey="name" type="category" fontSize={11}
                     axisLine={false} tickLine={false} width={90} />
                   <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Bar
-                    dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]}
-                    style={{ cursor: onDrillResponsible ? "pointer" : "default" }}
-                    onClick={handleRespBarClick}
-                  >
+                  <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]}>
                     <LabelList dataKey="value" position="right" fontSize={10} fontWeight={700}
                       formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
                   </Bar>
