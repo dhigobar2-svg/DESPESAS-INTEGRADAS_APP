@@ -339,9 +339,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addToast("success", "Item excluído.");
       }
     } catch {
-      // Network error — verify server state before rolling back.
-      // The server may have completed the delete and emitted data_updated
-      // even if the HTTP response was lost (race with Socket.IO refresh).
+      // Network error — don't rollback by default. Verify server state first.
+      // The delete may have reached the server even if the response was lost.
+      let itemStillOnServer = false;
       try {
         const check = await fetch("/api/data");
         if (check.ok) {
@@ -353,20 +353,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
           const key = tableKey[table];
           const items: { id: string }[] = key ? (fresh[key] ?? []) : [];
-          if (!items.some(item => item.id === id)) {
-            return; // Delete succeeded — optimistic update is correct, no error
-          }
+          itemStillOnServer = items.some(item => item.id === id);
         }
-      } catch { /* ignore secondary fetch error */ }
-      // Item still exists on server — rollback optimistic update
-      setExpenses(snap.expenses);
-      setCategories(snap.categories);
-      setResponsibles(snap.responsibles);
-      setBudgets(snap.budgets);
-      setRecurring(snap.recurring);
-      setIncomes(snap.incomes);
-      setIncomeTypes(snap.incomeTypes);
-      addToast("error", "Erro de conexão ao excluir.");
+        // If check is not ok or key not found → can't verify → keep optimistic removal
+      } catch { /* secondary fetch also failed — keep optimistic removal */ }
+
+      if (itemStillOnServer) {
+        // Confirmed real failure — rollback and notify user
+        setExpenses(snap.expenses);
+        setCategories(snap.categories);
+        setResponsibles(snap.responsibles);
+        setBudgets(snap.budgets);
+        setRecurring(snap.recurring);
+        setIncomes(snap.incomes);
+        setIncomeTypes(snap.incomeTypes);
+        addToast("error", "Erro ao excluir. Tente novamente.");
+      }
+      // else: delete succeeded or can't verify — keep optimistic removal
     }
   }, [expenses, categories, responsibles, budgets, recurring, incomes, incomeTypes, addToast]);
 

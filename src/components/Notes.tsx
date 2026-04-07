@@ -28,13 +28,21 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-// Always shows full date; adds time for notes updated today
+// Always shows full dd/MM/yyyy; adds time for today
 function formatDate(iso: string): string {
   const d = new Date(iso);
   const dateStr = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
   const timeStr = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  const isToday = d.toDateString() === new Date().toDateString();
-  return isToday ? `Hoje às ${timeStr} · ${dateStr}` : dateStr;
+  return d.toDateString() === new Date().toDateString()
+    ? `Hoje às ${timeStr} · ${dateStr}`
+    : dateStr;
+}
+
+// Auto-resize a textarea to fit its content
+function autoResize(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
 }
 
 export default function Notes() {
@@ -46,17 +54,15 @@ export default function Notes() {
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
-
-  // Persist on every change
   useEffect(() => { saveNotes(notes); }, [notes]);
 
-  // Auto-grow textarea whenever content changes
+  // Re-size textarea whenever an existing note is opened (pre-filled content)
   useEffect(() => {
-    const ta = taRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${ta.scrollHeight}px`;
-  }, [editing?.content]);
+    if (editing && taRef.current) {
+      // Defer to next frame so the DOM has rendered the content
+      requestAnimationFrame(() => autoResize(taRef.current));
+    }
+  }, [editing?.id]);
 
   const filtered = notes
     .filter(n =>
@@ -84,10 +90,7 @@ export default function Notes() {
     if (!editing) return;
     const trimmedTitle   = editing.title.trim();
     const trimmedContent = editing.content.trim();
-    if (!trimmedTitle && !trimmedContent) {
-      closeEditor();
-      return;
-    }
+    if (!trimmedTitle && !trimmedContent) { closeEditor(); return; }
     const updated: Note = {
       ...editing,
       title:     trimmedTitle || "Sem título",
@@ -95,9 +98,7 @@ export default function Notes() {
       updatedAt: new Date().toISOString(),
     };
     setNotes(prev =>
-      isNew
-        ? [updated, ...prev]
-        : prev.map(n => n.id === updated.id ? updated : n),
+      isNew ? [updated, ...prev] : prev.map(n => n.id === updated.id ? updated : n),
     );
     closeEditor();
   }, [editing, isNew]);
@@ -146,9 +147,7 @@ export default function Notes() {
             {notes.length === 0 ? "Nenhuma nota ainda" : "Nenhuma nota encontrada"}
           </p>
           <p className="text-slate-400 text-sm">
-            {notes.length === 0
-              ? "Toque no + para criar sua primeira nota"
-              : "Tente outro termo de busca"}
+            {notes.length === 0 ? "Toque no + para criar sua primeira nota" : "Tente outro termo de busca"}
           </p>
         </div>
       ) : (
@@ -166,33 +165,21 @@ export default function Notes() {
                   onClick={() => openEdit(note)}
                   className="relative bg-amber-50 border border-amber-200/70 rounded-2xl px-5 py-4 cursor-pointer hover:shadow-md hover:border-amber-300 transition-all active:scale-[0.99]"
                 >
-                  {/* Lined paper effect (decorative only) */}
-                  <div
-                    className="absolute inset-x-0 top-0 bottom-0 rounded-2xl pointer-events-none overflow-hidden opacity-20"
-                    aria-hidden
-                  >
+                  {/* Decorative lined paper effect */}
+                  <div className="absolute inset-x-0 top-0 bottom-0 rounded-2xl pointer-events-none overflow-hidden opacity-20" aria-hidden>
                     {Array.from({ length: 8 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className="border-b border-amber-400"
-                        style={{ height: 28, marginTop: i === 0 ? 20 : 0 }}
-                      />
+                      <div key={i} className="border-b border-amber-400" style={{ height: 28, marginTop: i === 0 ? 20 : 0 }} />
                     ))}
                   </div>
-
                   <div className="relative">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-black text-slate-800 truncate leading-snug">
-                          {note.title}
-                        </p>
+                        <p className="text-sm font-black text-slate-800 truncate leading-snug">{note.title}</p>
                         {note.content && (
-                          <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
-                            {note.content}
-                          </p>
+                          <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">{note.content}</p>
                         )}
                       </div>
-                      {/* Delete button — always visible, works on touch */}
+                      {/* Delete — always visible, works on touch */}
                       <button
                         onClick={e => { e.stopPropagation(); setConfirmId(note.id); }}
                         className="shrink-0 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -220,78 +207,76 @@ export default function Notes() {
         <Plus size={24} />
       </button>
 
-      {/* ── Editor overlay ────────────────────────────────────────────────────── */}
+      {/* ── Full-screen editor ───────────────────────────────────────────────── */}
       <AnimatePresence>
         {editing && (
           <motion.div
             key="editor"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
-            onClick={e => { if (e.target === e.currentTarget) saveEditing(); }}
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 32, stiffness: 320 }}
+            className="fixed inset-0 z-50 bg-amber-50 flex flex-col"
           >
-            <motion.div
-              initial={{ y: 60, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 60, opacity: 0 }}
-              transition={{ type: "spring", damping: 26, stiffness: 300 }}
-              className="w-full max-w-lg bg-amber-50 rounded-3xl overflow-hidden shadow-2xl flex flex-col"
-              style={{ maxHeight: "90vh" }}
-            >
-              {/* Editor toolbar */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-amber-200/60 shrink-0">
-                <button
-                  onClick={closeEditor}
-                  className="text-sm font-bold text-amber-600 hover:text-amber-800 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <span className="text-xs font-black uppercase tracking-widest text-slate-400">
-                  {isNew ? "Nova nota" : "Editar nota"}
-                </span>
-                <div className="flex items-center gap-3">
-                  {/* Delete button visible when editing an existing note */}
-                  {!isNew && (
-                    <button
-                      onClick={() => setConfirmId(editing.id)}
-                      className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Excluir nota"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
+            {/* Toolbar */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-amber-200 bg-amber-50 shrink-0">
+              <button
+                onClick={closeEditor}
+                className="text-sm font-bold text-amber-600 hover:text-amber-800 transition-colors min-w-[64px]"
+              >
+                Cancelar
+              </button>
+              <span className="text-xs font-black uppercase tracking-widest text-slate-400">
+                {isNew ? "Nova nota" : "Editar nota"}
+              </span>
+              <div className="flex items-center gap-3 min-w-[64px] justify-end">
+                {!isNew && (
                   <button
-                    onClick={saveEditing}
-                    className="text-sm font-black text-amber-600 hover:text-amber-800 transition-colors"
+                    onClick={() => setConfirmId(editing.id)}
+                    className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Excluir nota"
                   >
-                    Salvar
+                    <Trash2 size={16} />
                   </button>
-                </div>
+                )}
+                <button
+                  onClick={saveEditing}
+                  className="text-sm font-black text-amber-600 hover:text-amber-800 transition-colors"
+                >
+                  Salvar
+                </button>
               </div>
+            </div>
 
-              {/* Editor body — scrollable, amber background without conflicting line overlay */}
-              <div className="overflow-y-auto flex-1 bg-amber-50 px-5 pt-4 pb-8">
-                <input
-                  autoFocus
-                  type="text"
-                  placeholder="Título"
-                  value={editing.title}
-                  onChange={e => setEditing(prev => prev ? { ...prev, title: e.target.value } : prev)}
-                  className="w-full bg-transparent text-xl font-black text-slate-800 placeholder:text-slate-300 focus:outline-none leading-tight mb-4 border-b border-amber-200 pb-3"
-                />
-                <textarea
-                  ref={taRef}
-                  placeholder="Comece a escrever…"
-                  value={editing.content}
-                  onChange={e => {
-                    setEditing(prev => prev ? { ...prev, content: e.target.value } : prev);
-                  }}
-                  className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none resize-none leading-relaxed"
-                  style={{ minHeight: 200, height: "auto" }}
-                />
-              </div>
-            </motion.div>
+            {/* Scrollable writing area — takes remaining full height */}
+            <div className="flex-1 overflow-y-auto px-5 pt-5 pb-12 bg-amber-50">
+              <input
+                autoFocus
+                type="text"
+                placeholder="Título"
+                value={editing.title}
+                onChange={e => setEditing(prev => prev ? { ...prev, title: e.target.value } : prev)}
+                className="w-full bg-transparent text-2xl font-black text-slate-800 placeholder:text-slate-300 focus:outline-none leading-tight pb-3 mb-4 border-b border-amber-200"
+              />
+              <textarea
+                ref={taRef}
+                placeholder="Comece a escrever…"
+                value={editing.content}
+                onChange={e => {
+                  autoResize(e.target);
+                  setEditing(prev => prev ? { ...prev, content: e.target.value } : prev);
+                }}
+                className="w-full min-w-0 bg-transparent text-base text-slate-700 placeholder:text-slate-300 focus:outline-none resize-none leading-7"
+                style={{
+                  minHeight: "60vh",
+                  height: "auto",
+                  overflowY: "hidden",     // prevents internal scroll; outer div scrolls
+                  wordBreak: "break-word",
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "break-word",
+                }}
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -304,7 +289,7 @@ export default function Notes() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-60 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
