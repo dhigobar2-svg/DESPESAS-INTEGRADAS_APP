@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Expense } from "../types";
 import { useData } from "../context/DataContext";
 import { generateId } from "../lib/utils";
@@ -14,13 +14,52 @@ interface Props {
 }
 
 export default function ExpenseModal({ open, editing, defaultValues, onClose }: Props) {
-  const { categories, responsibles, saveExpense, saveRecurring } = useData();
-  const [isRecurring, setIsRecurring] = useState(false);
+  const {
+    categories, responsibles, expenses, recurring,
+    saveExpense, saveRecurring, addToast,
+  } = useData();
+
+  const [isRecurring,     setIsRecurring]     = useState(false);
+  const [pendingExpense,  setPendingExpense]   = useState<Expense | null>(null);
+
+  // ── Centralised save (called both on first submit and on duplicate-confirm) ──
+  const doSave = (expense: Expense) => {
+    saveExpense(expense, !!editing);
+
+    // Create recurring template only for new expenses
+    if (!editing && isRecurring && expense.due_date) {
+      const dayOfMonth = parseInt(expense.due_date.slice(8, 10), 10);
+      const recDup = recurring.some(r =>
+        r.active &&
+        r.description.toLowerCase() === expense.description.toLowerCase() &&
+        r.day_of_month === dayOfMonth &&
+        Math.abs(r.value - expense.value) < 0.01,
+      );
+      if (recDup) {
+        addToast("info", "Já existe uma recorrente ativa com estes dados — não foi duplicada.");
+      } else {
+        saveRecurring({
+          id:             generateId(),
+          category_id:    expense.category_id,
+          description:    expense.description,
+          value:          expense.value,
+          responsible_id: expense.responsible_id,
+          day_of_month:   dayOfMonth,
+          active:         1,
+        }, false);
+      }
+    }
+
+    setPendingExpense(null);
+    setIsRecurring(false);
+    onClose();
+  };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const fd      = new FormData(e.currentTarget);
     const dueDate = fd.get("due_date") as string;
+
     const expense: Expense = {
       id:             editing?.id ?? generateId(),
       category_id:    fd.get("category")    as string,
@@ -33,22 +72,32 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       notes:          (fd.get("notes") as string) || undefined,
       created_by:     editing?.created_by,
     };
-    saveExpense(expense, !!editing);
 
-    // If marked as recurring and it's a new expense, also save as recurring
-    if (!editing && isRecurring && dueDate) {
-      const dayOfMonth = parseInt(dueDate.slice(8, 10), 10);
-      saveRecurring({
-        id:             generateId(),
-        category_id:    expense.category_id,
-        description:    expense.description,
-        value:          expense.value,
-        responsible_id: expense.responsible_id,
-        day_of_month:   dayOfMonth,
-        active:         1,
-      }, false);
+    // For new expenses: check if an identical one already exists
+    if (!editing) {
+      const isDup = expenses.some(ex =>
+        ex.description.toLowerCase() === expense.description.toLowerCase() &&
+        ex.due_date === expense.due_date &&
+        Math.abs(ex.value - expense.value) < 0.01 &&
+        ex.responsible_id === expense.responsible_id,
+      );
+      if (isDup) {
+        setPendingExpense(expense);
+        return; // wait for user confirmation
+      }
     }
 
+    doSave(expense);
+  };
+
+  const confirmDuplicate = () => {
+    if (pendingExpense) doSave(pendingExpense);
+  };
+
+  const cancelDuplicate = () => setPendingExpense(null);
+
+  const handleClose = () => {
+    setPendingExpense(null);
     setIsRecurring(false);
     onClose();
   };
@@ -71,7 +120,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
+            onClick={handleClose}
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
           />
           <motion.div
@@ -188,17 +237,47 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                   </div>
                 )}
 
-                {/* Ações */}
-                <div className="flex gap-3 pt-4">
-                  <button type="button" onClick={onClose}
-                    className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors">
-                    Cancelar
-                  </button>
-                  <button type="submit"
-                    className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-colors">
-                    Salvar
-                  </button>
-                </div>
+                {/* ── Aviso de despesa duplicada ───────────────────────────────── */}
+                <AnimatePresence>
+                  {pendingExpense && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                      className="bg-amber-50 border border-amber-300 rounded-2xl p-4 space-y-3"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                        <p className="text-xs font-bold text-amber-800 leading-relaxed">
+                          Já existe uma despesa com a mesma descrição, valor, vencimento e responsável.
+                          Deseja salvar mesmo assim?
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={cancelDuplicate}
+                          className="flex-1 bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">
+                          Cancelar
+                        </button>
+                        <button type="button" onClick={confirmDuplicate}
+                          className="flex-1 bg-amber-500 text-white py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-amber-600 transition-colors">
+                          Salvar mesmo assim
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Ações — ocultas durante o aviso de duplicata */}
+                {!pendingExpense && (
+                  <div className="flex gap-3 pt-4">
+                    <button type="button" onClick={handleClose}
+                      className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors">
+                      Cancelar
+                    </button>
+                    <button type="submit"
+                      className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-colors">
+                      Salvar
+                    </button>
+                  </div>
+                )}
               </form>
             </div>
           </motion.div>

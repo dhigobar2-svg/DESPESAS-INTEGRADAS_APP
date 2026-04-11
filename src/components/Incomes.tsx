@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Edit2, Check, X,
-  TrendingUp, StickyNote,
+  TrendingUp, StickyNote, AlertTriangle,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, formatCurrency, cn } from "../lib/utils";
@@ -25,9 +25,10 @@ const emptyForm = (): Partial<Income> => ({
 export default function Incomes() {
   const { incomes, expenses, responsibles, incomeTypes, saveIncome, deleteItem } = useData();
 
-  const [selectedMonth, setSelectedMonth] = useState(new Date());
-  const [showForm,      setShowForm]      = useState(false);
-  const [editingId,     setEditingId]     = useState<string | null>(null);
+  const [selectedMonth,  setSelectedMonth]  = useState(new Date());
+  const [showForm,       setShowForm]       = useState(false);
+  const [editingId,      setEditingId]      = useState<string | null>(null);
+  const [pendingIncome,  setPendingIncome]  = useState<Income | null>(null);
   const [form,          setForm]          = useState<Partial<Income>>(emptyForm());
   const [confirmId,     setConfirmId]     = useState<string | null>(null);
 
@@ -83,6 +84,12 @@ export default function Incomes() {
     setForm(emptyForm());
   };
 
+  const doSaveIncome = (income: Income) => {
+    saveIncome(income, !!editingId);
+    setPendingIncome(null);
+    cancelForm();
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!form.description?.trim() || !form.value || !form.date || !form.type) return;
@@ -98,9 +105,28 @@ export default function Incomes() {
       recurring:      form.recurring ?? 0,
     };
 
-    saveIncome(income, !!editingId);
-    cancelForm();
+    // For new incomes: check for identical entry
+    if (!editingId) {
+      const isDup = incomes.some(i =>
+        i.description.toLowerCase() === income.description.toLowerCase() &&
+        i.date === income.date &&
+        Math.abs(i.value - income.value) < 0.01 &&
+        i.type === income.type,
+      );
+      if (isDup) {
+        setPendingIncome(income);
+        return; // wait for user confirmation
+      }
+    }
+
+    doSaveIncome(income);
   };
+
+  const confirmIncomeDuplicate = () => {
+    if (pendingIncome) doSaveIncome(pendingIncome);
+  };
+
+  const cancelIncomeDuplicate = () => setPendingIncome(null);
 
   const confirmLabel = incomes.find(i => i.id === confirmId)?.description ?? "";
 
@@ -247,16 +273,46 @@ export default function Incomes() {
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-1">
-                <button type="button" onClick={cancelForm}
-                  className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors">
-                  Cancelar
-                </button>
-                <button type="submit"
-                  className="flex-1 bg-emerald-600 text-white py-3 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
-                  <Check size={14} /> Salvar
-                </button>
-              </div>
+              {/* Aviso de entrada duplicada */}
+              <AnimatePresence>
+                {pendingIncome && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                    className="bg-amber-50 border border-amber-300 rounded-2xl p-4 space-y-3"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-xs font-bold text-amber-800 leading-relaxed">
+                        Já existe uma entrada com a mesma descrição, valor, data e tipo.
+                        Deseja salvar mesmo assim?
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={cancelIncomeDuplicate}
+                        className="flex-1 bg-white border border-slate-200 text-slate-600 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-slate-50 transition-colors">
+                        Cancelar
+                      </button>
+                      <button type="button" onClick={confirmIncomeDuplicate}
+                        className="flex-1 bg-amber-500 text-white py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-amber-600 transition-colors">
+                        Salvar mesmo assim
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {!pendingIncome && (
+                <div className="flex gap-2 pt-1">
+                  <button type="button" onClick={cancelForm}
+                    className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors">
+                    Cancelar
+                  </button>
+                  <button type="submit"
+                    className="flex-1 bg-emerald-600 text-white py-3 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
+                    <Check size={14} /> Salvar
+                  </button>
+                </div>
+              )}
             </form>
           </motion.div>
         )}
