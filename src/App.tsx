@@ -22,6 +22,7 @@ type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "notes" | 
 function Shell() {
   const { profile, isOnline, isConnected, expenses, recurring, incomes } = useData();
   const [activeTab, setActiveTab] = useState<Tab>("menu");
+  const [futuresFilter, setFuturesFilter] = useState<"upcoming" | "pending" | "recurring" | undefined>(undefined);
 
   const now = new Date();
   const mm  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -83,6 +84,13 @@ function Shell() {
 
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
+    if (tab === "menu") setFuturesFilter(undefined);
+    window.scrollTo(0, 0);
+  };
+
+  const navigateTo = (tab: Tab, filter?: "upcoming" | "pending" | "recurring") => {
+    setActiveTab(tab);
+    setFuturesFilter(filter);
     window.scrollTo(0, 0);
   };
 
@@ -186,20 +194,26 @@ function Shell() {
                       <p className="text-base font-black truncate">R$ {formatCurrency(totalMonth)}</p>
                     </div>
                     {/* Pendente */}
-                    <div className={cn(
-                      "backdrop-blur-md p-3 rounded-2xl border",
-                      pendingMonth > 0 ? "bg-red-500/40 border-red-300/40" : "bg-white/20 border-white/0",
-                    )}>
+                    <button
+                      onClick={() => navigateTo("futures", "pending")}
+                      className={cn(
+                        "backdrop-blur-md p-3 rounded-2xl border text-left w-full transition-all active:scale-95",
+                        pendingMonth > 0 ? "bg-red-500/40 border-red-300/40" : "bg-white/20 border-white/0",
+                      )}
+                    >
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
                         {pendingMonth > 0 ? "⚠ Pendente" : "Pendente"}
                       </p>
                       <p className="text-base font-black truncate">R$ {formatCurrency(pendingMonth)}</p>
-                    </div>
+                    </button>
                     {/* Entradas */}
-                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
+                    <button
+                      onClick={() => navigateTo("incomes")}
+                      className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-left w-full transition-all active:scale-95"
+                    >
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Entradas</p>
                       <p className="text-base font-black truncate">R$ {formatCurrency(incomeMonth)}</p>
-                    </div>
+                    </button>
                     {/* Saldo */}
                     <div className={cn(
                       "backdrop-blur-md p-3 rounded-2xl border",
@@ -211,22 +225,28 @@ function Shell() {
                       </p>
                     </div>
                     {/* Vence em breve */}
-                    <div className={cn(
-                      "backdrop-blur-md p-3 rounded-2xl border",
-                      urgentFutureCount > 0 ? "bg-amber-500/40 border-amber-300/40" : "bg-white/20 border-white/0",
-                    )}>
+                    <button
+                      onClick={() => navigateTo("futures", "upcoming")}
+                      className={cn(
+                        "backdrop-blur-md p-3 rounded-2xl border text-left w-full transition-all active:scale-95",
+                        urgentFutureCount > 0 ? "bg-amber-500/40 border-amber-300/40" : "bg-white/20 border-white/0",
+                      )}
+                    >
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
                         {urgentFutureCount > 0 ? "⚠ Vence em breve" : "Vence em breve"}
                       </p>
                       <p className="text-base font-black">
                         {urgentFutureCount > 0 ? urgentFutureCount : (futureCount > 0 ? futureCount : "—")}
                       </p>
-                    </div>
+                    </button>
                     {/* Recorrente/mês */}
-                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
+                    <button
+                      onClick={() => navigateTo("futures", "recurring")}
+                      className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-left w-full transition-all active:scale-95"
+                    >
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Recorrente/mês</p>
                       <p className="text-base font-black truncate">R$ {formatCurrency(recurringTotal)}</p>
-                    </div>
+                    </button>
                   </div>
                 </div>
                 <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
@@ -253,7 +273,7 @@ function Shell() {
 
           {activeTab === "overview"  && <Dashboard />}
           {activeTab === "expenses"  && <ExpenseList />}
-          {activeTab === "futures"   && <FutureExpenses />}
+          {activeTab === "futures"   && <FutureExpenses filter={futuresFilter} />}
           {activeTab === "incomes"   && <Incomes />}
           {activeTab === "notes"     && <Notes />}
           {activeTab === "settings"  && <Settings />}

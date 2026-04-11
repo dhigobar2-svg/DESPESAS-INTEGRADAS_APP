@@ -391,39 +391,114 @@ export default function Dashboard() {
       </div>
 
       {/* ── Budget progress ────────────────────────────────────────────────────── */}
-      {monthBudgets.length > 0 && (
-        <div className="card p-6">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Orçamentos do Mês</h3>
-          <div className="space-y-4">
-            {monthBudgets.map(b => (
-              <div key={b.id}>
-                <div className="flex justify-between items-center mb-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: b.catColor }} />
-                    <span className="text-xs font-bold text-slate-700">{b.catName}</span>
-                    {b.pct >= 100 && <AlertCircle size={14} className="text-red-500" />}
-                  </div>
-                  <span className={cn(
-                    "text-xs font-black",
-                    b.pct >= 100 ? "text-red-600" : b.pct >= 80 ? "text-amber-600" : "text-slate-600",
-                  )}>
-                    R$ {formatCurrency(b.spent)} / R$ {formatCurrency(b.limit_value)}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2">
-                  <div
-                    className={cn(
-                      "h-2 rounded-full transition-all",
-                      b.pct >= 100 ? "bg-red-500" : b.pct >= 80 ? "bg-amber-500" : "bg-emerald-500",
-                    )}
-                    style={{ width: `${Math.min(b.pct, 100)}%` }}
-                  />
-                </div>
+      {monthBudgets.length > 0 && (() => {
+        const exceeded = monthBudgets.filter(b => b.pct >= 100);
+        const warned   = monthBudgets.filter(b => b.pct >= 80 && b.pct < 100);
+        return (
+          <div className="card p-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Orçamentos do Mês</h3>
+              {exceeded.length > 0 && (
+                <span className="text-[10px] font-black text-red-600 bg-red-100 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                  {exceeded.length} estourado{exceeded.length > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+
+            {/* Alert banner for exceeded categories */}
+            {exceeded.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 flex items-start gap-2.5">
+                <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                <p className="text-xs font-bold text-red-700">
+                  Orçamento estourado em {format(selectedMonth, "MMMM", { locale: ptBR })}:{" "}
+                  {exceeded.map(b => b.catName).join(", ")}.
+                </p>
               </div>
-            ))}
+            )}
+
+            {/* Warning banner for categories approaching limit */}
+            {warned.length > 0 && exceeded.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2.5">
+                <AlertCircle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-xs font-bold text-amber-700">
+                  Próximo do limite: {warned.map(b => `${b.catName} (${b.pct.toFixed(0)}%)`).join(", ")}.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {monthBudgets.map(b => {
+                const isOver    = b.pct >= 100;
+                const isWarn    = !isOver && b.pct >= 80;
+                const remaining = b.limit_value - b.spent;
+                const excess    = b.spent - b.limit_value;
+                return (
+                  <div
+                    key={b.id}
+                    className={cn(
+                      "rounded-xl p-3 border",
+                      isOver ? "bg-red-50 border-red-200" : isWarn ? "bg-amber-50 border-amber-100" : "bg-slate-50 border-slate-100",
+                    )}
+                  >
+                    {/* Row 1: name + badges + percentage */}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: b.catColor }} />
+                        <span className="text-xs font-bold text-slate-700">{b.catName}</span>
+                        {isOver && (
+                          <span className="text-[9px] font-black text-red-600 bg-red-200 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                            ESTOURADO
+                          </span>
+                        )}
+                        {isWarn && (
+                          <span className="text-[9px] font-black text-amber-700 bg-amber-200 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                            ATENÇÃO
+                          </span>
+                        )}
+                      </div>
+                      <span className={cn(
+                        "text-[10px] font-black shrink-0",
+                        isOver ? "text-red-600" : isWarn ? "text-amber-600" : "text-slate-500",
+                      )}>
+                        {b.pct.toFixed(0)}%
+                      </span>
+                    </div>
+
+                    {/* Row 2: spent / limit */}
+                    <div className="flex justify-between text-[10px] font-medium mb-1.5">
+                      <span className="text-slate-600 font-bold">R$ {formatCurrency(b.spent)} usado</span>
+                      <span className="text-slate-400">limite R$ {formatCurrency(b.limit_value)}</span>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="w-full bg-white rounded-full h-2.5 overflow-hidden border border-slate-200">
+                      <div
+                        className={cn(
+                          "h-2.5 rounded-full transition-all",
+                          isOver ? "bg-red-500" : isWarn ? "bg-amber-500" : "bg-emerald-500",
+                        )}
+                        style={{ width: `${Math.min(b.pct, 100)}%` }}
+                      />
+                    </div>
+
+                    {/* Row 3: remaining / excess */}
+                    {isOver ? (
+                      <p className="text-[10px] font-bold text-red-600 mt-1">
+                        ⚠ Excedeu R$ {formatCurrency(excess)} do limite
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Restam R$ {formatCurrency(remaining)}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Charts ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

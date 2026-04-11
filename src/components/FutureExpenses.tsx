@@ -2,7 +2,10 @@ import React, { useMemo, useState, useEffect } from "react";
 import { format, parseISO, startOfToday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
-import { CheckCircle2, Clock, Plus, StickyNote, Edit2, Trash2, RefreshCw, AlertTriangle } from "lucide-react";
+import {
+  CheckCircle2, Clock, Plus, StickyNote, Edit2, Trash2, RefreshCw,
+  AlertTriangle, SlidersHorizontal,
+} from "lucide-react";
 import { useData } from "../context/DataContext";
 import { formatCurrency, cn, generateId } from "../lib/utils";
 import { Expense } from "../types";
@@ -10,8 +13,13 @@ import ExpenseModal from "./ExpenseModal";
 import ConfirmModal from "./ConfirmModal";
 
 type FutureEntry = Expense & { isVirtual?: boolean };
+type FutureFilter = "upcoming" | "pending" | "recurring";
 
-export default function FutureExpenses() {
+interface Props {
+  filter?: FutureFilter;
+}
+
+export default function FutureExpenses({ filter }: Props) {
   const { expenses, categories, responsibles, recurring, togglePaid, deleteItem, saveExpense, saveRecurring } = useData();
   const [showModal,        setShowModal]        = useState(false);
   const [editingExp,       setEditingExp]       = useState<Expense | null>(null);
@@ -23,18 +31,51 @@ export default function FutureExpenses() {
 
   const today = startOfToday();
   const todayStr = format(today, "yyyy-MM-dd");
+  const in7days = format(new Date(today.getTime() + 7 * 86_400_000), "yyyy-MM-dd");
   const currentMonthStr = format(today, "yyyy-MM");
   const nextMonthStr = format(new Date(today.getFullYear(), today.getMonth() + 1, 1), "yyyy-MM");
 
-  // ── Overdue: unpaid expenses past their due date ──────────────────────────────
+  // ── Overdue: unpaid real expenses + virtual recurring past their due date ─────
   const overdue = useMemo(() => {
-    return expenses
+    const real: FutureEntry[] = expenses
       .filter(e => {
         try { return !e.paid && e.due_date < todayStr; }
         catch { return false; }
-      })
+      });
+
+    // Virtual recurring entries that are past due (look back up to 3 months)
+    const virtualOverdue: FutureEntry[] = [];
+    for (const rec of recurring.filter(r => r.active)) {
+      for (let monthOffset = -3; monthOffset <= 0; monthOffset++) {
+        const d = new Date(today.getFullYear(), today.getMonth() + monthOffset, rec.day_of_month);
+        if (d.getDate() !== rec.day_of_month) continue; // day overflow (e.g. Feb 30)
+        const yr = String(d.getFullYear());
+        const mn = String(d.getMonth() + 1).padStart(2, "0");
+        const dy = String(d.getDate()).padStart(2, "0");
+        const dueDate = `${yr}-${mn}-${dy}`;
+        if (dueDate >= todayStr) continue; // not overdue yet
+        // Skip if a real expense (paid or not) already covers this slot
+        const alreadyExists = expenses.some(
+          e => e.description === rec.description && e.due_date === dueDate && e.value === rec.value,
+        );
+        if (alreadyExists) continue;
+        virtualOverdue.push({
+          id:             `virtual-${rec.id}-${dueDate}`,
+          category_id:    rec.category_id,
+          description:    rec.description,
+          date:           todayStr,
+          due_date:       dueDate,
+          value:          rec.value,
+          responsible_id: rec.responsible_id,
+          paid:           0,
+          isVirtual:      true,
+        } as FutureEntry);
+      }
+    }
+
+    return [...real, ...virtualOverdue]
       .sort((a, b) => b.due_date.localeCompare(a.due_date)); // most recent overdue first
-  }, [expenses, todayStr]);
+  }, [expenses, recurring, today, todayStr]);
 
   const overdueTotal = useMemo(
     () => overdue.reduce((s, e) => s + e.value, 0),
@@ -94,13 +135,47 @@ export default function FutureExpenses() {
     return groups;
   }, [expenses, recurring, today, todayStr, currentMonthStr, nextMonthStr]);
 
+  // ── Apply filter ──────────────────────────────────────────────────────────────
+  const filteredOverdue = useMemo<FutureEntry[]>(() => {
+    if (!filter) return overdue;
+    if (filter === "upcoming") return [];
+    if (filter === "pending")  return overdue;
+    if (filter === "recurring") return overdue.filter(e => e.isVirtual);
+    return overdue;
+  }, [overdue, filter]);
+
+  const filteredGrouped = useMemo<Record<string, FutureEntry[]>>(() => {
+    if (!filter) return grouped;
+
+    const allEntries = (Object.values(grouped) as FutureEntry[][]).flat();
+    let filtered: FutureEntry[];
+
+    if (filter === "upcoming") {
+      filtered = allEntries.filter(e => e.due_date <= in7days);
+    } else if (filter === "pending") {
+      filtered = allEntries.filter(e => e.due_date.slice(0, 7) === currentMonthStr);
+    } else if (filter === "recurring") {
+      filtered = allEntries.filter(e => e.isVirtual);
+    } else {
+      filtered = allEntries;
+    }
+
+    const newGroups: Record<string, FutureEntry[]> = {};
+    for (const e of filtered) {
+      const month = e.due_date.slice(0, 7);
+      if (!newGroups[month]) newGroups[month] = [];
+      newGroups[month].push(e);
+    }
+    return newGroups;
+  }, [grouped, filter, in7days, currentMonthStr]);
+
   const totalFuture = useMemo(
-    () => (Object.values(grouped) as FutureEntry[][]).flat().reduce((s: number, e: FutureEntry) => s + e.value, 0),
-    [grouped],
+    () => (Object.values(filteredGrouped) as FutureEntry[][]).flat().reduce((s: number, e: FutureEntry) => s + e.value, 0),
+    [filteredGrouped],
   );
 
-  const monthCount = Object.keys(grouped).length;
-  const expCount   = (Object.values(grouped) as Expense[][]).flat().length;
+  const monthCount = Object.keys(filteredGrouped).length;
+  const expCount   = (Object.values(filteredGrouped) as Expense[][]).flat().length;
 
   const confirmLabel = expenses.find(e => e.id === confirmId)?.description ?? "";
 
@@ -256,6 +331,21 @@ export default function FutureExpenses() {
         <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">Despesas Futuras</h2>
       </div>
 
+      {/* Filter banner */}
+      {filter && (
+        <div className={cn(
+          "flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold uppercase tracking-widest border",
+          filter === "upcoming"  && "bg-amber-50 text-amber-700 border-amber-200",
+          filter === "pending"   && "bg-red-50 text-red-700 border-red-200",
+          filter === "recurring" && "bg-violet-50 text-violet-700 border-violet-200",
+        )}>
+          <SlidersHorizontal size={12} />
+          {filter === "upcoming"  && "Vence em breve — próximos 7 dias"}
+          {filter === "pending"   && "Pendentes — não pagos"}
+          {filter === "recurring" && "Recorrentes"}
+        </div>
+      )}
+
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="card p-4">
@@ -273,36 +363,40 @@ export default function FutureExpenses() {
       </div>
 
       {/* Empty state */}
-      {overdue.length === 0 && monthCount === 0 ? (
+      {filteredOverdue.length === 0 && monthCount === 0 ? (
         <div className="card p-12 text-center">
           <CheckCircle2 size={44} className="text-emerald-400 mx-auto mb-3" />
-          <p className="text-slate-500 font-bold text-sm">Nenhuma despesa pendente!</p>
-          <p className="text-slate-400 text-xs mt-1">Você está em dia com tudo.</p>
+          <p className="text-slate-500 font-bold text-sm">
+            {filter ? "Nenhuma despesa neste filtro." : "Nenhuma despesa pendente!"}
+          </p>
+          <p className="text-slate-400 text-xs mt-1">
+            {filter ? "Tente outro filtro ou volte ao menu." : "Você está em dia com tudo."}
+          </p>
         </div>
       ) : (
         <>
           {/* ── Overdue section ──────────────────────────────────────────────── */}
-          {overdue.length > 0 && (
+          {filteredOverdue.length > 0 && (
             <div className="card overflow-hidden border border-red-200">
               <div className="bg-red-500 px-5 py-3.5 flex justify-between items-center">
                 <div className="flex items-center gap-2">
                   <AlertTriangle size={14} className="text-white" />
                   <span className="text-xs font-black uppercase tracking-widest text-white">
-                    {overdue.length} vencida{overdue.length > 1 ? "s" : ""}
+                    {filteredOverdue.length} vencida{filteredOverdue.length > 1 ? "s" : ""}
                   </span>
                 </div>
                 <span className="text-sm font-black text-white">
-                  R$ {formatCurrency(overdueTotal)}
+                  R$ {formatCurrency(filteredOverdue.reduce((s, e) => s + e.value, 0))}
                 </span>
               </div>
               <div className="divide-y divide-slate-50">
-                {overdue.map(e => renderExpenseRow(e, true))}
+                {filteredOverdue.map(e => renderExpenseRow(e, true))}
               </div>
             </div>
           )}
 
           {/* ── Future months ────────────────────────────────────────────────── */}
-          {Object.entries(grouped).map(([month, exps]: [string, FutureEntry[]]) => {
+          {Object.entries(filteredGrouped).map(([month, exps]: [string, FutureEntry[]]) => {
             const [yearStr, monthStr] = month.split("-");
             const monthDate  = new Date(parseInt(yearStr), parseInt(monthStr) - 1, 1);
             const monthTotal = exps.reduce((s, e) => s + e.value, 0);
