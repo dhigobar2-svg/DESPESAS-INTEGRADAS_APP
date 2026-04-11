@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Edit2, Check, X,
-  TrendingUp, Wallet, ArrowDownRight, StickyNote,
+  TrendingUp, StickyNote,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, formatCurrency, cn } from "../lib/utils";
@@ -126,32 +126,37 @@ export default function Incomes() {
         </div>
       </div>
 
-      {/* Summary cards — triângulo: Despesas em cima, Entradas + Saldo embaixo */}
-      <div className="space-y-3">
-        <div className="card p-5">
-          <div className="flex items-center gap-2 mb-1.5">
-            <ArrowDownRight size={14} className="text-red-500" />
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Despesas do mês</p>
+      {/* Balanço do mês — sempre visível no topo */}
+      <div className="card p-5">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Balanço do mês</p>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[10px] text-emerald-600 font-bold w-16">Entradas</span>
+          <div className="flex-1 bg-slate-100 rounded-full h-2.5">
+            <div
+              className="h-2.5 bg-emerald-500 rounded-full transition-all"
+              style={{ width: `${totalIncome > 0 ? Math.min((totalIncome / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }}
+            />
           </div>
-          <p className="text-xl font-black text-red-500">R$ {formatCurrency(monthExpenses)}</p>
+          <span className="text-[10px] font-black text-emerald-600 w-24 text-right">R$ {formatCurrency(totalIncome)}</span>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="card p-4">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <TrendingUp size={12} className="text-emerald-500" />
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entradas</p>
-            </div>
-            <p className="text-base font-black text-emerald-600 truncate">R$ {formatCurrency(totalIncome)}</p>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-red-500 font-bold w-16">Despesas</span>
+          <div className="flex-1 bg-slate-100 rounded-full h-2.5">
+            <div
+              className="h-2.5 bg-red-400 rounded-full transition-all"
+              style={{ width: `${monthExpenses > 0 ? Math.min((monthExpenses / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }}
+            />
           </div>
-          <div className="card p-4">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <Wallet size={12} className={balance >= 0 ? "text-emerald-600" : "text-red-500"} />
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saldo</p>
-            </div>
-            <p className={cn("text-base font-black truncate", balance >= 0 ? "text-emerald-600" : "text-red-500")}>
-              {balance >= 0 ? "+" : "-"}R$ {formatCurrency(Math.abs(balance))}
-            </p>
-          </div>
+          <span className="text-[10px] font-black text-red-500 w-24 text-right">R$ {formatCurrency(monthExpenses)}</span>
+        </div>
+        <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
+          <span className="text-xs font-bold text-slate-600">Saldo líquido</span>
+          <span className={cn(
+            "text-base font-black",
+            balance >= 0 ? "text-emerald-600" : "text-red-600",
+          )}>
+            {balance >= 0 ? "+" : ""}R$ {formatCurrency(balance)}
+          </span>
         </div>
       </div>
 
@@ -350,43 +355,6 @@ export default function Incomes() {
         )
       )}
 
-      {/* Balance bar — shows only when there's data */}
-      {(totalIncome > 0 || monthExpenses > 0) && (
-        <div className="card p-5">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Balanço do mês</p>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] text-emerald-600 font-bold w-16">Entradas</span>
-            <div className="flex-1 bg-slate-100 rounded-full h-2.5">
-              <div
-                className="h-2.5 bg-emerald-500 rounded-full transition-all"
-                style={{ width: `${totalIncome > 0 ? Math.min((totalIncome / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }}
-              />
-            </div>
-            <span className="text-[10px] font-black text-emerald-600 w-24 text-right">R$ {formatCurrency(totalIncome)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-red-500 font-bold w-16">Despesas</span>
-            <div className="flex-1 bg-slate-100 rounded-full h-2.5">
-              <div
-                className="h-2.5 bg-red-400 rounded-full transition-all"
-                style={{ width: `${monthExpenses > 0 ? Math.min((monthExpenses / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }}
-              />
-            </div>
-            <span className="text-[10px] font-black text-red-500 w-24 text-right">R$ {formatCurrency(monthExpenses)}</span>
-          </div>
-          <div className={cn(
-            "mt-3 pt-3 border-t border-slate-100 flex justify-between items-center",
-          )}>
-            <span className="text-xs font-bold text-slate-600">Saldo líquido</span>
-            <span className={cn(
-              "text-base font-black",
-              balance >= 0 ? "text-emerald-600" : "text-red-600",
-            )}>
-              {balance >= 0 ? "+" : ""}R$ {formatCurrency(balance)}
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* FAB */}
       {!showForm && (
