@@ -17,7 +17,7 @@ export default function Settings() {
   const {
     categories, responsibles, profile, budgets, incomeTypes,
     saveProfile, saveCategory, saveResponsible, saveBudget, saveIncomeType,
-    deleteItem, readPhoto,
+    deleteItem, readPhoto, addToast,
   } = useData();
 
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
@@ -48,29 +48,45 @@ export default function Settings() {
   };
   const saveEditCat = () => {
     if (!editingCatId || !editCatName.trim()) return;
-    saveCategory({ id: editingCatId, name: editCatName.trim(), color: editCatColor }, true);
+    const name = editCatName.trim();
+    const dup = categories.find(
+      c => c.id !== editingCatId && c.name.trim().toLowerCase() === name.toLowerCase(),
+    );
+    if (dup) {
+      addToast("error", `Já existe uma categoria chamada "${dup.name}".`);
+      return;
+    }
+    saveCategory({ id: editingCatId, name, color: editCatColor }, true);
     setEditingCatId(null);
   };
 
   const handleAddCat = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    saveCategory({
-      id:    generateId(),
-      name:  (fd.get("name") as string).trim(),
-      color: fd.get("color") as string,
-    }, false);
+    const fd   = new FormData(e.currentTarget);
+    const name = (fd.get("name") as string).trim();
+    const dup  = categories.find(c => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (dup) {
+      addToast("error", `Já existe uma categoria chamada "${dup.name}".`);
+      return;
+    }
+    saveCategory({ id: generateId(), name, color: fd.get("color") as string }, false);
     e.currentTarget.reset();
   };
 
   // ── Responsibles ──────────────────────────────────────────────────────────────
   const handleAddResp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+    const fd   = new FormData(e.currentTarget);
+    const name = (fd.get("name") as string).trim();
+    const dup  = responsibles.find(r => r.name.trim().toLowerCase() === name.toLowerCase());
+    if (dup) {
+      addToast("error", `Já existe um responsável chamado "${dup.name}".`);
+      return;
+    }
     const fileInput = e.currentTarget.querySelector<HTMLInputElement>('input[type="file"]');
     const file = fileInput?.files?.[0];
     const photo = file ? await readPhoto(file) : undefined;
-    saveResponsible({ id: generateId(), name: (fd.get("name") as string).trim(), photo }, false);
+    saveResponsible({ id: generateId(), name, photo }, false);
     e.currentTarget.reset();
   };
 
@@ -106,18 +122,28 @@ export default function Settings() {
   };
   const saveEditIt = () => {
     if (!editingItId || !editItName.trim()) return;
-    saveIncomeType({ id: editingItId, name: editItName.trim(), color: editItColor }, true);
+    const name = editItName.trim();
+    const dup = incomeTypes.find(
+      it => it.id !== editingItId && it.name.trim().toLowerCase() === name.toLowerCase(),
+    );
+    if (dup) {
+      addToast("error", `Já existe um tipo de entrada chamado "${dup.name}".`);
+      return;
+    }
+    saveIncomeType({ id: editingItId, name, color: editItColor }, true);
     setEditingItId(null);
   };
 
   const handleAddIncomeType = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    saveIncomeType({
-      id:    generateId(),
-      name:  (fd.get("name") as string).trim(),
-      color: fd.get("color") as string,
-    }, false);
+    const fd   = new FormData(e.currentTarget);
+    const name = (fd.get("name") as string).trim();
+    const dup  = incomeTypes.find(it => it.name.trim().toLowerCase() === name.toLowerCase());
+    if (dup) {
+      addToast("error", `Já existe um tipo de entrada chamado "${dup.name}".`);
+      return;
+    }
+    saveIncomeType({ id: generateId(), name, color: fd.get("color") as string }, false);
     e.currentTarget.reset();
   };
 
