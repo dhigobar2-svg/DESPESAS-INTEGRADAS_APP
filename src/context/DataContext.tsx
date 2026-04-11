@@ -77,9 +77,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [isConnected,  setIsConnected]  = useState(false);
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
 
-  const socketRef        = useRef<Socket | null>(null);
-  const recurringApplied = useRef(false);
-  const notifiedRef      = useRef(false);
+  const socketRef           = useRef<Socket | null>(null);
+  const recurringApplied    = useRef(false);
+  const notifiedRef         = useRef(false);
+  const firstSocketConnect  = useRef(true);
 
   // ── Toast ────────────────────────────────────────────────────────────────────
 
@@ -152,7 +153,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // ── Fetch ─────────────────────────────────────────────────────────────────────
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (onSuccess?: () => void) => {
     try {
       const res = await fetch("/api/data");
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -188,6 +189,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       lsSet("recurring",    data.recurring);
       lsSet("incomes",      data.incomes);
       lsSet("incomeTypes",  data.incomeTypes);
+
+      onSuccess?.();
     } catch (err) {
       console.error("Fetch failed, using local data", err);
       setExpenses(    lsGet("expenses",     []));
@@ -245,11 +248,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const s = io({ reconnectionAttempts: 10 });
     socketRef.current = s;
-    s.on("connect",      () => setIsConnected(true));
+
+    s.on("connect", () => {
+      setIsConnected(true);
+      if (!firstSocketConnect.current) {
+        addToast("success", "Reconectado ao servidor.");
+      }
+      firstSocketConnect.current = false;
+    });
     s.on("disconnect",   () => setIsConnected(false));
     s.on("data_updated", fetchData);
 
-    const onOnline  = () => { setIsOnline(true);  fetchData(); };
+    const onOnline = () => {
+      setIsOnline(true);
+      fetchData(() => addToast("success", "Dados sincronizados com o servidor!"));
+    };
     const onOffline = () => setIsOnline(false);
     window.addEventListener("online",  onOnline);
     window.addEventListener("offline", onOffline);

@@ -21,7 +21,7 @@ interface Props {
 }
 
 export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
-  const { expenses, categories, responsibles, togglePaid, deleteItem } = useData();
+  const { expenses, categories, responsibles, incomes, incomeTypes, togglePaid, deleteItem } = useData();
 
   const [showModal,        setShowModal]        = useState(false);
   const [editingExp,       setEditingExp]        = useState<Expense | null>(null);
@@ -67,20 +67,58 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const filteredTotal = filtered.reduce((s, e) => s + e.value, 0);
 
+  // Incomes filtered by the same date range (for PDF report)
+  const filteredIncomes = useMemo(() => {
+    let list = [...incomes].sort((a, b) => b.date.localeCompare(a.date));
+    if (filterDateFrom) list = list.filter(i => i.date >= filterDateFrom);
+    if (filterDateTo)   list = list.filter(i => i.date <= filterDateTo);
+    return list;
+  }, [incomes, filterDateFrom, filterDateTo]);
+
+  const filteredIncomeTotal = filteredIncomes.reduce((s, i) => s + i.value, 0);
+  const filteredBalance     = filteredIncomeTotal - filteredTotal;
+
   const resetPage = () => setPage(1);
 
   // ── Export PDF ────────────────────────────────────────────────────────────────
   const generatePDF = () => {
     const doc = new jsPDF();
+
+    // Title
     doc.setFontSize(14);
-    doc.text("Relatório de Despesas — DESPESAS INTEGRADAS", 14, 15);
-    const filterLabel = filterResp
-      ? `Responsável: ${responsibles.find(r => r.id === filterResp)?.name ?? ""}`
-      : filterDateFrom || filterDateTo
+    doc.text("Relatório Financeiro — DESPESAS INTEGRADAS", 14, 15);
+
+    // Period / filter description
+    const periodPart = filterDateFrom || filterDateTo
       ? `Período: ${filterDateFrom ? format(parseISO(filterDateFrom), "dd/MM/yyyy") : "início"} até ${filterDateTo ? format(parseISO(filterDateTo), "dd/MM/yyyy") : "hoje"}`
-      : "Todas as despesas";
+      : "Todas as datas";
+    const respPart = filterResp ? ` · Responsável: ${responsibles.find(r => r.id === filterResp)?.name ?? ""}` : "";
     doc.setFontSize(9);
-    doc.text(filterLabel, 14, 22);
+    doc.text(periodPart + respPart, 14, 22);
+
+    // Summary table
+    autoTable(doc, {
+      head: [["Resumo", ""]],
+      body: [
+        ["Total Despesas", `R$ ${formatCurrency(filteredTotal)}`],
+        ["Total Entradas", `R$ ${formatCurrency(filteredIncomeTotal)}`],
+        [`Saldo ${filteredBalance >= 0 ? "(positivo)" : "(negativo)"}`,
+          `${filteredBalance >= 0 ? "+" : ""}R$ ${formatCurrency(filteredBalance)}`],
+      ],
+      startY: 27,
+      theme: "plain",
+      styles: { fontSize: 9 },
+      headStyles: { fontStyle: "bold", fillColor: [241, 245, 249] },
+      columnStyles: { 0: { fontStyle: "bold", cellWidth: 60 }, 1: { halign: "right" } },
+    });
+
+    // Expenses table
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const expStartY = (doc as any).lastAutoTable.finalY + 8;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.text("Despesas", 14, expStartY);
+    doc.setFont("helvetica", "normal");
     autoTable(doc, {
       head: [["Vencimento", "Descrição", "Categoria", "Valor", "Responsável", "Status", "Notas"]],
       body: filtered.map(e => [
@@ -92,10 +130,34 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
         e.paid ? "Pago" : "Pendente",
         e.notes || "—",
       ]),
-      startY: 28,
+      startY: expStartY + 3,
       foot: [["", "", "TOTAL", `R$ ${formatCurrency(filteredTotal)}`, "", "", ""]],
     });
-    doc.save("relatorio-despesas.pdf");
+
+    // Income table (only when there are incomes in the filtered range)
+    if (filteredIncomes.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const incStartY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Entradas / Receitas", 14, incStartY);
+      doc.setFont("helvetica", "normal");
+      autoTable(doc, {
+        head: [["Data", "Descrição", "Tipo", "Valor", "Responsável", "Observações"]],
+        body: filteredIncomes.map(i => [
+          i.date ? format(parseISO(i.date), "dd/MM/yyyy") : "—",
+          i.description || "—",
+          incomeTypes.find(t => t.id === i.type)?.name ?? i.type ?? "—",
+          `R$ ${formatCurrency(i.value)}`,
+          responsibles.find(r => r.id === i.responsible_id)?.name ?? "—",
+          i.notes || "—",
+        ]),
+        startY: incStartY + 3,
+        foot: [["", "", "TOTAL", `R$ ${formatCurrency(filteredIncomeTotal)}`, "", ""]],
+      });
+    }
+
+    doc.save("relatorio-financeiro.pdf");
   };
 
   // ── Export CSV ────────────────────────────────────────────────────────────────
