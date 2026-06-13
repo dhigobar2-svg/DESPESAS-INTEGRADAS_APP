@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn } from "../lib/utils";
+import { formatCurrency, cn, isRecurringCovered } from "../lib/utils";
 import ExpenseModal from "./ExpenseModal";
 
 export default function Dashboard() {
@@ -44,10 +44,7 @@ export default function Dashboard() {
         if (!rec.active) continue;
         const dayPadded = String(rec.day_of_month).padStart(2, "0");
         const dueDate = `${monthKey}-${dayPadded}`;
-        const alreadyExists = monthExp.some(
-          e => e.description === rec.description && e.due_date === dueDate && e.value === rec.value,
-        );
-        if (!alreadyExists) {
+        if (!isRecurringCovered(monthExp, rec, dueDate)) {
           monthExp.push({
             id:             `proj-${rec.id}-${monthKey}`,
             category_id:    rec.category_id,
@@ -57,6 +54,7 @@ export default function Dashboard() {
             value:          rec.value,
             responsible_id: rec.responsible_id,
             paid:           0,
+            recurring_id:   rec.id,
           });
         }
       }
@@ -103,7 +101,7 @@ export default function Dashboard() {
       catData, allCatData, topCategories, respData, top5Individual,
       count: monthExp.length,
     };
-  }, [expenses, categories, responsibles, selectedMonth]);
+  }, [expenses, categories, responsibles, recurring, selectedMonth]);
 
   // ── Previous month comparison ─────────────────────────────────────────────────
   const prevMonthTotal = useMemo(() => {

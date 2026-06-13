@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
 import {
   User, Tag, Users, Camera, Trash2, Edit2, Check, X,
-  DollarSign, Plus, TrendingUp,
+  DollarSign, Plus, TrendingUp, Bell, BellOff,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, cn } from "../lib/utils";
@@ -18,6 +18,7 @@ export default function Settings() {
     categories, responsibles, profile, budgets, incomeTypes,
     saveProfile, saveCategory, saveResponsible, saveBudget, saveIncomeType,
     deleteItem, readPhoto, addToast,
+    notificationsEnabled, requestNotificationPermission,
   } = useData();
 
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
@@ -191,6 +192,30 @@ export default function Settings() {
               Salvar
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* ── Notifications ─────────────────────────────────────────────────────── */}
+      <section className="card p-6">
+        <h3 className="section-title"><Bell size={16} /> Notificações</h3>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-slate-500">
+            {notificationsEnabled
+              ? "Ativadas — você receberá um aviso de despesas vencidas ou a vencer."
+              : "Receba um aviso no navegador sobre despesas vencidas ou a vencer."}
+          </p>
+          {notificationsEnabled ? (
+            <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 shrink-0">
+              <Bell size={14} /> Ativadas
+            </span>
+          ) : (
+            <button
+              onClick={() => requestNotificationPermission()}
+              className="btn-primary py-2 px-4 flex items-center gap-1.5 shrink-0"
+            >
+              <BellOff size={14} /> Ativar
+            </button>
+          )}
         </div>
       </section>
 

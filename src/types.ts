@@ -21,6 +21,7 @@ export interface Expense {
   paid: number;       // 0 | 1
   notes?: string;
   created_by?: string;
+  recurring_id?: string;  // links an auto-generated expense back to its recurring template
 }
 
 export interface UserProfile {
@@ -61,6 +62,13 @@ export interface Income {
   responsible_id?: string;
   notes?: string;
   recurring: number;    // 0 | 1
+}
+
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  updated_at: string;   // ISO string
 }
 
 export type ToastType = "success" | "error" | "info";

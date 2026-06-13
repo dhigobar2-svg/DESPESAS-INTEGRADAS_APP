@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Edit2, Check, X,
-  TrendingUp, StickyNote, AlertTriangle,
+  TrendingUp, StickyNote, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, formatCurrency, cn } from "../lib/utils";
@@ -270,6 +270,38 @@ export default function Incomes() {
                     onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                     className="input text-sm"
                   />
+                </div>
+
+                <div
+                  onClick={() => setForm(f => ({ ...f, recurring: f.recurring ? 0 : 1 }))}
+                  className={cn(
+                    "col-span-2 flex items-center gap-3 py-3 px-4 rounded-2xl border-2 cursor-pointer transition-all",
+                    form.recurring
+                      ? "border-teal-400 bg-teal-50"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-300",
+                  )}
+                >
+                  <RefreshCw size={18} className={form.recurring ? "text-teal-500" : "text-slate-400"} />
+                  <div className="flex-1">
+                    <p className={cn("text-sm font-bold", form.recurring ? "text-teal-700" : "text-slate-600")}>
+                      É uma entrada recorrente?
+                    </p>
+                    {!!form.recurring && (
+                      <p className="text-[11px] text-teal-500 mt-0.5">
+                        Será lançada automaticamente todo mês no mesmo dia.
+                      </p>
+                    )}
+                  </div>
+                  <div className={cn(
+                    "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+                    form.recurring ? "bg-teal-500 border-teal-500" : "border-slate-300",
+                  )}>
+                    {!!form.recurring && (
+                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
                 </div>
               </div>
 

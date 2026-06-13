@@ -1,21 +1,24 @@
-import React, { useState } from "react";
+import React, { useState, lazy, Suspense } from "react";
 import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
-  TrendingUp, NotebookPen,
+  TrendingUp, NotebookPen, RefreshCw, Loader2,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency } from "./lib/utils";
 import Toast from "./components/Toast";
-import Dashboard from "./components/Dashboard";
-import ExpenseList from "./components/ExpenseList";
-import FutureExpenses from "./components/FutureExpenses";
-import Incomes from "./components/Incomes";
-import Notes from "./components/Notes";
-import Settings from "./components/Settings";
 
-type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "notes" | "settings";
+// Lazy-loaded tabs keep the heavy chart/PDF libraries out of the initial bundle.
+const Dashboard         = lazy(() => import("./components/Dashboard"));
+const ExpenseList       = lazy(() => import("./components/ExpenseList"));
+const FutureExpenses    = lazy(() => import("./components/FutureExpenses"));
+const Incomes           = lazy(() => import("./components/Incomes"));
+const Notes             = lazy(() => import("./components/Notes"));
+const Settings          = lazy(() => import("./components/Settings"));
+const RecurringExpenses = lazy(() => import("./components/RecurringExpenses"));
+
+type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "recurring" | "notes" | "settings";
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
@@ -264,6 +267,8 @@ function Shell() {
               />
               <MenuButton icon={TrendingUp}    title="Entradas / Receitas" subtitle="Salário e rendas"
                 onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
+              <MenuButton icon={RefreshCw}     title="Recorrentes"       subtitle="Assinaturas e contas fixas"
+                onClick={() => handleTabChange("recurring")} colorClass="bg-orange-500" />
               <MenuButton icon={NotebookPen}   title="Bloco de Notas"    subtitle="Anotações e lembretes"
                 onClick={() => handleTabChange("notes")}     colorClass="bg-amber-500" />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
@@ -271,12 +276,19 @@ function Shell() {
             </div>
           )}
 
-          {activeTab === "overview"  && <Dashboard />}
-          {activeTab === "expenses"  && <ExpenseList />}
-          {activeTab === "futures"   && <FutureExpenses filter={futuresFilter} />}
-          {activeTab === "incomes"   && <Incomes />}
-          {activeTab === "notes"     && <Notes />}
-          {activeTab === "settings"  && <Settings />}
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-24">
+              <Loader2 className="animate-spin text-emerald-500" size={32} />
+            </div>
+          }>
+            {activeTab === "overview"  && <Dashboard />}
+            {activeTab === "expenses"  && <ExpenseList />}
+            {activeTab === "futures"   && <FutureExpenses filter={futuresFilter} />}
+            {activeTab === "incomes"   && <Incomes />}
+            {activeTab === "recurring" && <RecurringExpenses />}
+            {activeTab === "notes"     && <Notes />}
+            {activeTab === "settings"  && <Settings />}
+          </Suspense>
         </AnimatePresence>
       </main>
 

@@ -1,8 +1,29 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { Expense, RecurringExpense } from "../types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+/**
+ * Whether a recurring template is already materialised by a real expense for a
+ * given month. Prefers the stable `recurring_id` link (robust to the user later
+ * editing the generated expense's value/description), and falls back to the
+ * legacy description+due_date+value heuristic for pre-existing rows.
+ */
+export function isRecurringCovered(
+  expenses: Expense[],
+  rec: RecurringExpense,
+  dueDate: string,
+  opts: { unpaidOnly?: boolean } = {},
+): boolean {
+  const month = dueDate.slice(0, 7);
+  return expenses.some(e => {
+    if (opts.unpaidOnly && e.paid) return false;
+    if (e.recurring_id && e.recurring_id === rec.id && e.due_date?.slice(0, 7) === month) return true;
+    return e.description === rec.description && e.due_date === dueDate && e.value === rec.value;
+  });
 }
 
 export function generateId(): string {
