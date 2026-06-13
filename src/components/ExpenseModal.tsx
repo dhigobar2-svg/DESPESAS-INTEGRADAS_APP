@@ -24,22 +24,24 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
 
   // ── Centralised save (called both on first submit and on duplicate-confirm) ──
   const doSave = (expense: Expense) => {
-    saveExpense(expense, !!editing);
-
-    // Create recurring template only for new expenses
+    // Create recurring template only for new expenses, and link the materialised
+    // expense back to it via recurring_id so it's never regenerated as a duplicate.
     if (!editing && isRecurring && expense.due_date) {
       const dayOfMonth = parseInt(expense.due_date.slice(8, 10), 10);
-      const recDup = recurring.some(r =>
+      const existingRec = recurring.find(r =>
         r.active &&
         r.description.toLowerCase() === expense.description.toLowerCase() &&
         r.day_of_month === dayOfMonth &&
         Math.abs(r.value - expense.value) < 0.01,
       );
-      if (recDup) {
+      if (existingRec) {
         addToast("info", "Já existe uma recorrente ativa com estes dados — não foi duplicada.");
+        saveExpense({ ...expense, recurring_id: existingRec.id }, false);
       } else {
+        const recId = generateId();
+        saveExpense({ ...expense, recurring_id: recId }, false);
         saveRecurring({
-          id:             generateId(),
+          id:             recId,
           category_id:    expense.category_id,
           description:    expense.description,
           value:          expense.value,
@@ -48,6 +50,8 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
           active:         1,
         }, false);
       }
+    } else {
+      saveExpense(expense, !!editing);
     }
 
     setPendingExpense(null);
@@ -71,6 +75,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       paid:           fd.get("paid") === "on" ? 1 : 0,
       notes:          (fd.get("notes") as string) || undefined,
       created_by:     editing?.created_by,
+      recurring_id:   editing?.recurring_id ?? defaultValues?.recurring_id,
     };
 
     // For new expenses: check if an identical one already exists

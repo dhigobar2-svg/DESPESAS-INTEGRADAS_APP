@@ -68,10 +68,11 @@ db.exec(`
     FOREIGN KEY(responsible_id) REFERENCES responsibles(id) ON DELETE SET NULL
   );
 
-  CREATE TABLE IF NOT EXISTS users (
+  CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    pin TEXT NOT NULL
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS incomes (
@@ -90,6 +91,17 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     color TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS recurring_incomes (
+    id TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    value REAL NOT NULL,
+    type TEXT DEFAULT 'outro',
+    responsible_id TEXT,
+    day_of_month INTEGER NOT NULL,
+    active INTEGER DEFAULT 1,
+    FOREIGN KEY(responsible_id) REFERENCES responsibles(id) ON DELETE SET NULL
   );
 
   INSERT OR IGNORE INTO categories (id, name, color) VALUES
@@ -113,16 +125,20 @@ const tryMigrate = (test: string, alter: string) => {
 tryMigrate("SELECT description FROM expenses LIMIT 1",  "ALTER TABLE expenses ADD COLUMN description TEXT");
 tryMigrate("SELECT notes FROM expenses LIMIT 1",         "ALTER TABLE expenses ADD COLUMN notes TEXT");
 tryMigrate("SELECT created_by FROM expenses LIMIT 1",    "ALTER TABLE expenses ADD COLUMN created_by TEXT");
+tryMigrate("SELECT recurring_id FROM expenses LIMIT 1",  "ALTER TABLE expenses ADD COLUMN recurring_id TEXT");
+tryMigrate("SELECT recurring_income_id FROM incomes LIMIT 1", "ALTER TABLE incomes ADD COLUMN recurring_income_id TEXT");
 
 // Whitelist of allowed columns per table — prevents SQL injection via sync
 const ALLOWED_COLUMNS: Record<string, string[]> = {
-  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by"],
+  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id"],
   categories:          ["id", "name", "color"],
   responsibles:        ["id", "name", "photo"],
   budgets:             ["id", "category_id", "month", "limit_value"],
   recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active"],
-  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring"],
+  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id"],
   income_types:        ["id", "name", "color"],
+  recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active"],
+  notes:               ["id", "title", "content", "updated_at"],
 };
 
 // Safe upsert: only uses whitelisted columns
@@ -162,23 +178,26 @@ async function startServer() {
                          ?? { id: "default", name: "Usuário", photo: null };
     const budgets      = db.prepare("SELECT * FROM budgets").all();
     const recurring    = db.prepare("SELECT * FROM recurring_expenses ORDER BY description").all();
-    const users        = db.prepare("SELECT id, name FROM users ORDER BY name").all();
     const incomes      = db.prepare("SELECT * FROM incomes ORDER BY date DESC").all();
     const incomeTypes  = db.prepare("SELECT * FROM income_types ORDER BY name").all();
-    res.json({ expenses, categories, responsibles, profile, budgets, recurring, users, incomes, incomeTypes });
+    const recurringIncomes = db.prepare("SELECT * FROM recurring_incomes ORDER BY description").all();
+    const notes        = db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all();
+    res.json({ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes });
   });
 
   // POST /api/sync — validated upsert of all client state
   app.post("/api/sync", (req, res) => {
-    const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes } = req.body;
+    const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes } = req.body;
     try {
-      if (categories?.length)   syncItems("categories",         categories);
-      if (responsibles?.length) syncItems("responsibles",       responsibles);
-      if (expenses?.length)     syncItems("expenses",           expenses);
-      if (budgets?.length)      syncItems("budgets",            budgets);
-      if (recurring?.length)    syncItems("recurring_expenses", recurring);
-      if (incomes?.length)      syncItems("incomes",            incomes);
-      if (incomeTypes?.length)  syncItems("income_types",       incomeTypes);
+      if (categories?.length)       syncItems("categories",         categories);
+      if (responsibles?.length)     syncItems("responsibles",       responsibles);
+      if (expenses?.length)         syncItems("expenses",           expenses);
+      if (budgets?.length)          syncItems("budgets",            budgets);
+      if (recurring?.length)        syncItems("recurring_expenses", recurring);
+      if (incomes?.length)          syncItems("incomes",            incomes);
+      if (incomeTypes?.length)      syncItems("income_types",       incomeTypes);
+      if (recurringIncomes?.length) syncItems("recurring_incomes",  recurringIncomes);
+      if (notes?.length)            syncItems("notes",              notes);
 
       if (profile && typeof profile === "object") {
         const p = profile as Record<string, unknown>;
@@ -194,13 +213,27 @@ async function startServer() {
     }
   });
 
-  // DELETE /api/:table/:id
-  app.delete("/api/:table/:id", (req, res) => {
-    const { table, id } = req.params;
-    const validTables = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes", "income_types"];
-    if (!validTables.includes(table)) {
+  // Shared delete logic with referential-integrity guard.
+  const VALID_DELETE_TABLES = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes", "income_types", "recurring_incomes", "notes"];
+
+  function handleDelete(table: string, id: string, res: any) {
+    if (!VALID_DELETE_TABLES.includes(table)) {
       return res.status(400).json({ error: "Tabela inválida." });
     }
+
+    // Block deleting a category/responsible still referenced by an expense,
+    // so the user is never left with silently orphaned data.
+    if (table === "categories" || table === "responsibles") {
+      const column = table === "categories" ? "category_id" : "responsible_id";
+      const inUse = db.prepare(`SELECT 1 FROM expenses WHERE ${column} = ? LIMIT 1`).get(id);
+      if (inUse) {
+        const msg = table === "categories"
+          ? "Não é possível excluir: categoria está sendo usada em uma despesa."
+          : "Não é possível excluir: responsável está sendo usado em uma despesa.";
+        return res.status(400).json({ error: msg });
+      }
+    }
+
     try {
       db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
       io.emit("data_updated");
@@ -212,70 +245,13 @@ async function startServer() {
         res.status(500).json({ error: "Erro ao excluir item." });
       }
     }
-  });
+  }
+
+  // DELETE /api/:table/:id
+  app.delete("/api/:table/:id", (req, res) => handleDelete(req.params.table, req.params.id, res));
 
   // POST /api/delete/:table/:id — fallback for environments that block HTTP DELETE
-  app.post("/api/delete/:table/:id", (req, res) => {
-    const { table, id } = req.params;
-    const validTables = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes", "income_types"];
-    if (!validTables.includes(table)) {
-      return res.status(400).json({ error: "Tabela inválida." });
-    }
-    try {
-      db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
-      io.emit("data_updated");
-      res.json({ success: true });
-    } catch (err: any) {
-      if (err.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
-        res.status(400).json({ error: "Não é possível excluir: item está sendo usado em uma despesa." });
-      } else {
-        res.status(500).json({ error: "Erro ao excluir item." });
-      }
-    }
-  });
-
-  // PUT /api/categories/:id — inline editing
-  app.put("/api/categories/:id", (req, res) => {
-    const { id } = req.params;
-    const { name, color } = req.body as { name?: string; color?: string };
-    if (!name || !color) return res.status(400).json({ error: "Nome e cor são obrigatórios." });
-    db.prepare("UPDATE categories SET name = ?, color = ? WHERE id = ?").run(name, color, id);
-    io.emit("data_updated");
-    res.json({ success: true });
-  });
-
-  // PUT /api/expenses/:id — full update
-  app.put("/api/expenses/:id", (req, res) => {
-    const { id } = req.params;
-    const e = req.body as Record<string, unknown>;
-    db.prepare(`
-      UPDATE expenses
-      SET category_id=?, description=?, date=?, due_date=?, value=?, responsible_id=?, paid=?, notes=?
-      WHERE id=?
-    `).run(e.category_id, e.description, e.date, e.due_date, e.value, e.responsible_id, e.paid, e.notes ?? null, id);
-    io.emit("data_updated");
-    res.json({ success: true });
-  });
-
-  // POST /api/users/register
-  app.post("/api/users/register", (req, res) => {
-    const { id, name, pin } = req.body as { id?: string; name?: string; pin?: string };
-    if (!id || !name || !pin) return res.status(400).json({ error: "Dados inválidos." });
-    const existing = db.prepare("SELECT id FROM users WHERE name = ?").get(name.trim());
-    if (existing) return res.status(409).json({ error: "Já existe um usuário com esse nome." });
-    db.prepare("INSERT INTO users (id, name, pin) VALUES (?, ?, ?)").run(id, name.trim(), pin);
-    io.emit("data_updated");
-    res.json({ success: true, user: { id, name: name.trim() } });
-  });
-
-  // POST /api/users/login
-  app.post("/api/users/login", (req, res) => {
-    const { name, pin } = req.body as { name?: string; pin?: string };
-    if (!name || !pin) return res.status(400).json({ error: "Dados inválidos." });
-    const user = db.prepare("SELECT id, name, pin FROM users WHERE name = ?").get(name.trim()) as any;
-    if (!user || user.pin !== pin) return res.status(401).json({ error: "Nome ou PIN incorreto." });
-    res.json({ success: true, user: { id: user.id, name: user.name } });
-  });
+  app.post("/api/delete/:table/:id", (req, res) => handleDelete(req.params.table, req.params.id, res));
 
   // Vite / static
   if (process.env.NODE_ENV !== "production") {

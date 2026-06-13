@@ -1,32 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Plus, Trash2, NotebookPen, Search } from "lucide-react";
-
-interface Note {
-  id: string;
-  title: string;
-  content: string;
-  updatedAt: string; // ISO string
-}
-
-const STORAGE_KEY = "despesas_notes";
-
-function loadNotes(): Note[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Note[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveNotes(notes: Note[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
-}
-
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-}
+import { useData } from "../context/DataContext";
+import { generateId } from "../lib/utils";
+import { Note } from "../types";
 
 // Always shows full dd/MM/yyyy; adds time for today
 function formatDate(iso: string): string {
@@ -46,7 +23,7 @@ function autoResize(el: HTMLTextAreaElement | null) {
 }
 
 export default function Notes() {
-  const [notes,     setNotes]     = useState<Note[]>(() => loadNotes());
+  const { notes, saveNote, deleteItem } = useData();
   const [editing,   setEditing]   = useState<Note | null>(null);
   const [isNew,     setIsNew]     = useState(false);
   const [search,    setSearch]    = useState("");
@@ -54,7 +31,6 @@ export default function Notes() {
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
-  useEffect(() => { saveNotes(notes); }, [notes]);
 
   // Re-size textarea whenever an existing note is opened (pre-filled content)
   useEffect(() => {
@@ -69,10 +45,10 @@ export default function Notes() {
       n.title.toLowerCase().includes(search.toLowerCase()) ||
       n.content.toLowerCase().includes(search.toLowerCase()),
     )
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
   const openNew = () => {
-    setEditing({ id: generateId(), title: "", content: "", updatedAt: new Date().toISOString() });
+    setEditing({ id: generateId(), title: "", content: "", updated_at: new Date().toISOString() });
     setIsNew(true);
   };
 
@@ -91,20 +67,17 @@ export default function Notes() {
     const trimmedTitle   = editing.title.trim();
     const trimmedContent = editing.content.trim();
     if (!trimmedTitle && !trimmedContent) { closeEditor(); return; }
-    const updated: Note = {
+    saveNote({
       ...editing,
-      title:     trimmedTitle || "Sem título",
-      content:   trimmedContent,
-      updatedAt: new Date().toISOString(),
-    };
-    setNotes(prev =>
-      isNew ? [updated, ...prev] : prev.map(n => n.id === updated.id ? updated : n),
-    );
+      title:      trimmedTitle || "Sem título",
+      content:    trimmedContent,
+      updated_at: new Date().toISOString(),
+    });
     closeEditor();
-  }, [editing, isNew]);
+  }, [editing, saveNote]);
 
   const deleteNote = (id: string) => {
-    setNotes(prev => prev.filter(n => n.id !== id));
+    deleteItem("notes", id);
     setConfirmId(null);
     if (editing?.id === id) closeEditor();
   };
@@ -189,7 +162,7 @@ export default function Notes() {
                       </button>
                     </div>
                     <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-2">
-                      {formatDate(note.updatedAt)}
+                      {formatDate(note.updated_at)}
                     </p>
                   </div>
                 </div>

@@ -1,8 +1,60 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { Expense, RecurringExpense, Income, RecurringIncome } from "../types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+/**
+ * Whether a recurring template is already materialised by a real expense for a
+ * given month. Prefers the stable `recurring_id` link (robust to the user later
+ * editing the generated expense's value/description), and falls back to the
+ * legacy description+due_date+value heuristic for pre-existing rows.
+ */
+export function isRecurringCovered(
+  expenses: Expense[],
+  rec: RecurringExpense,
+  dueDate: string,
+  opts: { unpaidOnly?: boolean } = {},
+): boolean {
+  const month = dueDate.slice(0, 7);
+  return expenses.some(e => {
+    if (opts.unpaidOnly && e.paid) return false;
+    if (e.recurring_id && e.recurring_id === rec.id && e.due_date?.slice(0, 7) === month) return true;
+    return e.description === rec.description && e.due_date === dueDate && e.value === rec.value;
+  });
+}
+
+/** Whether a recurring income template already has an instance in a given month. */
+export function isRecurringIncomeCovered(
+  incomes: Income[],
+  rec: RecurringIncome,
+  date: string,
+): boolean {
+  const month = date.slice(0, 7);
+  return incomes.some(i => {
+    if (i.recurring_income_id && i.recurring_income_id === rec.id && i.date?.slice(0, 7) === month) return true;
+    return i.date?.slice(0, 7) === month &&
+      i.description.toLowerCase() === rec.description.toLowerCase() &&
+      i.type === rec.type;
+  });
+}
+
+/** Number of days in a given month (`month1` is 1-based: 1 = January). */
+export function lastDayOfMonth(year: number, month1: number): number {
+  return new Date(year, month1, 0).getDate();
+}
+
+/**
+ * Valid `yyyy-MM-dd` due date for a recurring `dayOfMonth` in a target month,
+ * clamping days past the month's length to the last day (e.g. day 31 → 28 in
+ * February, → 30 in April). This keeps end-of-month recurrences from silently
+ * disappearing or producing invalid dates when the month rolls over.
+ */
+export function recurringDueDate(year: number, month1: number, dayOfMonth: number): string {
+  const day = Math.min(Math.max(dayOfMonth, 1), lastDayOfMonth(year, month1));
+  return `${year}-${String(month1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 export function generateId(): string {

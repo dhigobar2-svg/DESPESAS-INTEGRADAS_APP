@@ -7,7 +7,7 @@ import {
   AlertTriangle, SlidersHorizontal,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, generateId } from "../lib/utils";
+import { formatCurrency, cn, generateId, isRecurringCovered, recurringDueDate } from "../lib/utils";
 import { Expense } from "../types";
 import ExpenseModal from "./ExpenseModal";
 import ConfirmModal from "./ConfirmModal";
@@ -47,18 +47,11 @@ export default function FutureExpenses({ filter }: Props) {
     const virtualOverdue: FutureEntry[] = [];
     for (const rec of recurring.filter(r => r.active)) {
       for (let monthOffset = -3; monthOffset <= 0; monthOffset++) {
-        const d = new Date(today.getFullYear(), today.getMonth() + monthOffset, rec.day_of_month);
-        if (d.getDate() !== rec.day_of_month) continue; // day overflow (e.g. Feb 30)
-        const yr = String(d.getFullYear());
-        const mn = String(d.getMonth() + 1).padStart(2, "0");
-        const dy = String(d.getDate()).padStart(2, "0");
-        const dueDate = `${yr}-${mn}-${dy}`;
+        const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+        const dueDate = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
         if (dueDate >= todayStr) continue; // not overdue yet
         // Skip if a real expense (paid or not) already covers this slot
-        const alreadyExists = expenses.some(
-          e => e.description === rec.description && e.due_date === dueDate && e.value === rec.value,
-        );
-        if (alreadyExists) continue;
+        if (isRecurringCovered(expenses, rec, dueDate)) continue;
         virtualOverdue.push({
           id:             `virtual-${rec.id}-${dueDate}`,
           category_id:    rec.category_id,
@@ -68,6 +61,7 @@ export default function FutureExpenses({ filter }: Props) {
           value:          rec.value,
           responsible_id: rec.responsible_id,
           paid:           0,
+          recurring_id:   rec.id,
           isVirtual:      true,
         } as FutureEntry);
       }
@@ -97,18 +91,11 @@ export default function FutureExpenses({ filter }: Props) {
     // Add virtual recurring entries for current and next month only
     for (const rec of recurring.filter(r => r.active)) {
       for (let monthOffset = 0; monthOffset <= 1; monthOffset++) {
-        const d = new Date(today.getFullYear(), today.getMonth() + monthOffset, rec.day_of_month);
-        if (d.getDate() !== rec.day_of_month) continue; // day overflow (e.g. Feb 31)
-        const yr = String(d.getFullYear());
-        const mn = String(d.getMonth() + 1).padStart(2, "0");
-        const dy = String(d.getDate()).padStart(2, "0");
-        const dueDate = `${yr}-${mn}-${dy}`;
+        const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+        const dueDate = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
         if (dueDate < todayStr) continue;
-        // Skip if an actual (possibly unpaid) expense already covers this
-        const alreadyExists = expenses.some(
-          e => !e.paid && e.description === rec.description && e.due_date === dueDate && e.value === rec.value,
-        );
-        if (!alreadyExists) {
+        // Skip if an actual (still unpaid) expense already covers this
+        if (!isRecurringCovered(expenses, rec, dueDate, { unpaidOnly: true })) {
           future.push({
             id:             `virtual-${rec.id}-${dueDate}`,
             category_id:    rec.category_id,
@@ -118,6 +105,7 @@ export default function FutureExpenses({ filter }: Props) {
             value:          rec.value,
             responsible_id: rec.responsible_id,
             paid:           0,
+            recurring_id:   rec.id,
             isVirtual:      true,
           } as FutureEntry);
         }
@@ -279,6 +267,7 @@ export default function FutureExpenses({ filter }: Props) {
                     value: e.value,
                     responsible_id: e.responsible_id,
                     paid: 1,
+                    recurring_id: e.recurring_id,
                   }, false);
                 } else {
                   togglePaid(e.id);
@@ -298,6 +287,7 @@ export default function FutureExpenses({ filter }: Props) {
                     due_date: e.due_date,
                     value: e.value,
                     responsible_id: e.responsible_id,
+                    recurring_id: e.recurring_id,
                   });
                 } else {
                   setEditingExp(e);

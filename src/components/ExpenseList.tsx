@@ -6,8 +6,6 @@ import {
   ChevronLeft, ChevronRight, CheckCircle2, Download, StickyNote,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import { useData } from "../context/DataContext";
 import { formatCurrency, cn } from "../lib/utils";
 import ExpenseModal from "./ExpenseModal";
@@ -81,7 +79,12 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
   const resetPage = () => setPage(1);
 
   // ── Export PDF ────────────────────────────────────────────────────────────────
-  const generatePDF = () => {
+  const generatePDF = async () => {
+    // Loaded on demand so the ~250 KB PDF libraries stay out of the page load.
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
     const doc = new jsPDF();
 
     // Title

@@ -195,9 +195,12 @@ export default function RecurringExpensesView() {
             <div>
               <label className="label">Dia do mês</label>
               <input
-                type="number" name="day" min="1" max="28"
-                placeholder="1–28" required className="input text-sm"
+                type="number" name="day" min="1" max="31"
+                placeholder="1–31" required className="input text-sm"
               />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Dias 29–31 usam o último dia em meses mais curtos.
+              </p>
             </div>
           </div>
           <button type="submit" className="btn-primary w-full py-3 flex items-center justify-center gap-2">
