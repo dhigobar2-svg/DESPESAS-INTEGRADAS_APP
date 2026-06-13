@@ -61,7 +61,18 @@ export interface Income {
   type: string;         // 'salario' | 'renda_extra' | 'outro'
   responsible_id?: string;
   notes?: string;
-  recurring: number;    // 0 | 1
+  recurring: number;    // 0 | 1  (legacy flag; superseded by recurring_income_id)
+  recurring_income_id?: string;  // links an auto-generated income to its template
+}
+
+export interface RecurringIncome {
+  id: string;
+  description: string;
+  value: number;
+  type: string;
+  responsible_id?: string;
+  day_of_month: number;
+  active: number; // 0 | 1
 }
 
 export interface Note {

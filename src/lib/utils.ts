@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { Expense, RecurringExpense } from "../types";
+import type { Expense, RecurringExpense, Income, RecurringIncome } from "../types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -23,6 +23,21 @@ export function isRecurringCovered(
     if (opts.unpaidOnly && e.paid) return false;
     if (e.recurring_id && e.recurring_id === rec.id && e.due_date?.slice(0, 7) === month) return true;
     return e.description === rec.description && e.due_date === dueDate && e.value === rec.value;
+  });
+}
+
+/** Whether a recurring income template already has an instance in a given month. */
+export function isRecurringIncomeCovered(
+  incomes: Income[],
+  rec: RecurringIncome,
+  date: string,
+): boolean {
+  const month = date.slice(0, 7);
+  return incomes.some(i => {
+    if (i.recurring_income_id && i.recurring_income_id === rec.id && i.date?.slice(0, 7) === month) return true;
+    return i.date?.slice(0, 7) === month &&
+      i.description.toLowerCase() === rec.description.toLowerCase() &&
+      i.type === rec.type;
   });
 }
 

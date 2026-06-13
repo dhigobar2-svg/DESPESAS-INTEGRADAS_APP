@@ -6,9 +6,11 @@ import { io, Socket } from "socket.io-client";
 import { format } from "date-fns";
 import {
   Category, Responsible, Expense, UserProfile,
-  Budget, RecurringExpense, Income, IncomeType, ToastMessage, Note,
+  Budget, RecurringExpense, Income, IncomeType, RecurringIncome, ToastMessage, Note,
 } from "../types";
-import { generateId, compressImage, isRecurringCovered, recurringDueDate } from "../lib/utils";
+import {
+  generateId, compressImage, isRecurringCovered, isRecurringIncomeCovered, recurringDueDate,
+} from "../lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,9 +22,10 @@ interface DataContextValue {
   profile:      UserProfile;
   budgets:      Budget[];
   recurring:    RecurringExpense[];
-  incomes:      Income[];
-  incomeTypes:  IncomeType[];
-  notes:        Note[];
+  incomes:          Income[];
+  incomeTypes:      IncomeType[];
+  recurringIncomes: RecurringIncome[];
+  notes:            Note[];
   isOnline:     boolean;
   isConnected:  boolean;
   notificationsEnabled: boolean;
@@ -39,6 +42,7 @@ interface DataContextValue {
   saveRecurring:    (rec: RecurringExpense, isEdit: boolean) => void;
   saveIncome:       (inc: Income, isEdit: boolean) => void;
   saveIncomeType:   (it: IncomeType, isEdit: boolean) => void;
+  saveRecurringIncome: (rec: RecurringIncome, isEdit: boolean) => void;
   saveNote:         (note: Note) => void;
   readPhoto:        (file: File) => Promise<string>;
   requestNotificationPermission: () => Promise<boolean>;
@@ -75,9 +79,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [profile,      setProfile]      = useState<UserProfile>({ name: "Família" });
   const [budgets,      setBudgets]      = useState<Budget[]>([]);
   const [recurring,    setRecurring]    = useState<RecurringExpense[]>([]);
-  const [incomes,      setIncomes]      = useState<Income[]>([]);
-  const [incomeTypes,  setIncomeTypes]  = useState<IncomeType[]>([]);
-  const [notes,        setNotes]        = useState<Note[]>([]);
+  const [incomes,         setIncomes]         = useState<Income[]>([]);
+  const [incomeTypes,     setIncomeTypes]     = useState<IncomeType[]>([]);
+  const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
+  const [notes,           setNotes]           = useState<Note[]>([]);
   const [isOnline,     setIsOnline]     = useState(navigator.onLine);
   const [isConnected,  setIsConnected]  = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
@@ -116,6 +121,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     recurring?: RecurringExpense[];
     incomes?: Income[];
     incomeTypes?: IncomeType[];
+    recurringIncomes?: RecurringIncome[];
     notes?: Note[];
   }) => {
     if (!navigator.onLine) return;
@@ -168,9 +174,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       profile:      lsGet<UserProfile | undefined>("profile", undefined),
       budgets:      lsGet("budgets",      []),
       recurring:    lsGet("recurring",    []),
-      incomes:      lsGet("incomes",      []),
-      incomeTypes:  lsGet("incomeTypes",  []),
-      notes:        lsGet("notes",        []),
+      incomes:          lsGet("incomes",          []),
+      incomeTypes:      lsGet("incomeTypes",      []),
+      recurringIncomes: lsGet("recurringIncomes", []),
+      notes:            lsGet("notes",            []),
     });
   }, [syncWithServer]);
 
@@ -206,37 +213,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Auto-apply recurring incomes for current month ───────────────────────────
-  // An income flagged `recurring` acts as a template; each month a copy is
-  // materialised (recurring=0) if one isn't already present.
+  // Mirrors recurring expenses: each active template in `recurring_incomes`
+  // materialises one income per month, linked back via recurring_income_id.
 
-  const applyRecurringIncomes = useCallback((current: Income[]): Income[] => {
+  const applyRecurringIncomes = useCallback((
+    currentIncomes: Income[],
+    currentTemplates: RecurringIncome[],
+  ): Income[] => {
     const now = new Date();
     const year = now.getFullYear();
     const month1 = now.getMonth() + 1;
-    const monthStr = format(now, "yyyy-MM");
     const generated: Income[] = [];
 
-    for (const tpl of current) {
-      if (!tpl.recurring) continue;
-      const day = parseInt(tpl.date?.slice(8, 10) || "1", 10) || 1;
-      const date = recurringDueDate(year, month1, day);
-
-      const matches = (i: Income) =>
-        i.date?.slice(0, 7) === monthStr &&
-        i.description.toLowerCase() === tpl.description.toLowerCase() &&
-        i.type === tpl.type;
-
-      if (current.some(matches) || generated.some(matches)) continue;
+    for (const tpl of currentTemplates) {
+      if (!tpl.active) continue;
+      const date = recurringDueDate(year, month1, tpl.day_of_month);
+      if (isRecurringIncomeCovered(currentIncomes, tpl, date)) continue;
+      if (generated.some(i => i.recurring_income_id === tpl.id)) continue;
 
       generated.push({
-        id:             generateId(),
-        description:    tpl.description,
-        value:          tpl.value,
+        id:                  generateId(),
+        description:         tpl.description,
+        value:               tpl.value,
         date,
-        type:           tpl.type,
-        responsible_id: tpl.responsible_id,
-        notes:          tpl.notes,
-        recurring:      0,
+        type:                tpl.type,
+        responsible_id:      tpl.responsible_id,
+        recurring:           0,
+        recurring_income_id: tpl.id,
       });
     }
     return generated;
@@ -252,7 +255,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       let exps: Expense[] = data.expenses ?? [];
       let incs: Income[]  = data.incomes ?? [];
+      let recIncomes: RecurringIncome[] = data.recurringIncomes ?? [];
       const monthNow = format(new Date(), "yyyy-MM");
+
+      // One-time migration: convert legacy recurring incomes (a boolean flag on
+      // the income) into proper templates so they keep generating each month.
+      if (!localStorage.getItem("rec_incomes_migrated")) {
+        localStorage.setItem("rec_incomes_migrated", "1");
+        const legacyIds = new Set(incs.filter(i => i.recurring && !i.recurring_income_id).map(i => i.id));
+        if (legacyIds.size) {
+          const newTemplates: RecurringIncome[] = [];
+          incs = incs.map(i => {
+            if (!legacyIds.has(i.id)) return i;
+            const tplId = generateId();
+            newTemplates.push({
+              id: tplId, description: i.description, value: i.value, type: i.type,
+              responsible_id: i.responsible_id,
+              day_of_month: parseInt(i.date?.slice(8, 10) || "1", 10) || 1,
+              active: 1,
+            });
+            return { ...i, recurring: 0, recurring_income_id: tplId };
+          });
+          recIncomes = [...recIncomes, ...newTemplates];
+          syncWithServer({ recurringIncomes: newTemplates, incomes: incs.filter(i => legacyIds.has(i.id)) });
+        }
+      }
 
       // Materialise recurring expenses for the current month (re-runs when the
       // month changes; idempotent — already-covered months are skipped).
@@ -266,9 +293,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       // Materialise recurring incomes for the current month
-      if (recurringIncomeAppliedMonth.current !== monthNow && incs.some(i => i.recurring)) {
+      if (recurringIncomeAppliedMonth.current !== monthNow && recIncomes.length) {
         recurringIncomeAppliedMonth.current = monthNow;
-        const newIncs = applyRecurringIncomes(incs);
+        const newIncs = applyRecurringIncomes(incs, recIncomes);
         if (newIncs.length) {
           incs = [...incs, ...newIncs];
           syncWithServer({ incomes: newIncs });
@@ -283,18 +310,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecurring(data.recurring ?? []);
       setIncomes(incs);
       setIncomeTypes(data.incomeTypes ?? []);
+      setRecurringIncomes(recIncomes);
       setNotes(data.notes ?? []);
 
       // Persist to localStorage for offline use
-      lsSet("expenses",     exps);
-      lsSet("categories",   data.categories);
-      lsSet("responsibles", data.responsibles);
-      lsSet("profile",      data.profile);
-      lsSet("budgets",      data.budgets);
-      lsSet("recurring",    data.recurring);
-      lsSet("incomes",      incs);
-      lsSet("incomeTypes",  data.incomeTypes);
-      lsSet("notes",        data.notes ?? []);
+      lsSet("expenses",         exps);
+      lsSet("categories",       data.categories);
+      lsSet("responsibles",     data.responsibles);
+      lsSet("profile",          data.profile);
+      lsSet("budgets",          data.budgets);
+      lsSet("recurring",        data.recurring);
+      lsSet("incomes",          incs);
+      lsSet("incomeTypes",      data.incomeTypes);
+      lsSet("recurringIncomes", recIncomes);
+      lsSet("notes",            data.notes ?? []);
 
       onSuccess?.();
     } catch (err) {
@@ -308,6 +337,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecurring(lsGet("recurring", []));
       setIncomes(  lsGet("incomes",  []));
       setIncomeTypes(lsGet("incomeTypes", []));
+      setRecurringIncomes(lsGet("recurringIncomes", []));
       setNotes(    lsGet("notes",    []));
     }
   }, [applyRecurring, applyRecurringIncomes, syncWithServer]);
@@ -466,6 +496,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       recurring:    recurring,
       incomes:      incomes,
       incomeTypes:  incomeTypes,
+      recurringIncomes: recurringIncomes,
       notes:        notes,
     };
     const rollback = () => {
@@ -476,6 +507,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecurring(snap.recurring);
       setIncomes(snap.incomes);
       setIncomeTypes(snap.incomeTypes);
+      setRecurringIncomes(snap.recurringIncomes);
       setNotes(snap.notes);
     };
 
@@ -494,6 +526,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setIncomes(p => { const u = p.filter(i => i.id !== id); lsSet("incomes", u); return u; });
     } else if (table === "income_types") {
       setIncomeTypes(p => { const u = p.filter(it => it.id !== id); lsSet("incomeTypes", u); return u; });
+    } else if (table === "recurring_incomes") {
+      setRecurringIncomes(p => { const u = p.filter(r => r.id !== id); lsSet("recurringIncomes", u); return u; });
     } else if (table === "notes") {
       setNotes(p => { const u = p.filter(n => n.id !== id); lsSet("notes", u); return u; });
     }
@@ -520,7 +554,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // optimistic removal so the UI stays consistent with the user's intent.
       enqueueDelete(table, id);
     }
-  }, [expenses, categories, responsibles, budgets, recurring, incomes, incomeTypes, notes, enqueueDelete, addToast]);
+  }, [expenses, categories, responsibles, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes, enqueueDelete, addToast]);
 
   const togglePaid = useCallback((id: string) => {
     setExpenses(prev => {
@@ -610,6 +644,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addToast("success", isEdit ? "Tipo atualizado!" : "Tipo adicionado!");
   }, [syncWithServer, addToast]);
 
+  const saveRecurringIncome = useCallback((rec: RecurringIncome, isEdit: boolean) => {
+    setRecurringIncomes(prev => {
+      const updated = isEdit
+        ? prev.map(r => r.id === rec.id ? rec : r)
+        : [...prev, rec];
+      lsSet("recurringIncomes", updated);
+      return updated;
+    });
+    syncWithServer({ recurringIncomes: [rec] });
+    addToast("success", isEdit ? "Entrada recorrente atualizada!" : "Entrada recorrente adicionada!");
+  }, [syncWithServer, addToast]);
+
   const saveNote = useCallback((note: Note) => {
     setNotes(prev => {
       const exists = prev.some(n => n.id === note.id);
@@ -621,10 +667,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [syncWithServer]);
 
   const value: DataContextValue = {
-    expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, notes,
+    expenses, categories, responsibles, profile, budgets, recurring,
+    incomes, incomeTypes, recurringIncomes, notes,
     isOnline, isConnected, notificationsEnabled, toasts,
     saveExpense, deleteItem, togglePaid, saveProfile,
-    saveCategory, saveResponsible, saveBudget, saveRecurring, saveIncome, saveIncomeType, saveNote,
+    saveCategory, saveResponsible, saveBudget, saveRecurring,
+    saveIncome, saveIncomeType, saveRecurringIncome, saveNote,
     readPhoto, requestNotificationPermission, addToast, dismissToast,
   };
 

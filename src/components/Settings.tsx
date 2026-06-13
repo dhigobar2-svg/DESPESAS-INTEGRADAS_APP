@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
 import {
   User, Tag, Users, Camera, Trash2, Edit2, Check, X,
-  DollarSign, Plus, TrendingUp, Bell, BellOff,
+  DollarSign, Plus, TrendingUp, Bell, BellOff, Copy,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, cn } from "../lib/utils";
@@ -109,6 +109,27 @@ export default function Settings() {
       month:       budgetMonth,
       limit_value: limit,
     });
+  };
+
+  // Copy the previous month's budgets into the selected month (only fills gaps).
+  const prevMonthKey = (() => {
+    const [y, m] = budgetMonth.split("-").map(Number);
+    return format(new Date(y, m - 2, 1), "yyyy-MM");
+  })();
+  const copyPreviousBudgets = () => {
+    const prev = budgets.filter(b => b.month === prevMonthKey);
+    if (prev.length === 0) {
+      addToast("info", "Nenhum orçamento no mês anterior para copiar.");
+      return;
+    }
+    let copied = 0;
+    for (const b of prev) {
+      if (getBudgetForCat(b.category_id)) continue; // don't overwrite existing
+      saveBudget({ id: generateId(), category_id: b.category_id, month: budgetMonth, limit_value: b.limit_value });
+      copied++;
+    }
+    addToast(copied > 0 ? "success" : "info",
+      copied > 0 ? `${copied} orçamento(s) copiado(s) do mês anterior.` : "Os orçamentos deste mês já estão definidos.");
   };
 
   // ── Income Types ──────────────────────────────────────────────────────────────
@@ -308,13 +329,23 @@ export default function Settings() {
         <h3 className="section-title"><DollarSign size={16} /> Orçamentos por Categoria</h3>
         <div className="mb-4">
           <label className="label">Mês de referência</label>
-          <select value={budgetMonth} onChange={e => setBudgetMonth(e.target.value)} className="input py-2 text-sm">
-            {monthOptions.map(m => (
-              <option key={m} value={m}>
-                {format(new Date(m + "-01"), "MMMM yyyy", { locale: ptBR })}
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <select value={budgetMonth} onChange={e => setBudgetMonth(e.target.value)} className="input py-2 text-sm flex-1">
+              {monthOptions.map(m => (
+                <option key={m} value={m}>
+                  {format(new Date(m + "-01"), "MMMM yyyy", { locale: ptBR })}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={copyPreviousBudgets}
+              title="Copiar os orçamentos do mês anterior (preenche apenas o que estiver vazio)"
+              className="btn-secondary py-2 px-3 flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+            >
+              <Copy size={14} /> Copiar mês anterior
+            </button>
+          </div>
         </div>
         <div className="space-y-3">
           {categories.map(cat => {
@@ -328,7 +359,7 @@ export default function Settings() {
                   <input
                     type="number" step="0.01" min="0.01" placeholder="Sem limite"
                     defaultValue={existing?.limit_value ?? ""}
-                    key={`${cat.id}-${budgetMonth}`}
+                    key={`${cat.id}-${budgetMonth}-${existing?.limit_value ?? ""}`}
                     onBlur={e => { if (e.target.value) handleBudgetChange(cat.id, e.target.value); }}
                     className="input pl-9 py-2 text-sm"
                   />

@@ -93,6 +93,17 @@ db.exec(`
     color TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS recurring_incomes (
+    id TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    value REAL NOT NULL,
+    type TEXT DEFAULT 'outro',
+    responsible_id TEXT,
+    day_of_month INTEGER NOT NULL,
+    active INTEGER DEFAULT 1,
+    FOREIGN KEY(responsible_id) REFERENCES responsibles(id) ON DELETE SET NULL
+  );
+
   INSERT OR IGNORE INTO categories (id, name, color) VALUES
     ('1', 'Alimentação', '#ef4444'),
     ('2', 'Transporte', '#3b82f6'),
@@ -115,6 +126,7 @@ tryMigrate("SELECT description FROM expenses LIMIT 1",  "ALTER TABLE expenses AD
 tryMigrate("SELECT notes FROM expenses LIMIT 1",         "ALTER TABLE expenses ADD COLUMN notes TEXT");
 tryMigrate("SELECT created_by FROM expenses LIMIT 1",    "ALTER TABLE expenses ADD COLUMN created_by TEXT");
 tryMigrate("SELECT recurring_id FROM expenses LIMIT 1",  "ALTER TABLE expenses ADD COLUMN recurring_id TEXT");
+tryMigrate("SELECT recurring_income_id FROM incomes LIMIT 1", "ALTER TABLE incomes ADD COLUMN recurring_income_id TEXT");
 
 // Whitelist of allowed columns per table — prevents SQL injection via sync
 const ALLOWED_COLUMNS: Record<string, string[]> = {
@@ -123,8 +135,9 @@ const ALLOWED_COLUMNS: Record<string, string[]> = {
   responsibles:        ["id", "name", "photo"],
   budgets:             ["id", "category_id", "month", "limit_value"],
   recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active"],
-  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring"],
+  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id"],
   income_types:        ["id", "name", "color"],
+  recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active"],
   notes:               ["id", "title", "content", "updated_at"],
 };
 
@@ -167,22 +180,24 @@ async function startServer() {
     const recurring    = db.prepare("SELECT * FROM recurring_expenses ORDER BY description").all();
     const incomes      = db.prepare("SELECT * FROM incomes ORDER BY date DESC").all();
     const incomeTypes  = db.prepare("SELECT * FROM income_types ORDER BY name").all();
+    const recurringIncomes = db.prepare("SELECT * FROM recurring_incomes ORDER BY description").all();
     const notes        = db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all();
-    res.json({ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, notes });
+    res.json({ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes });
   });
 
   // POST /api/sync — validated upsert of all client state
   app.post("/api/sync", (req, res) => {
-    const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, notes } = req.body;
+    const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes } = req.body;
     try {
-      if (categories?.length)   syncItems("categories",         categories);
-      if (responsibles?.length) syncItems("responsibles",       responsibles);
-      if (expenses?.length)     syncItems("expenses",           expenses);
-      if (budgets?.length)      syncItems("budgets",            budgets);
-      if (recurring?.length)    syncItems("recurring_expenses", recurring);
-      if (incomes?.length)      syncItems("incomes",            incomes);
-      if (incomeTypes?.length)  syncItems("income_types",       incomeTypes);
-      if (notes?.length)        syncItems("notes",              notes);
+      if (categories?.length)       syncItems("categories",         categories);
+      if (responsibles?.length)     syncItems("responsibles",       responsibles);
+      if (expenses?.length)         syncItems("expenses",           expenses);
+      if (budgets?.length)          syncItems("budgets",            budgets);
+      if (recurring?.length)        syncItems("recurring_expenses", recurring);
+      if (incomes?.length)          syncItems("incomes",            incomes);
+      if (incomeTypes?.length)      syncItems("income_types",       incomeTypes);
+      if (recurringIncomes?.length) syncItems("recurring_incomes",  recurringIncomes);
+      if (notes?.length)            syncItems("notes",              notes);
 
       if (profile && typeof profile === "object") {
         const p = profile as Record<string, unknown>;
@@ -199,7 +214,7 @@ async function startServer() {
   });
 
   // Shared delete logic with referential-integrity guard.
-  const VALID_DELETE_TABLES = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes", "income_types", "notes"];
+  const VALID_DELETE_TABLES = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes", "income_types", "recurring_incomes", "notes"];
 
   function handleDelete(table: string, id: string, res: any) {
     if (!VALID_DELETE_TABLES.includes(table)) {
