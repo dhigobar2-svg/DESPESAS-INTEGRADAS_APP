@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, isRecurringCovered } from "../lib/utils";
+import { formatCurrency, cn, isRecurringCovered, recurringDueDate } from "../lib/utils";
 import ExpenseModal from "./ExpenseModal";
 
 export default function Dashboard() {
@@ -42,8 +42,7 @@ export default function Dashboard() {
     if (isFuture) {
       for (const rec of recurring) {
         if (!rec.active) continue;
-        const dayPadded = String(rec.day_of_month).padStart(2, "0");
-        const dueDate = `${monthKey}-${dayPadded}`;
+        const dueDate = recurringDueDate(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, rec.day_of_month);
         if (!isRecurringCovered(monthExp, rec, dueDate)) {
           monthExp.push({
             id:             `proj-${rec.id}-${monthKey}`,

@@ -6,7 +6,7 @@ import {
   TrendingUp, NotebookPen, RefreshCw, Loader2,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
-import { cn, formatCurrency } from "./lib/utils";
+import { cn, formatCurrency, isRecurringCovered, recurringDueDate } from "./lib/utils";
 import Toast from "./components/Toast";
 
 // Lazy-loaded tabs keep the heavy chart/PDF libraries out of the initial bundle.
@@ -46,17 +46,12 @@ function Shell() {
   const virtualRecurringFutureDates: string[] = [];
   for (const rec of recurring.filter(r => r.active)) {
     for (let mo = 0; mo <= 2; mo++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + mo, rec.day_of_month);
-      if (d.getDate() !== rec.day_of_month) continue; // overflow (e.g. Feb 31)
-      const yr = String(d.getFullYear());
-      const mn = String(d.getMonth() + 1).padStart(2, "0");
-      const dy = String(d.getDate()).padStart(2, "0");
-      const dateStr = `${yr}-${mn}-${dy}`;
+      const base = new Date(now.getFullYear(), now.getMonth() + mo, 1);
+      const dateStr = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
       if (dateStr <= today) continue;
-      const alreadyExists = expenses.some(
-        e => !e.paid && e.description === rec.description && e.due_date === dateStr && e.value === rec.value,
-      );
-      if (!alreadyExists) virtualRecurringFutureDates.push(dateStr);
+      if (!isRecurringCovered(expenses, rec, dateStr, { unpaidOnly: true })) {
+        virtualRecurringFutureDates.push(dateStr);
+      }
     }
   }
 

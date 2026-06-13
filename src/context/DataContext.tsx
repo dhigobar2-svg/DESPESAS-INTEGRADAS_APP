@@ -8,7 +8,7 @@ import {
   Category, Responsible, Expense, UserProfile,
   Budget, RecurringExpense, Income, IncomeType, ToastMessage, Note,
 } from "../types";
-import { generateId, compressImage, isRecurringCovered } from "../lib/utils";
+import { generateId, compressImage, isRecurringCovered, recurringDueDate } from "../lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,8 +86,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
 
   const socketRef             = useRef<Socket | null>(null);
-  const recurringApplied      = useRef(false);
-  const recurringIncomeApplied = useRef(false);
+  // Track the month each generator last ran for, so it re-materialises when the
+  // month rolls over (e.g. the app was left open / backgrounded across midnight).
+  const recurringAppliedMonth       = useRef<string>("");
+  const recurringIncomeAppliedMonth = useRef<string>("");
   const notifiedRef           = useRef(false);
   const firstSocketConnect    = useRef(true);
 
@@ -179,13 +181,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     currentRecurring: RecurringExpense[],
   ): Expense[] => {
     const now = new Date();
-    const monthStr = format(now, "yyyy-MM");
+    const year = now.getFullYear();
+    const month1 = now.getMonth() + 1;
     const generated: Expense[] = [];
 
     for (const rec of currentRecurring) {
       if (!rec.active) continue;
-      const dayPadded = String(rec.day_of_month).padStart(2, "0");
-      const dueDate = `${monthStr}-${dayPadded}`;
+      const dueDate = recurringDueDate(year, month1, rec.day_of_month);
       if (!isRecurringCovered(currentExpenses, rec, dueDate)) {
         generated.push({
           id:             generateId(),
@@ -208,13 +210,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // materialised (recurring=0) if one isn't already present.
 
   const applyRecurringIncomes = useCallback((current: Income[]): Income[] => {
-    const monthStr = format(new Date(), "yyyy-MM");
+    const now = new Date();
+    const year = now.getFullYear();
+    const month1 = now.getMonth() + 1;
+    const monthStr = format(now, "yyyy-MM");
     const generated: Income[] = [];
 
     for (const tpl of current) {
       if (!tpl.recurring) continue;
-      const day = Math.min(parseInt(tpl.date?.slice(8, 10) || "1", 10) || 1, 28);
-      const date = `${monthStr}-${String(day).padStart(2, "0")}`;
+      const day = parseInt(tpl.date?.slice(8, 10) || "1", 10) || 1;
+      const date = recurringDueDate(year, month1, day);
 
       const matches = (i: Income) =>
         i.date?.slice(0, 7) === monthStr &&
@@ -247,10 +252,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       let exps: Expense[] = data.expenses ?? [];
       let incs: Income[]  = data.incomes ?? [];
+      const monthNow = format(new Date(), "yyyy-MM");
 
-      // Auto-apply recurring expenses once per session (sync only the new rows)
-      if (!recurringApplied.current && data.recurring?.length) {
-        recurringApplied.current = true;
+      // Materialise recurring expenses for the current month (re-runs when the
+      // month changes; idempotent — already-covered months are skipped).
+      if (recurringAppliedMonth.current !== monthNow && data.recurring?.length) {
+        recurringAppliedMonth.current = monthNow;
         const newOnes = applyRecurring(exps, data.recurring);
         if (newOnes.length) {
           exps = [...exps, ...newOnes];
@@ -258,9 +265,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Auto-apply recurring incomes once per session
-      if (!recurringIncomeApplied.current && incs.some(i => i.recurring)) {
-        recurringIncomeApplied.current = true;
+      // Materialise recurring incomes for the current month
+      if (recurringIncomeAppliedMonth.current !== monthNow && incs.some(i => i.recurring)) {
+        recurringIncomeAppliedMonth.current = monthNow;
         const newIncs = applyRecurringIncomes(incs);
         if (newIncs.length) {
           incs = [...incs, ...newIncs];
@@ -407,10 +414,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     window.addEventListener("online",  onOnline);
     window.addEventListener("offline", onOffline);
 
+    // Re-pull (and re-materialise recurrences) when the app is brought back to
+    // the foreground — covers PWAs/tabs left open across a month boundary.
+    const onVisible = () => { if (document.visibilityState === "visible") fetchData(); };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       s.disconnect();
       window.removeEventListener("online",  onOnline);
       window.removeEventListener("offline", onOffline);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

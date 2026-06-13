@@ -26,6 +26,22 @@ export function isRecurringCovered(
   });
 }
 
+/** Number of days in a given month (`month1` is 1-based: 1 = January). */
+export function lastDayOfMonth(year: number, month1: number): number {
+  return new Date(year, month1, 0).getDate();
+}
+
+/**
+ * Valid `yyyy-MM-dd` due date for a recurring `dayOfMonth` in a target month,
+ * clamping days past the month's length to the last day (e.g. day 31 → 28 in
+ * February, → 30 in April). This keeps end-of-month recurrences from silently
+ * disappearing or producing invalid dates when the month rolls over.
+ */
+export function recurringDueDate(year: number, month1: number, dayOfMonth: number): string {
+  const day = Math.min(Math.max(dayOfMonth, 1), lastDayOfMonth(year, month1));
+  return `${year}-${String(month1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }
