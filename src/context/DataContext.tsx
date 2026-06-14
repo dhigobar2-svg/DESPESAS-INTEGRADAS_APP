@@ -190,6 +190,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const now = new Date();
     const year = now.getFullYear();
     const month1 = now.getMonth() + 1;
+    const monthKey = `${year}-${String(month1).padStart(2, "0")}`;
     const generated: Expense[] = [];
 
     for (const rec of currentRecurring) {
@@ -197,7 +198,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const dueDate = recurringDueDate(year, month1, rec.day_of_month);
       if (!isRecurringCovered(currentExpenses, rec, dueDate)) {
         generated.push({
-          id:             generateId(),
+          // Deterministic id (template + month) so two devices generating the
+          // same month produce the same primary key instead of duplicating.
+          id:             `rec_${rec.id}_${monthKey}`,
           category_id:    rec.category_id,
           description:    rec.description,
           date:           format(now, "yyyy-MM-dd"),
@@ -223,6 +226,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const now = new Date();
     const year = now.getFullYear();
     const month1 = now.getMonth() + 1;
+    const monthKey = `${year}-${String(month1).padStart(2, "0")}`;
     const generated: Income[] = [];
 
     for (const tpl of currentTemplates) {
@@ -232,7 +236,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (generated.some(i => i.recurring_income_id === tpl.id)) continue;
 
       generated.push({
-        id:                  generateId(),
+        id:                  `recinc_${tpl.id}_${monthKey}`,
         description:         tpl.description,
         value:               tpl.value,
         date,

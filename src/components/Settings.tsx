@@ -170,9 +170,11 @@ export default function Settings() {
   };
 
   // ── Available months for budget selector ──────────────────────────────────────
-  const monthOptions = Array.from({ length: 6 }, (_, i) => {
+  // Current month first (it's the default), then upcoming, then a few past for
+  // reference — so the user can set this month's budget without navigating back.
+  const monthOptions = [0, 1, 2, 3, -1, -2].map(offset => {
     const d = new Date();
-    d.setMonth(d.getMonth() + i - 2);
+    d.setMonth(d.getMonth() + offset);
     return format(d, "yyyy-MM");
   });
 

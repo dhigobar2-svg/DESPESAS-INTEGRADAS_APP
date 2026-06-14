@@ -2,8 +2,8 @@ import React, { useState, lazy, Suspense } from "react";
 import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
-  ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
-  TrendingUp, NotebookPen, RefreshCw, Loader2,
+  ChevronLeft, ChevronRight, Wifi, WifiOff,
+  TrendingUp, NotebookPen, Loader2,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency, isRecurringCovered, recurringDueDate } from "./lib/utils";
@@ -12,20 +12,22 @@ import Toast from "./components/Toast";
 // Lazy-loaded tabs keep the heavy chart/PDF libraries out of the initial bundle.
 const Dashboard         = lazy(() => import("./components/Dashboard"));
 const ExpenseList       = lazy(() => import("./components/ExpenseList"));
-const FutureExpenses    = lazy(() => import("./components/FutureExpenses"));
 const Incomes           = lazy(() => import("./components/Incomes"));
 const Notes             = lazy(() => import("./components/Notes"));
 const Settings          = lazy(() => import("./components/Settings"));
-const RecurringExpenses = lazy(() => import("./components/RecurringExpenses"));
 
-type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "recurring" | "notes" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "incomes" | "notes" | "settings";
+type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
   const { profile, isOnline, isConnected, expenses, recurring, incomes } = useData();
   const [activeTab, setActiveTab] = useState<Tab>("menu");
-  const [futuresFilter, setFuturesFilter] = useState<"upcoming" | "pending" | "recurring" | undefined>(undefined);
+  // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
+  const [expensesView,   setExpensesView]   = useState<"list" | "futures">("list");
+  const [futuresFilter,  setFuturesFilter]  = useState<FutureFilter>(undefined);
+  const [expensesNonce,  setExpensesNonce]  = useState(0);
 
   const now = new Date();
   const mm  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -82,15 +84,20 @@ function Shell() {
 
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
-    if (tab === "menu") setFuturesFilter(undefined);
+    if (tab === "expenses") { setExpensesView("list"); setFuturesFilter(undefined); setExpensesNonce(n => n + 1); }
     window.scrollTo(0, 0);
   };
 
-  const navigateTo = (tab: Tab, filter?: "upcoming" | "pending" | "recurring") => {
-    setActiveTab(tab);
+  // Open "Minhas Despesas" already on the upcoming/overdue sub-tab with a filter.
+  const goToFutures = (filter?: FutureFilter) => {
+    setActiveTab("expenses");
+    setExpensesView("futures");
     setFuturesFilter(filter);
+    setExpensesNonce(n => n + 1);
     window.scrollTo(0, 0);
   };
+
+  const goToIncomes = () => { setActiveTab("incomes"); window.scrollTo(0, 0); };
 
   const MenuButton = ({
     icon: Icon, title, subtitle, onClick, colorClass, badge, badgeUrgent, urgentCount,
@@ -193,7 +200,7 @@ function Shell() {
                     </div>
                     {/* Pendente */}
                     <button
-                      onClick={() => navigateTo("futures", "pending")}
+                      onClick={() => goToFutures("pending")}
                       className={cn(
                         "backdrop-blur-md p-3 rounded-2xl border text-left w-full transition-all active:scale-95",
                         pendingMonth > 0 ? "bg-red-500/40 border-red-300/40" : "bg-white/20 border-white/0",
@@ -206,7 +213,7 @@ function Shell() {
                     </button>
                     {/* Entradas */}
                     <button
-                      onClick={() => navigateTo("incomes")}
+                      onClick={goToIncomes}
                       className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-left w-full transition-all active:scale-95"
                     >
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Entradas</p>
@@ -224,7 +231,7 @@ function Shell() {
                     </div>
                     {/* Vence em breve */}
                     <button
-                      onClick={() => navigateTo("futures", "upcoming")}
+                      onClick={() => goToFutures("upcoming")}
                       className={cn(
                         "backdrop-blur-md p-3 rounded-2xl border text-left w-full transition-all active:scale-95",
                         urgentFutureCount > 0 ? "bg-amber-500/40 border-amber-300/40" : "bg-white/20 border-white/0",
@@ -239,7 +246,7 @@ function Shell() {
                     </button>
                     {/* Recorrente/mês */}
                     <button
-                      onClick={() => navigateTo("futures", "recurring")}
+                      onClick={() => goToFutures("recurring")}
                       className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-left w-full transition-all active:scale-95"
                     >
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Recorrente/mês</p>
@@ -252,18 +259,14 @@ function Shell() {
 
               <MenuButton icon={BarChart3}     title="Visão Geral"       subtitle="Gráficos e Estatísticas"
                 onClick={() => handleTabChange("overview")}  colorClass="bg-blue-500" />
-              <MenuButton icon={ListOrdered}   title="Minhas Despesas"   subtitle="Lista e Histórico"
-                onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500" />
-              <MenuButton icon={CalendarClock} title="Despesas Futuras"  subtitle="Próximos vencimentos"
-                onClick={() => handleTabChange("futures")}   colorClass="bg-violet-500"
+              <MenuButton icon={ListOrdered}   title="Minhas Despesas"   subtitle="Lançamentos e vencimentos"
+                onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500"
                 badge={urgentFutureCount > 0 ? urgentFutureCount : futureCount}
                 badgeUrgent={urgentFutureCount > 0}
                 urgentCount={urgentFutureCount}
               />
               <MenuButton icon={TrendingUp}    title="Entradas / Receitas" subtitle="Salário e rendas"
                 onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
-              <MenuButton icon={RefreshCw}     title="Recorrentes"       subtitle="Assinaturas e contas fixas"
-                onClick={() => handleTabChange("recurring")} colorClass="bg-orange-500" />
               <MenuButton icon={NotebookPen}   title="Bloco de Notas"    subtitle="Anotações e lembretes"
                 onClick={() => handleTabChange("notes")}     colorClass="bg-amber-500" />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
@@ -277,10 +280,14 @@ function Shell() {
             </div>
           }>
             {activeTab === "overview"  && <Dashboard />}
-            {activeTab === "expenses"  && <ExpenseList />}
-            {activeTab === "futures"   && <FutureExpenses filter={futuresFilter} />}
+            {activeTab === "expenses"  && (
+              <ExpenseList
+                key={`exp-${expensesNonce}`}
+                initialView={expensesView}
+                initialFutureFilter={futuresFilter}
+              />
+            )}
             {activeTab === "incomes"   && <Incomes />}
-            {activeTab === "recurring" && <RecurringExpenses />}
             {activeTab === "notes"     && <Notes />}
             {activeTab === "settings"  && <Settings />}
           </Suspense>

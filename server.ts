@@ -7,7 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new Database("expenses.db");
+// DATABASE_PATH lets the DB live on a persistent volume in production.
+const db = new Database(process.env.DATABASE_PATH || "expenses.db");
 
 db.exec("PRAGMA foreign_keys = ON;");
 
@@ -127,6 +128,40 @@ tryMigrate("SELECT notes FROM expenses LIMIT 1",         "ALTER TABLE expenses A
 tryMigrate("SELECT created_by FROM expenses LIMIT 1",    "ALTER TABLE expenses ADD COLUMN created_by TEXT");
 tryMigrate("SELECT recurring_id FROM expenses LIMIT 1",  "ALTER TABLE expenses ADD COLUMN recurring_id TEXT");
 tryMigrate("SELECT recurring_income_id FROM incomes LIMIT 1", "ALTER TABLE incomes ADD COLUMN recurring_income_id TEXT");
+
+// Key/value store for one-time maintenance flags.
+db.exec("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);");
+
+// One-time cleanup of duplicate rows. A duplicate = same description + due_date +
+// value + responsible (expenses) / description + date + value + type (incomes).
+// We keep one row per group, preferring the paid one, then the earliest.
+function runDedupOnce() {
+  const done = db.prepare("SELECT value FROM app_meta WHERE key = 'dedup_v1'").get();
+  if (done) return;
+  db.transaction(() => {
+    db.exec(`
+      DELETE FROM expenses WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY description, due_date, value, COALESCE(responsible_id, '')
+            ORDER BY paid DESC, created_at ASC, rowid ASC
+          ) AS rn FROM expenses
+        ) WHERE rn > 1
+      );
+      DELETE FROM incomes WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY description, date, value, type
+            ORDER BY rowid ASC
+          ) AS rn FROM incomes
+        ) WHERE rn > 1
+      );
+    `);
+    db.prepare("INSERT OR REPLACE INTO app_meta (key, value) VALUES ('dedup_v1', datetime('now'))").run();
+  })();
+}
+runDedupOnce();
+
 
 // Whitelist of allowed columns per table — prevents SQL injection via sync
 const ALLOWED_COLUMNS: Record<string, string[]> = {
