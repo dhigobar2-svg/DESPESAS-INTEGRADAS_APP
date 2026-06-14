@@ -75,6 +75,13 @@ export interface RecurringIncome {
   active: number; // 0 | 1
 }
 
+// A deleted occurrence of a recurrence — keeps it from being regenerated.
+export interface RecurringSkip {
+  id: string;            // `${recurring_id}_${month}`
+  recurring_id: string;
+  month: string;         // yyyy-MM
+}
+
 export interface Note {
   id: string;
   title: string;

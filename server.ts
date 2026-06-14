@@ -105,6 +105,12 @@ db.exec(`
     FOREIGN KEY(responsible_id) REFERENCES responsibles(id) ON DELETE SET NULL
   );
 
+  CREATE TABLE IF NOT EXISTS recurring_skips (
+    id TEXT PRIMARY KEY,
+    recurring_id TEXT NOT NULL,
+    month TEXT NOT NULL
+  );
+
   INSERT OR IGNORE INTO categories (id, name, color) VALUES
     ('1', 'Alimentação', '#ef4444'),
     ('2', 'Transporte', '#3b82f6'),
@@ -173,6 +179,7 @@ const ALLOWED_COLUMNS: Record<string, string[]> = {
   incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id"],
   income_types:        ["id", "name", "color"],
   recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active"],
+  recurring_skips:     ["id", "recurring_id", "month"],
   notes:               ["id", "title", "content", "updated_at"],
 };
 
@@ -192,7 +199,11 @@ function syncItems(table: string, items: unknown[]) {
   db.transaction((data: unknown[]) => {
     for (const item of data) {
       const row = item as Record<string, unknown>;
-      stmt.run(cols.map(col => row[col] ?? null));
+      stmt.run(cols.map(col => {
+        const v = row[col] ?? null;
+        // Empty foreign-key strings would violate FK constraints — store NULL.
+        return (v === "" && col.endsWith("_id")) ? null : v;
+      }));
     }
   })(items);
 }
@@ -216,13 +227,14 @@ async function startServer() {
     const incomes      = db.prepare("SELECT * FROM incomes ORDER BY date DESC").all();
     const incomeTypes  = db.prepare("SELECT * FROM income_types ORDER BY name").all();
     const recurringIncomes = db.prepare("SELECT * FROM recurring_incomes ORDER BY description").all();
+    const recurringSkips = db.prepare("SELECT * FROM recurring_skips").all();
     const notes        = db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all();
-    res.json({ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes });
+    res.json({ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes });
   });
 
   // POST /api/sync — validated upsert of all client state
   app.post("/api/sync", (req, res) => {
-    const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes } = req.body;
+    const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes } = req.body;
     try {
       if (categories?.length)       syncItems("categories",         categories);
       if (responsibles?.length)     syncItems("responsibles",       responsibles);
@@ -232,6 +244,7 @@ async function startServer() {
       if (incomes?.length)          syncItems("incomes",            incomes);
       if (incomeTypes?.length)      syncItems("income_types",       incomeTypes);
       if (recurringIncomes?.length) syncItems("recurring_incomes",  recurringIncomes);
+      if (recurringSkips?.length)   syncItems("recurring_skips",    recurringSkips);
       if (notes?.length)            syncItems("notes",              notes);
 
       if (profile && typeof profile === "object") {
