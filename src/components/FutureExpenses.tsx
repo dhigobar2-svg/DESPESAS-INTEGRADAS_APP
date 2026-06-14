@@ -7,7 +7,7 @@ import {
   AlertTriangle, SlidersHorizontal,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, generateId, isRecurringCovered, recurringDueDate } from "../lib/utils";
+import { formatCurrency, cn, generateId, isRecurringCovered, recurringDueDate, buildSkipSet } from "../lib/utils";
 import { Expense } from "../types";
 import ExpenseModal from "./ExpenseModal";
 import ConfirmModal from "./ConfirmModal";
@@ -20,7 +20,8 @@ interface Props {
 }
 
 export default function FutureExpenses({ filter }: Props) {
-  const { expenses, categories, responsibles, recurring, togglePaid, deleteItem, saveExpense, saveRecurring } = useData();
+  const { expenses, categories, responsibles, recurring, recurringSkips, togglePaid, deleteItem, saveExpense, saveRecurring } = useData();
+  const skipSet = buildSkipSet(recurringSkips);
   const [showModal,        setShowModal]        = useState(false);
   const [editingExp,       setEditingExp]       = useState<Expense | null>(null);
   const [confirmId,        setConfirmId]        = useState<string | null>(null);
@@ -50,8 +51,8 @@ export default function FutureExpenses({ filter }: Props) {
         const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
         const dueDate = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
         if (dueDate >= todayStr) continue; // not overdue yet
-        // Skip if a real expense (paid or not) already covers this slot
-        if (isRecurringCovered(expenses, rec, dueDate)) continue;
+        // Skip if a real expense already covers this slot, or it was deleted
+        if (isRecurringCovered(expenses, rec, dueDate, { skips: skipSet })) continue;
         virtualOverdue.push({
           id:             `virtual-${rec.id}-${dueDate}`,
           category_id:    rec.category_id,
@@ -69,7 +70,7 @@ export default function FutureExpenses({ filter }: Props) {
 
     return [...real, ...virtualOverdue]
       .sort((a, b) => b.due_date.localeCompare(a.due_date)); // most recent overdue first
-  }, [expenses, recurring, today, todayStr]);
+  }, [expenses, recurring, recurringSkips, today, todayStr]);
 
   const overdueTotal = useMemo(
     () => overdue.reduce((s, e) => s + e.value, 0),
@@ -94,8 +95,8 @@ export default function FutureExpenses({ filter }: Props) {
         const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
         const dueDate = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
         if (dueDate < todayStr) continue;
-        // Skip if an actual (still unpaid) expense already covers this
-        if (!isRecurringCovered(expenses, rec, dueDate, { unpaidOnly: true })) {
+        // Skip if an actual (still unpaid) expense covers this, or it was deleted
+        if (!isRecurringCovered(expenses, rec, dueDate, { unpaidOnly: true, skips: skipSet })) {
           future.push({
             id:             `virtual-${rec.id}-${dueDate}`,
             category_id:    rec.category_id,
@@ -121,7 +122,7 @@ export default function FutureExpenses({ filter }: Props) {
       groups[month].push(e);
     }
     return groups;
-  }, [expenses, recurring, today, todayStr, currentMonthStr, nextMonthStr]);
+  }, [expenses, recurring, recurringSkips, today, todayStr, currentMonthStr, nextMonthStr]);
 
   // ── Apply filter ──────────────────────────────────────────────────────────────
   const filteredOverdue = useMemo<FutureEntry[]>(() => {

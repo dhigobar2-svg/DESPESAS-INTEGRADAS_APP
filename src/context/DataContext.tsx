@@ -6,10 +6,10 @@ import { io, Socket } from "socket.io-client";
 import { format } from "date-fns";
 import {
   Category, Responsible, Expense, UserProfile,
-  Budget, RecurringExpense, Income, IncomeType, RecurringIncome, ToastMessage, Note,
+  Budget, RecurringExpense, Income, IncomeType, RecurringIncome, RecurringSkip, ToastMessage, Note,
 } from "../types";
 import {
-  generateId, compressImage, isRecurringCovered, isRecurringIncomeCovered, recurringDueDate,
+  generateId, compressImage, isRecurringCovered, isRecurringIncomeCovered, recurringDueDate, buildSkipSet,
 } from "../lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,6 +25,7 @@ interface DataContextValue {
   incomes:          Income[];
   incomeTypes:      IncomeType[];
   recurringIncomes: RecurringIncome[];
+  recurringSkips:   RecurringSkip[];
   notes:            Note[];
   isOnline:     boolean;
   isConnected:  boolean;
@@ -82,6 +83,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [incomes,         setIncomes]         = useState<Income[]>([]);
   const [incomeTypes,     setIncomeTypes]     = useState<IncomeType[]>([]);
   const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
+  const [recurringSkips,  setRecurringSkips]  = useState<RecurringSkip[]>([]);
   const [notes,           setNotes]           = useState<Note[]>([]);
   const [isOnline,     setIsOnline]     = useState(navigator.onLine);
   const [isConnected,  setIsConnected]  = useState(false);
@@ -97,6 +99,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const recurringIncomeAppliedMonth = useRef<string>("");
   const notifiedRef           = useRef(false);
   const firstSocketConnect    = useRef(true);
+  const fetchDataRef          = useRef<() => void>(() => {});
 
   // ── Toast ────────────────────────────────────────────────────────────────────
 
@@ -122,19 +125,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
     incomes?: Income[];
     incomeTypes?: IncomeType[];
     recurringIncomes?: RecurringIncome[];
+    recurringSkips?: RecurringSkip[];
     notes?: Note[];
   }) => {
     if (!navigator.onLine) return;
     try {
-      await fetch("/api/sync", {
+      const res = await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      if (!res.ok) {
+        // Server reachable but rejected the save — surface it and reconcile,
+        // so the user isn't left thinking an unsaved change persisted.
+        let msg = "Não foi possível salvar no servidor.";
+        try { msg = (await res.json()).error ?? msg; } catch { /* keep default */ }
+        addToast("error", msg);
+        fetchDataRef.current();
+      }
     } catch (err) {
       console.error("Sync failed", err);
     }
-  }, []);
+  }, [addToast]);
 
   // ── Offline reconciliation ────────────────────────────────────────────────────
   // Deletions can't go through /api/sync (which only upserts), so offline deletes
@@ -178,7 +190,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       incomeTypes:      lsGet("incomeTypes",      []),
       recurringIncomes: lsGet("recurringIncomes", []),
       notes:            lsGet("notes",            []),
+      recurringSkips:   lsGet("recurringSkips",   []),
     });
+  }, [syncWithServer]);
+
+  // Record that a recurrence occurrence was deleted so it isn't regenerated.
+  const addRecurringSkip = useCallback((recurring_id: string, month: string) => {
+    const skip: RecurringSkip = { id: `${recurring_id}_${month}`, recurring_id, month };
+    setRecurringSkips(prev => {
+      if (prev.some(s => s.id === skip.id)) return prev;
+      const updated = [...prev, skip];
+      lsSet("recurringSkips", updated);
+      return updated;
+    });
+    syncWithServer({ recurringSkips: [skip] });
   }, [syncWithServer]);
 
   // ── Auto-apply recurring expenses for current month ──────────────────────────
@@ -186,6 +211,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const applyRecurring = useCallback((
     currentExpenses: Expense[],
     currentRecurring: RecurringExpense[],
+    skipSet: Set<string>,
   ): Expense[] => {
     const now = new Date();
     const year = now.getFullYear();
@@ -196,7 +222,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     for (const rec of currentRecurring) {
       if (!rec.active) continue;
       const dueDate = recurringDueDate(year, month1, rec.day_of_month);
-      if (!isRecurringCovered(currentExpenses, rec, dueDate)) {
+      if (!isRecurringCovered(currentExpenses, rec, dueDate, { skips: skipSet })) {
         generated.push({
           // Deterministic id (template + month) so two devices generating the
           // same month produce the same primary key instead of duplicating.
@@ -260,6 +286,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       let exps: Expense[] = data.expenses ?? [];
       let incs: Income[]  = data.incomes ?? [];
       let recIncomes: RecurringIncome[] = data.recurringIncomes ?? [];
+      const recSkips: RecurringSkip[] = data.recurringSkips ?? [];
+      const skipSet = buildSkipSet(recSkips);
       const monthNow = format(new Date(), "yyyy-MM");
 
       // One-time migration: convert legacy recurring incomes (a boolean flag on
@@ -289,7 +317,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // month changes; idempotent — already-covered months are skipped).
       if (recurringAppliedMonth.current !== monthNow && data.recurring?.length) {
         recurringAppliedMonth.current = monthNow;
-        const newOnes = applyRecurring(exps, data.recurring);
+        const newOnes = applyRecurring(exps, data.recurring, skipSet);
         if (newOnes.length) {
           exps = [...exps, ...newOnes];
           syncWithServer({ expenses: newOnes });
@@ -315,6 +343,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setIncomes(incs);
       setIncomeTypes(data.incomeTypes ?? []);
       setRecurringIncomes(recIncomes);
+      setRecurringSkips(recSkips);
       setNotes(data.notes ?? []);
 
       // Persist to localStorage for offline use
@@ -327,6 +356,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       lsSet("incomes",          incs);
       lsSet("incomeTypes",      data.incomeTypes);
       lsSet("recurringIncomes", recIncomes);
+      lsSet("recurringSkips",   recSkips);
       lsSet("notes",            data.notes ?? []);
 
       onSuccess?.();
@@ -342,9 +372,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setIncomes(  lsGet("incomes",  []));
       setIncomeTypes(lsGet("incomeTypes", []));
       setRecurringIncomes(lsGet("recurringIncomes", []));
+      setRecurringSkips(lsGet("recurringSkips", []));
       setNotes(    lsGet("notes",    []));
     }
   }, [applyRecurring, applyRecurringIncomes, syncWithServer]);
+
+  // Keep a ref so syncWithServer (defined earlier) can reconcile after a failure.
+  fetchDataRef.current = fetchData;
 
   // ── Browser notifications for upcoming/overdue expenses ──────────────────────
 
@@ -517,6 +551,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     // Optimistic local removal
     if (table === "expenses") {
+      // If this is a recurrence occurrence, record a skip so it isn't regenerated.
+      const target = expenses.find(e => e.id === id);
+      if (target?.recurring_id && target.due_date) {
+        addRecurringSkip(target.recurring_id, target.due_date.slice(0, 7));
+      }
       setExpenses(p => { const u = p.filter(e => e.id !== id); lsSet("expenses", u); return u; });
     } else if (table === "categories") {
       setCategories(p => { const u = p.filter(c => c.id !== id); lsSet("categories", u); return u; });
@@ -558,7 +597,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // optimistic removal so the UI stays consistent with the user's intent.
       enqueueDelete(table, id);
     }
-  }, [expenses, categories, responsibles, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes, enqueueDelete, addToast]);
+  }, [expenses, categories, responsibles, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes, enqueueDelete, addRecurringSkip, addToast]);
 
   const togglePaid = useCallback((id: string) => {
     setExpenses(prev => {
@@ -672,7 +711,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const value: DataContextValue = {
     expenses, categories, responsibles, profile, budgets, recurring,
-    incomes, incomeTypes, recurringIncomes, notes,
+    incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
     isOnline, isConnected, notificationsEnabled, toasts,
     saveExpense, deleteItem, togglePaid, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,

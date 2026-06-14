@@ -16,14 +16,21 @@ export function isRecurringCovered(
   expenses: Expense[],
   rec: RecurringExpense,
   dueDate: string,
-  opts: { unpaidOnly?: boolean } = {},
+  opts: { unpaidOnly?: boolean; skips?: Set<string> } = {},
 ): boolean {
   const month = dueDate.slice(0, 7);
+  // A user-deleted occurrence is treated as covered so it isn't regenerated.
+  if (opts.skips?.has(`${rec.id}_${month}`)) return true;
   return expenses.some(e => {
     if (opts.unpaidOnly && e.paid) return false;
     if (e.recurring_id && e.recurring_id === rec.id && e.due_date?.slice(0, 7) === month) return true;
     return e.description === rec.description && e.due_date === dueDate && e.value === rec.value;
   });
+}
+
+/** Set of skipped "recurring_id_month" keys, for fast lookup. */
+export function buildSkipSet(skips: { recurring_id: string; month: string }[]): Set<string> {
+  return new Set(skips.map(s => `${s.recurring_id}_${s.month}`));
 }
 
 /** Whether a recurring income template already has an instance in a given month. */

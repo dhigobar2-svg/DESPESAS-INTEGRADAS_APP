@@ -6,7 +6,7 @@ import {
   TrendingUp, NotebookPen, Loader2,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
-import { cn, formatCurrency, isRecurringCovered, recurringDueDate } from "./lib/utils";
+import { cn, formatCurrency, isRecurringCovered, recurringDueDate, buildSkipSet } from "./lib/utils";
 import Toast from "./components/Toast";
 
 // Lazy-loaded tabs keep the heavy chart/PDF libraries out of the initial bundle.
@@ -22,7 +22,8 @@ type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, expenses, recurring, incomes } = useData();
+  const { profile, isOnline, isConnected, expenses, recurring, recurringSkips, incomes } = useData();
+  const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
   const [expensesView,   setExpensesView]   = useState<"list" | "futures">("list");
@@ -51,7 +52,7 @@ function Shell() {
       const base = new Date(now.getFullYear(), now.getMonth() + mo, 1);
       const dateStr = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
       if (dateStr <= today) continue;
-      if (!isRecurringCovered(expenses, rec, dateStr, { unpaidOnly: true })) {
+      if (!isRecurringCovered(expenses, rec, dateStr, { unpaidOnly: true, skips: skipSet })) {
         virtualRecurringFutureDates.push(dateStr);
       }
     }
