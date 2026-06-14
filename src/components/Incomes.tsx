@@ -34,7 +34,8 @@ export default function Incomes() {
   const [pendingIncome,  setPendingIncome]  = useState<Income | null>(null);
   const [form,          setForm]          = useState<Partial<Income>>(emptyForm());
   const [confirmId,     setConfirmId]     = useState<string | null>(null);
-  const [recConfirmId,  setRecConfirmId]  = useState<string | null>(null);
+
+  const activeRecurringIncomeIds = new Set(recurringIncomes.filter(r => r.active).map(r => r.id));
 
   const prevMonth = () => setSelectedMonth(m => subMonths(m, 1));
   const nextMonth = () => setSelectedMonth(m => addMonths(m, 1));
@@ -74,12 +75,16 @@ export default function Incomes() {
     setForm(emptyForm());
     setEditingId(null);
     setShowForm(true);
+    window.scrollTo(0, 0);
   };
 
   const openEdit = (inc: Income) => {
-    setForm({ ...inc });
+    // Reflect whether this income is currently a live recurrence.
+    const tpl = inc.recurring_income_id ? recurringIncomes.find(r => r.id === inc.recurring_income_id) : undefined;
+    setForm({ ...inc, recurring: tpl && tpl.active ? 1 : 0 });
     setEditingId(inc.id);
     setShowForm(true);
+    window.scrollTo(0, 0);
   };
 
   const cancelForm = () => {
@@ -88,24 +93,35 @@ export default function Incomes() {
     setForm(emptyForm());
   };
 
+  // Recurrence is a property of the entry: the "repetir todo mês" toggle creates,
+  // keeps, or stops the underlying template — no separate screen.
   const doSaveIncome = (income: Income) => {
-    // For a new income marked recurring, create a template and link this income
-    // as its first instance, so it is regenerated automatically every month.
-    if (!editingId && income.recurring) {
-      const tplId = generateId();
-      const day = parseInt(income.date.slice(8, 10) || "1", 10) || 1;
-      saveRecurringIncome({
-        id:             tplId,
-        description:    income.description,
-        value:          income.value,
-        type:           income.type,
-        responsible_id: income.responsible_id,
-        day_of_month:   day,
-        active:         1,
-      }, false);
-      saveIncome({ ...income, recurring: 0, recurring_income_id: tplId }, false);
+    const day = parseInt(income.date.slice(8, 10) || "1", 10) || 1;
+    const linked = income.recurring_income_id
+      ? recurringIncomes.find(r => r.id === income.recurring_income_id)
+      : undefined;
+
+    if (income.recurring) {
+      if (linked) {
+        saveIncome({ ...income, recurring: 0 }, !!editingId);
+        saveRecurringIncome({
+          ...linked,
+          description: income.description, value: income.value, type: income.type,
+          responsible_id: income.responsible_id, day_of_month: day, active: 1,
+        }, true);
+      } else {
+        const tplId = generateId();
+        saveIncome({ ...income, recurring: 0, recurring_income_id: tplId }, !!editingId);
+        saveRecurringIncome({
+          id: tplId, description: income.description, value: income.value, type: income.type,
+          responsible_id: income.responsible_id, day_of_month: day, active: 1,
+        }, false);
+      }
     } else {
-      saveIncome(income, !!editingId);
+      saveIncome({ ...income, recurring: 0 }, !!editingId);
+      if (linked && linked.active) {
+        saveRecurringIncome({ ...linked, active: 0 }, true);
+      }
     }
     setPendingIncome(null);
     cancelForm();
@@ -208,62 +224,6 @@ export default function Incomes() {
         </div>
       </div>
 
-      {/* Recurring incomes management */}
-      {recurringIncomes.length > 0 && (
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
-              <RefreshCw size={14} className="text-teal-500" /> Entradas Recorrentes
-            </h3>
-            <span className="text-[10px] font-black text-teal-600">
-              R$ {formatCurrency(recurringIncomes.filter(r => r.active).reduce((s, r) => s + r.value, 0))}/mês
-            </span>
-          </div>
-          <div className="space-y-2">
-            {[...recurringIncomes].sort((a, b) => a.day_of_month - b.day_of_month).map(rec => {
-              const it = incomeTypes.find(t => t.id === rec.type);
-              return (
-                <div key={rec.id} className={cn(
-                  "flex items-center gap-3 p-3 rounded-xl border transition-all",
-                  rec.active ? "bg-white border-slate-200" : "bg-slate-50 border-slate-100 opacity-60",
-                )}>
-                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: it?.color ?? "#64748b" }} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold truncate">{rec.description}</p>
-                    <p className="text-[11px] text-slate-500 font-medium">
-                      Dia {rec.day_of_month}{it && ` · ${it.name}`}
-                    </p>
-                  </div>
-                  <span className="text-sm font-black text-teal-600 shrink-0">R$ {formatCurrency(rec.value)}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => saveRecurringIncome({ ...rec, active: rec.active ? 0 : 1 }, true)}
-                      title={rec.active ? "Desativar" : "Ativar"}
-                      className={cn(
-                        "p-1.5 rounded-lg transition-colors",
-                        rec.active ? "text-emerald-600 hover:bg-emerald-50" : "text-slate-400 hover:bg-slate-100",
-                      )}
-                    >
-                      {rec.active ? <Check size={16} /> : <X size={16} />}
-                    </button>
-                    <button
-                      onClick={() => setRecConfirmId(rec.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 transition-colors rounded-lg"
-                      title="Excluir"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-[10px] text-slate-400 mt-3">
-            Marque "entrada recorrente" ao adicionar uma entrada para criar uma recorrência. Desativá-la interrompe os próximos meses; lançamentos já feitos são mantidos.
-          </p>
-        </div>
-      )}
-
       {/* Add / Edit form */}
       <AnimatePresence>
         {showForm && (
@@ -350,7 +310,6 @@ export default function Incomes() {
                   />
                 </div>
 
-                {!editingId && (
                 <div
                   onClick={() => setForm(f => ({ ...f, recurring: f.recurring ? 0 : 1 }))}
                   className={cn(
@@ -363,13 +322,13 @@ export default function Incomes() {
                   <RefreshCw size={18} className={form.recurring ? "text-teal-500" : "text-slate-400"} />
                   <div className="flex-1">
                     <p className={cn("text-sm font-bold", form.recurring ? "text-teal-700" : "text-slate-600")}>
-                      É uma entrada recorrente?
+                      Repetir todo mês
                     </p>
-                    {!!form.recurring && (
-                      <p className="text-[11px] text-teal-500 mt-0.5">
-                        Será lançada automaticamente todo mês no mesmo dia.
-                      </p>
-                    )}
+                    <p className={cn("text-[11px] mt-0.5", form.recurring ? "text-teal-500" : "text-slate-400")}>
+                      {form.recurring
+                        ? "Lançada automaticamente todo mês no mesmo dia. Desligue para parar."
+                        : "Marque para que esta entrada se repita automaticamente todo mês."}
+                    </p>
                   </div>
                   <div className={cn(
                     "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
@@ -382,7 +341,6 @@ export default function Incomes() {
                     )}
                   </div>
                 </div>
-                )}
               </div>
 
               {/* Aviso de entrada duplicada */}
@@ -468,7 +426,14 @@ export default function Incomes() {
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-slate-900 truncate">{inc.description}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-bold text-slate-900 truncate">{inc.description}</p>
+                        {inc.recurring_income_id && activeRecurringIncomeIds.has(inc.recurring_income_id) && (
+                          <span title="Repete todo mês" className="shrink-0 flex items-center gap-0.5 text-[8px] font-bold text-teal-600 bg-teal-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                            <RefreshCw size={8} /> Mês
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-0.5 space-y-0.5">
                         {(() => {
                           const it = incomeTypes.find(t => t.id === inc.type);
@@ -501,17 +466,17 @@ export default function Incomes() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => openEdit(inc)}
-                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-2.5 text-slate-500 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg transition-colors"
                           title="Editar"
                         >
-                          <Edit2 size={13} />
+                          <Edit2 size={16} />
                         </button>
                         <button
                           onClick={() => setConfirmId(inc.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-2.5 text-slate-500 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-lg transition-colors"
                           title="Excluir"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     </div>
@@ -544,15 +509,6 @@ export default function Incomes() {
         onCancel={() => setConfirmId(null)}
       />
 
-      <ConfirmModal
-        open={!!recConfirmId}
-        message={`Excluir a entrada recorrente "${recurringIncomes.find(r => r.id === recConfirmId)?.description ?? ""}"? Os lançamentos já feitos são mantidos; apenas os próximos meses deixam de ser gerados.`}
-        onConfirm={() => {
-          if (recConfirmId) deleteItem("recurring_incomes", recConfirmId);
-          setRecConfirmId(null);
-        }}
-        onCancel={() => setRecConfirmId(null)}
-      />
     </motion.div>
   );
 }

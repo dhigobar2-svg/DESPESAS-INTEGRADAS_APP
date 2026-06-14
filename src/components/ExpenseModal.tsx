@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
 import { RefreshCw, AlertTriangle } from "lucide-react";
@@ -19,43 +19,73 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
     saveExpense, saveRecurring, addToast,
   } = useData();
 
+  // The template this expense is currently linked to (if any).
+  const linkedTemplate = editing?.recurring_id
+    ? recurring.find(r => r.id === editing.recurring_id)
+    : undefined;
+
   const [isRecurring,     setIsRecurring]     = useState(false);
   const [pendingExpense,  setPendingExpense]   = useState<Expense | null>(null);
 
+  // Reflect the entry's current recurrence state whenever the modal (re)opens.
+  useEffect(() => {
+    if (open) setIsRecurring(!!(linkedTemplate && linkedTemplate.active));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editing?.id]);
+
   // ── Centralised save (called both on first submit and on duplicate-confirm) ──
   const doSave = (expense: Expense) => {
-    // Create recurring template only for new expenses, and link the materialised
-    // expense back to it via recurring_id so it's never regenerated as a duplicate.
-    if (!editing && isRecurring && expense.due_date) {
-      const dayOfMonth = parseInt(expense.due_date.slice(8, 10), 10);
-      const existingRec = recurring.find(r =>
-        r.active &&
-        r.description.toLowerCase() === expense.description.toLowerCase() &&
-        r.day_of_month === dayOfMonth &&
-        Math.abs(r.value - expense.value) < 0.01,
-      );
-      if (existingRec) {
-        addToast("info", "Já existe uma recorrente ativa com estes dados — não foi duplicada.");
-        saveExpense({ ...expense, recurring_id: existingRec.id }, false);
-      } else {
-        const recId = generateId();
-        saveExpense({ ...expense, recurring_id: recId }, false);
+    const dayOfMonth = expense.due_date ? parseInt(expense.due_date.slice(8, 10), 10) : 1;
+    const linked = expense.recurring_id ? recurring.find(r => r.id === expense.recurring_id) : undefined;
+
+    if (isRecurring && expense.due_date) {
+      if (linked) {
+        // Already recurring: keep the link and update the template so future
+        // months reflect any edits to value/description/day.
+        saveExpense(expense, !!editing);
         saveRecurring({
-          id:             recId,
+          ...linked,
           category_id:    expense.category_id,
           description:    expense.description,
           value:          expense.value,
           responsible_id: expense.responsible_id,
           day_of_month:   dayOfMonth,
           active:         1,
-        }, false);
+        }, true);
+      } else {
+        // Becoming recurring: reuse a matching active template or create one.
+        const existingRec = recurring.find(r =>
+          r.active &&
+          r.description.toLowerCase() === expense.description.toLowerCase() &&
+          r.day_of_month === dayOfMonth &&
+          Math.abs(r.value - expense.value) < 0.01,
+        );
+        const recId = existingRec?.id ?? generateId();
+        saveExpense({ ...expense, recurring_id: recId }, !!editing);
+        if (existingRec) {
+          addToast("info", "Vinculada a uma recorrência já existente.");
+        } else {
+          saveRecurring({
+            id:             recId,
+            category_id:    expense.category_id,
+            description:    expense.description,
+            value:          expense.value,
+            responsible_id: expense.responsible_id,
+            day_of_month:   dayOfMonth,
+            active:         1,
+          }, false);
+        }
       }
     } else {
       saveExpense(expense, !!editing);
+      // Turned off: stop the recurrence (past entries are kept).
+      if (linked && linked.active) {
+        saveRecurring({ ...linked, active: 0 }, true);
+        addToast("info", "Recorrência desativada — não será mais lançada nos próximos meses.");
+      }
     }
 
     setPendingExpense(null);
-    setIsRecurring(false);
     onClose();
   };
 
@@ -213,34 +243,34 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                   <label htmlFor="paid" className="text-sm font-bold text-slate-700">Já está pago?</label>
                 </div>
 
-                {/* Recorrente — somente para novas despesas */}
-                {!editing && (
-                  <div
-                    onClick={() => setIsRecurring(v => !v)}
-                    className={`flex items-center gap-3 py-3 px-4 rounded-2xl border-2 cursor-pointer transition-all ${
-                      isRecurring
-                        ? "border-orange-400 bg-orange-50"
-                        : "border-slate-200 bg-slate-50 hover:border-slate-300"
-                    }`}
-                  >
-                    <RefreshCw size={18} className={isRecurring ? "text-orange-500" : "text-slate-400"} />
-                    <div className="flex-1">
-                      <p className={`text-sm font-bold ${isRecurring ? "text-orange-700" : "text-slate-600"}`}>
-                        É uma despesa recorrente?
-                      </p>
-                      {isRecurring && (
-                        <p className="text-[11px] text-orange-500 mt-0.5">
-                          Será adicionada automaticamente às recorrentes todo mês no mesmo dia do vencimento.
-                        </p>
-                      )}
-                    </div>
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
-                      isRecurring ? "bg-orange-500 border-orange-500" : "border-slate-300"
-                    }`}>
-                      {isRecurring && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
-                    </div>
+                {/* Repetir todo mês — disponível ao criar e ao editar */}
+                <div
+                  onClick={() => setIsRecurring(v => !v)}
+                  className={`flex items-center gap-3 py-3 px-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                    isRecurring
+                      ? "border-orange-400 bg-orange-50"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                  }`}
+                >
+                  <RefreshCw size={18} className={isRecurring ? "text-orange-500" : "text-slate-400"} />
+                  <div className="flex-1">
+                    <p className={`text-sm font-bold ${isRecurring ? "text-orange-700" : "text-slate-600"}`}>
+                      Repetir todo mês
+                    </p>
+                    <p className={`text-[11px] mt-0.5 ${isRecurring ? "text-orange-500" : "text-slate-400"}`}>
+                      {isRecurring
+                        ? "Lançada automaticamente todo mês no mesmo dia do vencimento. Desligue para parar."
+                        : editing && linkedTemplate
+                        ? "Religue para voltar a lançar todo mês."
+                        : "Marque para que ela se repita automaticamente todo mês."}
+                    </p>
                   </div>
-                )}
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
+                    isRecurring ? "bg-orange-500 border-orange-500" : "border-slate-300"
+                  }`}>
+                    {isRecurring && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                  </div>
+                </div>
 
                 {/* ── Aviso de despesa duplicada ───────────────────────────────── */}
                 <AnimatePresence>

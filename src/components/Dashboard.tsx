@@ -1,745 +1,416 @@
 import React, { useMemo, useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, Cell,
-  ResponsiveContainer, LabelList, ReferenceLine,
+  ResponsiveContainer, LabelList,
 } from "recharts";
 import {
-  format, startOfMonth, endOfMonth, isWithinInterval,
-  parseISO, subMonths, addMonths,
+  format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter,
+  startOfYear, endOfYear, subMonths, subQuarters, subYears,
+  addMonths, addQuarters, addYears, isWithinInterval, parseISO, getQuarter,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
-  ChevronLeft, ChevronRight, Plus, TrendingDown, TrendingUp,
-  AlertCircle, ArrowUpRight, ArrowDownRight, Minus,
+  ChevronLeft, ChevronRight, Plus, TrendingUp, TrendingDown,
+  ArrowUpRight, ArrowDownRight, Minus, AlertCircle, CheckCircle2, SlidersHorizontal,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, isRecurringCovered, recurringDueDate } from "../lib/utils";
+import { formatCurrency, cn } from "../lib/utils";
 import ExpenseModal from "./ExpenseModal";
 
+type PeriodMode = "month" | "quarter" | "year" | "all";
+
+const MODE_LABEL: Record<PeriodMode, string> = {
+  month: "Mês", quarter: "Trimestre", year: "Ano", all: "Geral",
+};
+
+interface Range { start: Date; end: Date; label: string; }
+
+function getPeriod(mode: PeriodMode, anchor: Date): Range {
+  switch (mode) {
+    case "month":   return { start: startOfMonth(anchor),   end: endOfMonth(anchor),   label: format(anchor, "MMMM yyyy", { locale: ptBR }) };
+    case "quarter": return { start: startOfQuarter(anchor), end: endOfQuarter(anchor), label: `${getQuarter(anchor)}º trimestre ${format(anchor, "yyyy")}` };
+    case "year":    return { start: startOfYear(anchor),    end: endOfYear(anchor),    label: format(anchor, "yyyy") };
+    case "all":     return { start: new Date(2000, 0, 1),   end: endOfMonth(new Date()), label: "Acumulado geral" };
+  }
+}
+
+function shift(mode: PeriodMode, anchor: Date, dir: number): Date {
+  switch (mode) {
+    case "month":   return dir < 0 ? subMonths(anchor, 1)   : addMonths(anchor, 1);
+    case "quarter": return dir < 0 ? subQuarters(anchor, 1) : addQuarters(anchor, 1);
+    case "year":    return dir < 0 ? subYears(anchor, 1)    : addYears(anchor, 1);
+    case "all":     return anchor;
+  }
+}
+
+function inRange(dateStr: string, r: Range): boolean {
+  try { return isWithinInterval(parseISO(dateStr), { start: r.start, end: r.end }); }
+  catch { return false; }
+}
+
+// Δ% with sign, null when there's no comparison base
+function pct(curr: number, prev: number): number | null {
+  if (prev <= 0) return null;
+  return ((curr - prev) / prev) * 100;
+}
+
 export default function Dashboard() {
-  const { expenses, categories, responsibles, budgets, recurring, incomes } = useData();
-  const [selectedMonth, setSelectedMonth] = useState(new Date());
-  const [showModal,     setShowModal]     = useState(false);
+  const { expenses, categories, responsibles, budgets, incomes } = useData();
 
-  const prevMonth = () => setSelectedMonth(m => subMonths(m, 1));
-  const nextMonth = () => setSelectedMonth(m => addMonths(m, 1));
+  const [mode,        setMode]        = useState<PeriodMode>("month");
+  const [anchor,      setAnchor]      = useState(new Date());
+  const [filterCat,   setFilterCat]   = useState("");
+  const [filterResp,  setFilterResp]  = useState("");
+  const [showModal,   setShowModal]   = useState(false);
 
-  // ── Month stats ───────────────────────────────────────────────────────────────
+  const period     = useMemo(() => getPeriod(mode, anchor), [mode, anchor]);
+  const prevPeriod = useMemo(() => mode === "all" ? null : getPeriod(mode, shift(mode, anchor, -1)), [mode, anchor]);
+
+  // ── Filtered sums ───────────────────────────────────────────────────────────
+  const expFilter = (e: typeof expenses[number]) =>
+    (!filterCat  || e.category_id === filterCat) &&
+    (!filterResp || e.responsible_id === filterResp);
+  const incFilter = (i: typeof incomes[number]) =>
+    (!filterResp || i.responsible_id === filterResp);
+
+  const sumExp = (r: Range) => expenses.filter(e => expFilter(e) && inRange(e.due_date, r)).reduce((s, e) => s + e.value, 0);
+  const sumInc = (r: Range) => incomes.filter(i => incFilter(i)  && inRange(i.date, r)).reduce((s, i) => s + i.value, 0);
+
   const stats = useMemo(() => {
-    const start    = startOfMonth(selectedMonth);
-    const end      = endOfMonth(selectedMonth);
-    const monthKey = format(selectedMonth, "yyyy-MM");
-    const nowKey   = format(new Date(), "yyyy-MM");
-    const isFuture = monthKey > nowKey;
+    const periodExp = expenses.filter(e => expFilter(e) && inRange(e.due_date, period));
+    const saidas    = periodExp.reduce((s, e) => s + e.value, 0);
+    const entradas  = sumInc(period);
+    const pago      = periodExp.filter(e => e.paid).reduce((s, e) => s + e.value, 0);
+    const pendente  = saidas - pago;
+    const saldo     = entradas - saidas;
+    const comprometimento = entradas > 0 ? (saidas / entradas) * 100 : 0;
 
-    const monthExp = expenses.filter(e => {
-      try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
-      catch { return false; }
-    });
+    const prevSaidas   = prevPeriod ? sumExp(prevPeriod) : 0;
+    const prevEntradas = prevPeriod ? sumInc(prevPeriod) : 0;
+    const prevSaldo    = prevEntradas - prevSaidas;
 
-    // For future months, project recurring expenses not yet generated
-    if (isFuture) {
-      for (const rec of recurring) {
-        if (!rec.active) continue;
-        const dueDate = recurringDueDate(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, rec.day_of_month);
-        if (!isRecurringCovered(monthExp, rec, dueDate)) {
-          monthExp.push({
-            id:             `proj-${rec.id}-${monthKey}`,
-            category_id:    rec.category_id,
-            description:    rec.description,
-            date:           dueDate,
-            due_date:       dueDate,
-            value:          rec.value,
-            responsible_id: rec.responsible_id,
-            paid:           0,
-            recurring_id:   rec.id,
-          });
-        }
-      }
-    }
-
-    const totalMonth   = monthExp.reduce((s, e) => s + e.value, 0);
-    const pendingMonth = monthExp.filter(e => !e.paid).reduce((s, e) => s + e.value, 0);
-    const paidMonth    = monthExp.filter(e =>  e.paid).reduce((s, e) => s + e.value, 0);
-    const paidPct      = totalMonth > 0 ? (paidMonth / totalMonth) * 100 : 0;
-    const ticketMedio  = monthExp.length > 0 ? totalMonth / monthExp.length : 0;
-
-    const catData = categories.map(cat => ({
-      name:  cat.name,
-      value: monthExp.filter(e => e.category_id === cat.id).reduce((s, e) => s + e.value, 0),
-      color: cat.color,
-    })).filter(d => d.value > 0);
-
-    // All registered categories (including zero-value) for the Categorias chart
-    const allCatData = categories.map(cat => ({
-      name:  cat.name,
-      value: monthExp.filter(e => e.category_id === cat.id).reduce((s, e) => s + e.value, 0),
-      color: cat.color,
-    }));
-
-    const topCategories = [...catData].sort((a, b) => b.value - a.value).slice(0, 5);
-
-    const respData = responsibles.map(r => ({
-      id:    r.id,
-      name:  r.name,
-      value: monthExp.filter(e => e.responsible_id === r.id).reduce((s, e) => s + e.value, 0),
+    const byCat = categories.map(c => ({
+      name:  c.name,
+      value: periodExp.filter(e => e.category_id === c.id).reduce((s, e) => s + e.value, 0),
+      color: c.color,
     })).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
 
-    const top5Individual = [...monthExp]
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5)
-      .map(e => ({
-        name:  (e.description || "Sem descrição").slice(0, 24),
-        value: e.value,
-        color: categories.find(c => c.id === e.category_id)?.color ?? "#94a3b8",
-      }));
+    const byResp = responsibles.map(r => ({
+      name:  r.name,
+      value: periodExp.filter(e => e.responsible_id === r.id).reduce((s, e) => s + e.value, 0),
+    })).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
 
     return {
-      totalMonth, pendingMonth, paidMonth, paidPct, ticketMedio,
-      catData, allCatData, topCategories, respData, top5Individual,
-      count: monthExp.length,
+      saidas, entradas, pago, pendente, saldo, comprometimento,
+      prevSaidas, prevEntradas, prevSaldo, byCat, byResp, count: periodExp.length,
     };
-  }, [expenses, categories, responsibles, recurring, selectedMonth]);
+  }, [expenses, incomes, categories, responsibles, period, prevPeriod, filterCat, filterResp]);
 
-  // ── Previous month comparison ─────────────────────────────────────────────────
-  const prevMonthTotal = useMemo(() => {
-    const prev  = subMonths(selectedMonth, 1);
-    const start = startOfMonth(prev);
-    const end   = endOfMonth(prev);
-    return expenses
-      .filter(e => {
-        try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
-        catch { return false; }
-      })
-      .reduce((s, e) => s + e.value, 0);
-  }, [expenses, selectedMonth]);
-
-  const monthDelta = prevMonthTotal > 0
-    ? ((stats.totalMonth - prevMonthTotal) / prevMonthTotal) * 100
-    : null;
-
-  // ── Annual history (last 12 months) ──────────────────────────────────────────
-  const annualData = useMemo(() => {
-    return Array.from({ length: 12 }, (_, i) => {
-      const month = subMonths(new Date(), 11 - i);
-      const start = startOfMonth(month);
-      const end   = endOfMonth(month);
-      const total = expenses
-        .filter(e => {
-          try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
-          catch { return false; }
-        })
-        .reduce((s, e) => s + e.value, 0);
-      return {
-        name:      format(month, "MMM", { locale: ptBR }),
-        total,
-        isCurrent: format(month, "yyyy-MM") === format(new Date(), "yyyy-MM"),
-      };
-    });
-  }, [expenses]);
-
-  const annualAvg = useMemo(() => {
-    const nonZero = annualData.filter(d => d.total > 0);
-    return nonZero.length > 1
-      ? nonZero.reduce((s, d) => s + d.total, 0) / nonZero.length
-      : 0;
-  }, [annualData]);
-
-  // ── Cashflow: paid vs pending per day ─────────────────────────────────────────
-  const cashflowData = useMemo(() => {
-    const start = startOfMonth(selectedMonth);
-    const end   = endOfMonth(selectedMonth);
-    const monthExp = expenses.filter(e => {
-      try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
-      catch { return false; }
-    });
-
-    const days: Record<string, { dia: string; Pago: number; Pendente: number }> = {};
-    for (const e of monthExp) {
-      const day = e.due_date.slice(8, 10);
-      if (!days[day]) days[day] = { dia: `${parseInt(day)}`, Pago: 0, Pendente: 0 };
-      if (e.paid) days[day].Pago     += e.value;
-      else        days[day].Pendente += e.value;
+  // ── Trend buckets (adaptive to mode) ──────────────────────────────────────────
+  const trend = useMemo(() => {
+    const buckets: Range[] = [];
+    if (mode === "month") {
+      for (let i = 5; i >= 0; i--) { const d = subMonths(anchor, i); buckets.push({ start: startOfMonth(d), end: endOfMonth(d), label: format(d, "MMM/yy", { locale: ptBR }) }); }
+    } else if (mode === "quarter") {
+      for (let i = 3; i >= 0; i--) { const d = subQuarters(anchor, i); buckets.push({ start: startOfQuarter(d), end: endOfQuarter(d), label: `T${getQuarter(d)}/${format(d, "yy")}` }); }
+    } else if (mode === "year") {
+      for (let m = 0; m < 12; m++) { const d = new Date(anchor.getFullYear(), m, 1); buckets.push({ start: startOfMonth(d), end: endOfMonth(d), label: format(d, "MMM", { locale: ptBR }) }); }
+    } else {
+      const years = [
+        ...expenses.map(e => e.due_date?.slice(0, 4)),
+        ...incomes.map(i => i.date?.slice(0, 4)),
+      ].filter(Boolean) as string[];
+      const minY = years.length ? Math.min(...years.map(Number)) : new Date().getFullYear();
+      const maxY = new Date().getFullYear();
+      for (let y = minY; y <= maxY; y++) { const d = new Date(y, 0, 1); buckets.push({ start: startOfYear(d), end: endOfYear(d), label: String(y) }); }
     }
-    return Object.values(days).sort((a, b) => parseInt(a.dia) - parseInt(b.dia));
-  }, [expenses, selectedMonth]);
+    return buckets.map(b => ({ name: b.label, Entradas: sumInc(b), Saídas: sumExp(b) }));
+  }, [mode, anchor, expenses, incomes, filterCat, filterResp]);
 
-  // ── Budget progress ────────────────────────────────────────────────────────────
-  const monthKey     = format(selectedMonth, "yyyy-MM");
+  // ── Budgets (month mode only) ─────────────────────────────────────────────────
   const monthBudgets = useMemo(() => {
-    return budgets
-      .filter(b => b.month === monthKey)
-      .map(b => {
-        const cat   = categories.find(c => c.id === b.category_id);
-        const spent = stats.catData.find(d => d.name === cat?.name)?.value ?? 0;
-        const pct   = b.limit_value > 0 ? (spent / b.limit_value) * 100 : 0;
-        return { ...b, catName: cat?.name ?? "—", catColor: cat?.color ?? "#94a3b8", spent, pct };
-      });
-  }, [budgets, monthKey, categories, stats.catData]);
+    if (mode !== "month") return [];
+    const monthKey = format(anchor, "yyyy-MM");
+    return budgets.filter(b => b.month === monthKey).map(b => {
+      const cat   = categories.find(c => c.id === b.category_id);
+      const spent = stats.byCat.find(d => d.name === cat?.name)?.value
+        ?? expenses.filter(e => e.category_id === b.category_id && inRange(e.due_date, period)).reduce((s, e) => s + e.value, 0);
+      const p = b.limit_value > 0 ? (spent / b.limit_value) * 100 : 0;
+      return { ...b, catName: cat?.name ?? "—", catColor: cat?.color ?? "#94a3b8", spent, pct: p };
+    }).sort((a, b) => b.pct - a.pct);
+  }, [mode, anchor, budgets, categories, stats.byCat, expenses, period]);
 
-  // ── Income for selected month ─────────────────────────────────────────────────
-  const monthIncomeTotal = useMemo(() => {
-    const start = startOfMonth(selectedMonth);
-    const end   = endOfMonth(selectedMonth);
-    return incomes
-      .filter(i => {
-        try { return isWithinInterval(parseISO(i.date), { start, end }); }
-        catch { return false; }
-      })
-      .reduce((s, i) => s + i.value, 0);
-  }, [incomes, selectedMonth]);
+  // ── Insights ──────────────────────────────────────────────────────────────────
+  const insights = useMemo(() => {
+    const out: { tone: "good" | "bad" | "warn"; text: string }[] = [];
+    const dExp = pct(stats.saidas, stats.prevSaidas);
 
-  const monthBalance = monthIncomeTotal - stats.totalMonth;
+    if (stats.entradas > 0 || stats.saidas > 0) {
+      out.push(stats.saldo >= 0
+        ? { tone: "good", text: `Saldo positivo de R$ ${formatCurrency(stats.saldo)} no período.` }
+        : { tone: "bad",  text: `Saldo negativo de R$ ${formatCurrency(Math.abs(stats.saldo))} — gastos acima das entradas.` });
+    }
+    if (dExp !== null && Math.abs(dExp) >= 5) {
+      out.push(dExp > 0
+        ? { tone: "warn", text: `Gastos ${dExp.toFixed(0)}% maiores que o período anterior.` }
+        : { tone: "good", text: `Gastos ${Math.abs(dExp).toFixed(0)}% menores que o período anterior.` });
+    }
+    if (stats.entradas > 0 && stats.comprometimento > 90) {
+      out.push({ tone: "bad", text: `Renda quase toda comprometida (${stats.comprometimento.toFixed(0)}%).` });
+    } else if (stats.entradas > 0 && stats.comprometimento <= 70 && stats.saidas > 0) {
+      out.push({ tone: "good", text: `Comprometimento saudável da renda (${stats.comprometimento.toFixed(0)}%).` });
+    }
+    if (stats.byCat.length > 0) {
+      const top = stats.byCat[0];
+      const share = stats.saidas > 0 ? (top.value / stats.saidas) * 100 : 0;
+      out.push({ tone: share > 40 ? "warn" : "good", text: `Maior gasto: ${top.name} — R$ ${formatCurrency(top.value)} (${share.toFixed(0)}% do total).` });
+    }
+    const exceeded = monthBudgets.filter(b => b.pct >= 100);
+    if (exceeded.length) out.push({ tone: "bad", text: `Orçamento estourado: ${exceeded.map(b => b.catName).join(", ")}.` });
+    if (stats.pendente > 0) out.push({ tone: "warn", text: `R$ ${formatCurrency(stats.pendente)} ainda pendentes de pagamento.` });
 
-  // ── Income vs Expenses — last 6 months ───────────────────────────────────────
-  const incomeVsExpenses = useMemo(() => {
-    return Array.from({ length: 6 }, (_, i) => {
-      const month = subMonths(new Date(), 5 - i);
-      const start = startOfMonth(month);
-      const end   = endOfMonth(month);
-      const exp = expenses
-        .filter(e => {
-          try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
-          catch { return false; }
-        })
-        .reduce((s, e) => s + e.value, 0);
-      const inc = incomes
-        .filter(inc => {
-          try { return isWithinInterval(parseISO(inc.date), { start, end }); }
-          catch { return false; }
-        })
-        .reduce((s, inc) => s + inc.value, 0);
-      return {
-        name:    format(month, "MMM/yy", { locale: ptBR }),
-        Entradas: inc,
-        Saídas:   exp,
-      };
-    });
-  }, [expenses, incomes]);
+    return out;
+  }, [stats, monthBudgets]);
 
-  // ── Category trend: top 4 cats, last 6 months ────────────────────────────────
-  const categoryTrend = useMemo(() => {
-    const topCats = categories
-      .map(cat => ({
-        id:    cat.id,
-        name:  cat.name,
-        color: cat.color,
-        total: expenses.filter(e => e.category_id === cat.id).reduce((s, e) => s + e.value, 0),
-      }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 4)
-      .filter(c => c.total > 0);
+  const hasFilter = !!(filterCat || filterResp);
 
-    const data = Array.from({ length: 6 }, (_, i) => {
-      const month = subMonths(new Date(), 5 - i);
-      const start = startOfMonth(month);
-      const end   = endOfMonth(month);
-      const monthExp = expenses.filter(e => {
-        try { return isWithinInterval(parseISO(e.due_date), { start, end }); }
-        catch { return false; }
-      });
-      const row: Record<string, string | number> = {
-        name: format(month, "MMM/yy", { locale: ptBR }),
-      };
-      for (const cat of topCats) {
-        row[cat.name] = monthExp
-          .filter(e => e.category_id === cat.id)
-          .reduce((s, e) => s + e.value, 0);
-      }
-      return row;
-    });
-
-    return { data, topCats };
-  }, [expenses, categories]);
+  // ── KPI card ──────────────────────────────────────────────────────────────────
+  const Delta = ({ value, goodWhenDown = false }: { value: number | null; goodWhenDown?: boolean }) => {
+    if (value === null) return null;
+    const up = value > 0;
+    const neutral = Math.abs(value) < 0.5;
+    const good = neutral ? false : goodWhenDown ? !up : up;
+    const bad  = neutral ? false : goodWhenDown ? up : !up;
+    return (
+      <div className={cn("flex items-center gap-1 mt-1 text-[10px] font-bold",
+        good ? "text-emerald-600" : bad ? "text-red-500" : "text-slate-400")}>
+        {neutral ? <Minus size={11} /> : up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+        <span>{up ? "+" : ""}{value.toFixed(0)}% vs período anterior</span>
+      </div>
+    );
+  };
 
   return (
     <motion.div
       key="overview"
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-      className="space-y-6 pb-8"
+      className="space-y-5 pb-10"
     >
+      {/* ── Period selector ─────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-4 gap-1.5 bg-slate-100 p-1 rounded-2xl">
+        {(["month", "quarter", "year", "all"] as PeriodMode[]).map(m => (
+          <button
+            key={m}
+            onClick={() => { setMode(m); setAnchor(new Date()); }}
+            className={cn(
+              "py-2 rounded-xl text-xs font-bold uppercase tracking-wide transition-all",
+              mode === m ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700",
+            )}
+          >
+            {MODE_LABEL[m]}
+          </button>
+        ))}
+      </div>
 
-      {/* ── Month nav + add ───────────────────────────────────────────────────── */}
+      {/* ── Period nav + add ────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-slate-100 transition-colors">
-            <ChevronLeft size={18} />
-          </button>
-          <span className="text-sm font-black uppercase tracking-widest w-32 text-center">
-            {format(selectedMonth, "MMM yyyy", { locale: ptBR })}
-          </span>
-          <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-slate-100 transition-colors">
-            <ChevronRight size={18} />
-          </button>
+        <div className="flex items-center gap-1">
+          {mode !== "all" && (
+            <button onClick={() => setAnchor(a => shift(mode, a, -1))} className="p-2 rounded-xl hover:bg-slate-100 transition-colors">
+              <ChevronLeft size={18} />
+            </button>
+          )}
+          <span className="text-sm font-black uppercase tracking-wide text-center min-w-[8rem]">{period.label}</span>
+          {mode !== "all" && (
+            <button onClick={() => setAnchor(a => shift(mode, a, 1))} className="p-2 rounded-xl hover:bg-slate-100 transition-colors">
+              <ChevronRight size={18} />
+            </button>
+          )}
         </div>
         <button
           onClick={() => setShowModal(true)}
           className="bg-emerald-600 text-white p-2.5 rounded-full shadow-lg hover:bg-emerald-700 transition-transform active:scale-95"
+          title="Nova despesa"
         >
           <Plus size={22} />
         </button>
       </div>
 
-      {/* ── Stats cards ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-
-        {/* Total do mês + comparativo + % pago */}
-        <div className="card p-5 col-span-2">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total do Mês</p>
-          <p className="text-2xl font-black tracking-tighter text-slate-900">
-            R$ {formatCurrency(stats.totalMonth)}
-          </p>
-          {monthDelta !== null && (
-            <div className={cn(
-              "flex items-center gap-1 mt-1 text-[10px] font-bold",
-              monthDelta > 0 ? "text-red-500" : monthDelta < 0 ? "text-emerald-600" : "text-slate-400",
-            )}>
-              {monthDelta > 0
-                ? <ArrowUpRight size={12} />
-                : monthDelta < 0
-                ? <ArrowDownRight size={12} />
-                : <Minus size={12} />}
-              <span>
-                {monthDelta > 0 ? "+" : ""}{monthDelta.toFixed(1)}% vs mês anterior
-                {" "}(R$ {formatCurrency(prevMonthTotal)})
-              </span>
-            </div>
-          )}
-          {/* Barra de progresso de pagamento */}
-          {stats.totalMonth > 0 && (
-            <div className="mt-3">
-              <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5">
-                <span>{stats.paidPct.toFixed(0)}% pago</span>
-                <span>R$ {formatCurrency(stats.paidMonth)} / R$ {formatCurrency(stats.totalMonth)}</span>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-2">
-                <div
-                  className={cn(
-                    "h-2 rounded-full transition-all",
-                    stats.paidPct >= 100 ? "bg-emerald-500" : stats.paidPct >= 50 ? "bg-blue-500" : "bg-amber-400",
-                  )}
-                  style={{ width: `${Math.min(stats.paidPct, 100)}%` }}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="card p-5">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pendente</p>
-          <p className="text-2xl font-black tracking-tighter text-red-500">
-            R$ {formatCurrency(stats.pendingMonth)}
-          </p>
-        </div>
-
-        <div className="card p-5">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pago</p>
-          <p className="text-2xl font-black tracking-tighter text-emerald-600">
-            R$ {formatCurrency(stats.paidMonth)}
-          </p>
-        </div>
-
-        {/* Ticket médio */}
-        {stats.count > 0 && (
-          <div className="card p-5 col-span-2">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ticket Médio</p>
-            <p className="text-2xl font-black tracking-tighter text-violet-600">
-              R$ {formatCurrency(stats.ticketMedio)}
-            </p>
-            <p className="text-[10px] text-slate-400 mt-1">
-              {stats.count} despesa{stats.count !== 1 ? "s" : ""} no mês
-            </p>
-          </div>
-        )}
-
-        {/* Entradas do mês */}
-        {monthIncomeTotal > 0 && (
-          <div className="card p-5 col-span-2">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Entradas do Mês</p>
-            <p className="text-2xl font-black tracking-tighter text-teal-600">
-              R$ {formatCurrency(monthIncomeTotal)}
-            </p>
-            <div className={`flex items-center gap-1 mt-1 text-[10px] font-bold ${monthBalance >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-              <span>
-                Saldo: {monthBalance >= 0 ? "+" : ""}R$ {formatCurrency(monthBalance)}
-              </span>
-            </div>
-            {stats.totalMonth > 0 && monthIncomeTotal > 0 && (
-              <div className="mt-3">
-                <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5">
-                  <span>Comprometimento</span>
-                  <span>{Math.min((stats.totalMonth / monthIncomeTotal) * 100, 999).toFixed(0)}% da renda</span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all ${
-                      stats.totalMonth / monthIncomeTotal > 0.9 ? "bg-red-500"
-                      : stats.totalMonth / monthIncomeTotal > 0.7 ? "bg-amber-400"
-                      : "bg-emerald-500"
-                    }`}
-                    style={{ width: `${Math.min((stats.totalMonth / monthIncomeTotal) * 100, 100)}%` }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+      {/* ── Filters ─────────────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2">
+        <SlidersHorizontal size={14} className="text-slate-400 shrink-0" />
+        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="input py-1.5 text-xs flex-1">
+          <option value="">Todas categorias</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={filterResp} onChange={e => setFilterResp(e.target.value)} className="input py-1.5 text-xs flex-1">
+          <option value="">Todos responsáveis</option>
+          {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+        {hasFilter && (
+          <button onClick={() => { setFilterCat(""); setFilterResp(""); }} className="text-xs text-emerald-600 font-bold hover:underline shrink-0">
+            Limpar
+          </button>
         )}
       </div>
 
-      {/* ── Budget progress ────────────────────────────────────────────────────── */}
-      {monthBudgets.length > 0 && (() => {
-        const exceeded = monthBudgets.filter(b => b.pct >= 100);
-        const warned   = monthBudgets.filter(b => b.pct >= 80 && b.pct < 100);
-        return (
-          <div className="card p-6">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Orçamentos do Mês</h3>
-              {exceeded.length > 0 && (
-                <span className="text-[10px] font-black text-red-600 bg-red-100 px-2 py-0.5 rounded-full uppercase tracking-widest">
-                  {exceeded.length} estourado{exceeded.length > 1 ? "s" : ""}
-                </span>
-              )}
-            </div>
-
-            {/* Alert banner for exceeded categories */}
-            {exceeded.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 flex items-start gap-2.5">
-                <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
-                <p className="text-xs font-bold text-red-700">
-                  Orçamento estourado em {format(selectedMonth, "MMMM", { locale: ptBR })}:{" "}
-                  {exceeded.map(b => b.catName).join(", ")}.
-                </p>
+      {/* ── KPI cards ───────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="card p-4">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entradas</p>
+          <p className="text-xl font-black tracking-tighter text-teal-600">R$ {formatCurrency(stats.entradas)}</p>
+          <Delta value={pct(stats.entradas, stats.prevEntradas)} />
+        </div>
+        <div className="card p-4">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saídas</p>
+          <p className="text-xl font-black tracking-tighter text-red-500">R$ {formatCurrency(stats.saidas)}</p>
+          <Delta value={pct(stats.saidas, stats.prevSaidas)} goodWhenDown />
+        </div>
+        <div className={cn("card p-4", stats.saldo < 0 && "ring-1 ring-red-200")}>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saldo</p>
+          <p className={cn("text-xl font-black tracking-tighter", stats.saldo >= 0 ? "text-emerald-600" : "text-red-600")}>
+            {stats.saldo >= 0 ? "+" : "−"}R$ {formatCurrency(Math.abs(stats.saldo))}
+          </p>
+          <Delta value={pct(stats.saldo, stats.prevSaldo)} />
+        </div>
+        <div className="card p-4">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Renda comprometida</p>
+          {stats.entradas > 0 ? (
+            <>
+              <p className={cn("text-xl font-black tracking-tighter",
+                stats.comprometimento > 90 ? "text-red-500" : stats.comprometimento > 70 ? "text-amber-500" : "text-emerald-600")}>
+                {stats.comprometimento.toFixed(0)}%
+              </p>
+              <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1.5">
+                <div className={cn("h-1.5 rounded-full",
+                  stats.comprometimento > 90 ? "bg-red-500" : stats.comprometimento > 70 ? "bg-amber-400" : "bg-emerald-500")}
+                  style={{ width: `${Math.min(stats.comprometimento, 100)}%` }} />
               </div>
-            )}
-
-            {/* Warning banner for categories approaching limit */}
-            {warned.length > 0 && exceeded.length === 0 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2.5">
-                <AlertCircle size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                <p className="text-xs font-bold text-amber-700">
-                  Próximo do limite: {warned.map(b => `${b.catName} (${b.pct.toFixed(0)}%)`).join(", ")}.
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              {monthBudgets.map(b => {
-                const isOver    = b.pct >= 100;
-                const isWarn    = !isOver && b.pct >= 80;
-                const remaining = b.limit_value - b.spent;
-                const excess    = b.spent - b.limit_value;
-                return (
-                  <div
-                    key={b.id}
-                    className={cn(
-                      "rounded-xl p-3 border",
-                      isOver ? "bg-red-50 border-red-200" : isWarn ? "bg-amber-50 border-amber-100" : "bg-slate-50 border-slate-100",
-                    )}
-                  >
-                    {/* Row 1: name + badges + percentage */}
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: b.catColor }} />
-                        <span className="text-xs font-bold text-slate-700">{b.catName}</span>
-                        {isOver && (
-                          <span className="text-[9px] font-black text-red-600 bg-red-200 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
-                            ESTOURADO
-                          </span>
-                        )}
-                        {isWarn && (
-                          <span className="text-[9px] font-black text-amber-700 bg-amber-200 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
-                            ATENÇÃO
-                          </span>
-                        )}
-                      </div>
-                      <span className={cn(
-                        "text-[10px] font-black shrink-0",
-                        isOver ? "text-red-600" : isWarn ? "text-amber-600" : "text-slate-500",
-                      )}>
-                        {b.pct.toFixed(0)}%
-                      </span>
-                    </div>
-
-                    {/* Row 2: spent / limit */}
-                    <div className="flex justify-between text-[10px] font-medium mb-1.5">
-                      <span className="text-slate-600 font-bold">R$ {formatCurrency(b.spent)} usado</span>
-                      <span className="text-slate-400">limite R$ {formatCurrency(b.limit_value)}</span>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div className="w-full bg-white rounded-full h-2.5 overflow-hidden border border-slate-200">
-                      <div
-                        className={cn(
-                          "h-2.5 rounded-full transition-all",
-                          isOver ? "bg-red-500" : isWarn ? "bg-amber-500" : "bg-emerald-500",
-                        )}
-                        style={{ width: `${Math.min(b.pct, 100)}%` }}
-                      />
-                    </div>
-
-                    {/* Row 3: remaining / excess */}
-                    {isOver ? (
-                      <p className="text-[10px] font-bold text-red-600 mt-1">
-                        ⚠ Excedeu R$ {formatCurrency(excess)} do limite
-                      </p>
-                    ) : (
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Restam R$ {formatCurrency(remaining)}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Charts ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-        {/* Horizontal bar: todas as categorias em ordem decrescente */}
-        <div className="card p-6 md:col-span-2">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Categorias</h3>
-          {stats.allCatData.length === 0 ? (
-            <p className="text-center text-slate-400 text-sm py-10">Nenhuma categoria cadastrada</p>
+            </>
           ) : (
-            <div style={{ height: Math.max(200, stats.allCatData.length * 52) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={[...stats.allCatData].sort((a, b) => b.value - a.value)}
-                  layout="vertical"
-                  margin={{ top: 4, right: 110, left: 8, bottom: 4 }}
-                >
-                  <XAxis type="number" fontSize={10} hide />
-                  <YAxis
-                    dataKey="name" type="category" fontSize={12} fontWeight={600}
-                    axisLine={false} tickLine={false} width={120}
-                  />
-                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                    {[...stats.allCatData]
-                      .sort((a, b) => b.value - a.value)
-                      .map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    <LabelList
-                      dataKey="value"
-                      position="right"
-                      fontSize={11}
-                      fontWeight={700}
-                      formatter={(v: number) => `R$ ${formatCurrency(v)}`}
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <p className="text-sm font-bold text-slate-300 mt-1">Sem entradas no período</p>
           )}
         </div>
-
-        {/* Horizontal bar: top 5 despesas individuais */}
-        {stats.top5Individual.length > 0 && (
-          <div className="card p-6">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">
-              Top 5 Maiores Despesas do Mês
-            </h3>
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.top5Individual} layout="vertical" margin={{ right: 90, left: 4 }}>
-                  <XAxis type="number" fontSize={10} hide />
-                  <YAxis dataKey="name" type="category" fontSize={10}
-                    axisLine={false} tickLine={false} width={110} />
-                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                    {stats.top5Individual.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    <LabelList dataKey="value" position="right" fontSize={10} fontWeight={700}
-                      formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
-        {/* Horizontal bar: por responsável */}
-        {stats.respData.length > 0 && (
-          <div className="card p-6">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">Por Responsável</h3>
-            <div className="h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.respData} layout="vertical" margin={{ right: 80 }}>
-                  <XAxis type="number" fontSize={10} hide />
-                  <YAxis dataKey="name" type="category" fontSize={11}
-                    axisLine={false} tickLine={false} width={90} />
-                  <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]}>
-                    <LabelList dataKey="value" position="right" fontSize={10} fontWeight={700}
-                      formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
-        {/* Cashflow: pago vs pendente por dia — horizontal, ordem decrescente */}
-        {cashflowData.length > 0 && (() => {
-          const sorted = [...cashflowData]
-            .map(d => ({ ...d, total: d.Pago + d.Pendente }))
-            .sort((a, b) => b.total - a.total);
-          return (
-            <div className="card p-6 md:col-span-2">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-6">
-                Fluxo de Caixa — {format(selectedMonth, "MMMM yyyy", { locale: ptBR })}
-              </h3>
-              <div style={{ height: Math.max(200, sorted.length * 56) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={sorted} layout="vertical" margin={{ top: 4, right: 100, left: 8, bottom: 4 }}>
-                    <XAxis type="number" fontSize={10} hide />
-                    <YAxis
-                      dataKey="dia" type="category" fontSize={12} fontWeight={600}
-                      axisLine={false} tickLine={false} width={40}
-                      tickFormatter={(v: string) => `Dia ${v}`}
-                    />
-                    <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="Pago" fill="#10b981" radius={[0, 4, 4, 0]}>
-                      <LabelList dataKey="Pago" position="right" fontSize={10} fontWeight={700}
-                        formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
-                    </Bar>
-                    <Bar dataKey="Pendente" fill="#f87171" radius={[0, 4, 4, 0]}>
-                      <LabelList dataKey="Pendente" position="right" fontSize={10} fontWeight={700}
-                        formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Tendência por categoria — últimos 6 meses — horizontal, ordem decrescente */}
-        {categoryTrend.topCats.length > 0 && (() => {
-          const trendBars = categoryTrend.topCats
-            .map(cat => ({
-              name:  cat.name,
-              color: cat.color,
-              value: categoryTrend.data.reduce(
-                (s, month) => s + ((month[cat.name] as number) ?? 0), 0,
-              ),
-            }))
-            .sort((a, b) => b.value - a.value);
-          return (
-            <div className="card p-6 md:col-span-2">
-              <div className="flex items-center gap-2 mb-6">
-                <TrendingUp size={16} className="text-slate-400" />
-                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                  Tendência por Categoria — Últimos 6 Meses
-                </h3>
-              </div>
-              <div style={{ height: Math.max(200, trendBars.length * 56) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={trendBars} layout="vertical" margin={{ top: 4, right: 110, left: 8, bottom: 4 }}>
-                    <XAxis type="number" fontSize={10} hide />
-                    <YAxis
-                      dataKey="name" type="category" fontSize={12} fontWeight={600}
-                      axisLine={false} tickLine={false} width={120}
-                    />
-                    <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                    <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                      {trendBars.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                      <LabelList
-                        dataKey="value"
-                        position="right"
-                        fontSize={11}
-                        fontWeight={700}
-                        formatter={(v: number) => `R$ ${formatCurrency(v)}`}
-                      />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Entradas vs Saídas — últimos 6 meses */}
-        <div className="card p-6 md:col-span-2">
-          <div className="flex items-center gap-2 mb-6">
-            <TrendingUp size={16} className="text-teal-500" />
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-              Entradas vs Saídas — Últimos 6 Meses
-            </h3>
-          </div>
-          <div style={{ height: Math.max(260, incomeVsExpenses.length * 60) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={incomeVsExpenses} layout="vertical" margin={{ top: 4, right: 100, left: 8, bottom: 4 }}>
-                <XAxis type="number" fontSize={10} hide />
-                <YAxis dataKey="name" type="category" fontSize={11} fontWeight={600}
-                  axisLine={false} tickLine={false} width={55} />
-                <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Entradas" fill="#10b981" radius={[0, 4, 4, 0]}>
-                  <LabelList dataKey="Entradas" position="right" fontSize={9} fontWeight={700}
-                    formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
-                </Bar>
-                <Bar dataKey="Saídas" fill="#f87171" radius={[0, 4, 4, 0]}>
-                  <LabelList dataKey="Saídas" position="right" fontSize={9} fontWeight={700}
-                    formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Histórico 12 meses com linha de média */}
-        <div className="card p-6 md:col-span-2">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <TrendingDown size={16} className="text-slate-400" />
-              <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                Histórico Despesas — Últimos 12 Meses
-              </h3>
-            </div>
-            {annualAvg > 0 && (
-              <span className="text-[10px] text-slate-400 font-bold">
-                Média: R$ {formatCurrency(annualAvg)}
-              </span>
-            )}
-          </div>
-          <div style={{ height: Math.max(320, annualData.length * 44) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={annualData} layout="vertical" margin={{ top: 4, right: 110, left: 8, bottom: 4 }}>
-                <XAxis type="number" fontSize={10} hide />
-                <YAxis dataKey="name" type="category" fontSize={11} fontWeight={600}
-                  axisLine={false} tickLine={false} width={38} />
-                <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
-                {annualAvg > 0 && (
-                  <ReferenceLine
-                    x={annualAvg}
-                    stroke="#94a3b8"
-                    strokeDasharray="5 3"
-                    label={{ value: "Média", position: "top", fontSize: 9, fill: "#94a3b8" }}
-                  />
-                )}
-                <Bar dataKey="total" radius={[0, 4, 4, 0]}>
-                  {annualData.map((entry, i) => (
-                    <Cell key={i} fill={entry.isCurrent ? "#10b981" : "#f87171"} />
-                  ))}
-                  <LabelList
-                    dataKey="total"
-                    position="right"
-                    fontSize={10}
-                    fontWeight={700}
-                    formatter={(v: number) => v > 0 ? `R$ ${formatCurrency(v)}` : ""}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
       </div>
+
+      {/* ── Insights ────────────────────────────────────────────────────────────── */}
+      {insights.length > 0 && (
+        <div className="card p-5">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">Diagnóstico do período</h3>
+          <div className="space-y-2">
+            {insights.map((ins, i) => (
+              <div key={i} className="flex items-start gap-2.5">
+                {ins.tone === "good"
+                  ? <CheckCircle2 size={15} className="text-emerald-500 shrink-0 mt-0.5" />
+                  : <AlertCircle size={15} className={cn("shrink-0 mt-0.5", ins.tone === "bad" ? "text-red-500" : "text-amber-500")} />}
+                <p className={cn("text-xs font-medium leading-relaxed",
+                  ins.tone === "good" ? "text-emerald-700" : ins.tone === "bad" ? "text-red-700" : "text-amber-700")}>
+                  {ins.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Trend: Entradas vs Saídas ───────────────────────────────────────────── */}
+      <div className="card p-5">
+        <div className="flex items-center gap-2 mb-5">
+          <TrendingUp size={15} className="text-teal-500" />
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Entradas vs Saídas</h3>
+        </div>
+        <div style={{ height: Math.max(220, trend.length * 46) }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={trend} layout="vertical" margin={{ top: 4, right: 90, left: 8, bottom: 4 }}>
+              <XAxis type="number" hide />
+              <YAxis dataKey="name" type="category" fontSize={11} fontWeight={600} axisLine={false} tickLine={false} width={56} />
+              <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="Entradas" fill="#14b8a6" radius={[0, 4, 4, 0]}>
+                <LabelList dataKey="Entradas" position="right" fontSize={9} fontWeight={700} formatter={(v: number) => v > 0 ? formatCurrency(v) : ""} />
+              </Bar>
+              <Bar dataKey="Saídas" fill="#f87171" radius={[0, 4, 4, 0]}>
+                <LabelList dataKey="Saídas" position="right" fontSize={9} fontWeight={700} formatter={(v: number) => v > 0 ? formatCurrency(v) : ""} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ── Gastos por categoria ────────────────────────────────────────────────── */}
+      <div className="card p-5">
+        <div className="flex items-center gap-2 mb-5">
+          <TrendingDown size={15} className="text-slate-400" />
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Para onde foi o dinheiro</h3>
+        </div>
+        {stats.byCat.length === 0 ? (
+          <p className="text-center text-slate-400 text-sm py-8">Nenhuma despesa no período.</p>
+        ) : (
+          <div style={{ height: Math.max(180, stats.byCat.length * 46) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.byCat} layout="vertical" margin={{ top: 4, right: 100, left: 8, bottom: 4 }}>
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" fontSize={12} fontWeight={600} axisLine={false} tickLine={false} width={110} />
+                <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                  {stats.byCat.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  <LabelList dataKey="value" position="right" fontSize={11} fontWeight={700} formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* ── Por responsável (quando não filtrado) ───────────────────────────────── */}
+      {!filterResp && stats.byResp.length > 0 && (
+        <div className="card p-5">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-5">Gastos por responsável</h3>
+          <div style={{ height: Math.max(160, stats.byResp.length * 46) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.byResp} layout="vertical" margin={{ top: 4, right: 100, left: 8, bottom: 4 }}>
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" fontSize={12} fontWeight={600} axisLine={false} tickLine={false} width={90} />
+                <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                <Bar dataKey="value" fill="#6366f1" radius={[0, 6, 6, 0]}>
+                  <LabelList dataKey="value" position="right" fontSize={11} fontWeight={700} formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* ── Orçamentos (modo mês) ───────────────────────────────────────────────── */}
+      {monthBudgets.length > 0 && (
+        <div className="card p-5">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Orçamentos do mês</h3>
+          <div className="space-y-3">
+            {monthBudgets.map(b => {
+              const over = b.pct >= 100, warn = !over && b.pct >= 80;
+              return (
+                <div key={b.id}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.catColor }} />
+                      <span className="text-xs font-bold text-slate-700">{b.catName}</span>
+                      {over && <span className="text-[9px] font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full uppercase">Estourado</span>}
+                    </div>
+                    <span className={cn("text-[10px] font-black", over ? "text-red-600" : warn ? "text-amber-600" : "text-slate-500")}>
+                      R$ {formatCurrency(b.spent)} / {formatCurrency(b.limit_value)}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2">
+                    <div className={cn("h-2 rounded-full transition-all", over ? "bg-red-500" : warn ? "bg-amber-400" : "bg-emerald-500")}
+                      style={{ width: `${Math.min(b.pct, 100)}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <ExpenseModal open={showModal} editing={null} onClose={() => setShowModal(false)} />
     </motion.div>

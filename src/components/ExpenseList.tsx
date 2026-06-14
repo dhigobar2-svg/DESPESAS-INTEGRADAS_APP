@@ -3,7 +3,7 @@ import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Plus, FileText, Share2, Search, Trash2, Edit2,
-  ChevronLeft, ChevronRight, CheckCircle2, Download, StickyNote,
+  ChevronLeft, ChevronRight, CheckCircle2, Download, StickyNote, RefreshCw,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
@@ -19,7 +19,8 @@ interface Props {
 }
 
 export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
-  const { expenses, categories, responsibles, incomes, incomeTypes, togglePaid, deleteItem } = useData();
+  const { expenses, categories, responsibles, incomes, incomeTypes, recurring, togglePaid, deleteItem } = useData();
+  const activeRecurringIds = new Set(recurring.filter(r => r.active).map(r => r.id));
 
   const [showModal,        setShowModal]        = useState(false);
   const [editingExp,       setEditingExp]        = useState<Expense | null>(null);
@@ -335,7 +336,14 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
                       <p className="text-[10px] text-slate-400 uppercase font-medium">{resp?.name ?? "—"}</p>
                     </td>
                     <td className="px-5 py-4 max-w-[200px]">
-                      <p className="text-sm font-bold text-slate-900 truncate">{expense.description || "—"}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-bold text-slate-900 truncate">{expense.description || "—"}</p>
+                        {expense.recurring_id && activeRecurringIds.has(expense.recurring_id) && (
+                          <span title="Repete todo mês" className="shrink-0 flex items-center gap-0.5 text-[8px] font-bold text-orange-500 bg-orange-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                            <RefreshCw size={8} /> Mês
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat?.color ?? "#cbd5e1" }} />
                         <p className="text-[10px] font-medium text-slate-500 uppercase truncate">{cat?.name ?? "Outros"}</p>

@@ -3,7 +3,7 @@ import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, CalendarClock,
-  TrendingUp, NotebookPen, RefreshCw, Loader2,
+  TrendingUp, NotebookPen, Loader2,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency, isRecurringCovered, recurringDueDate } from "./lib/utils";
@@ -16,9 +16,8 @@ const FutureExpenses    = lazy(() => import("./components/FutureExpenses"));
 const Incomes           = lazy(() => import("./components/Incomes"));
 const Notes             = lazy(() => import("./components/Notes"));
 const Settings          = lazy(() => import("./components/Settings"));
-const RecurringExpenses = lazy(() => import("./components/RecurringExpenses"));
 
-type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "recurring" | "notes" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "futures" | "incomes" | "notes" | "settings";
 
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
@@ -262,8 +261,6 @@ function Shell() {
               />
               <MenuButton icon={TrendingUp}    title="Entradas / Receitas" subtitle="Salário e rendas"
                 onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
-              <MenuButton icon={RefreshCw}     title="Recorrentes"       subtitle="Assinaturas e contas fixas"
-                onClick={() => handleTabChange("recurring")} colorClass="bg-orange-500" />
               <MenuButton icon={NotebookPen}   title="Bloco de Notas"    subtitle="Anotações e lembretes"
                 onClick={() => handleTabChange("notes")}     colorClass="bg-amber-500" />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
@@ -280,7 +277,6 @@ function Shell() {
             {activeTab === "expenses"  && <ExpenseList />}
             {activeTab === "futures"   && <FutureExpenses filter={futuresFilter} />}
             {activeTab === "incomes"   && <Incomes />}
-            {activeTab === "recurring" && <RecurringExpenses />}
             {activeTab === "notes"     && <Notes />}
             {activeTab === "settings"  && <Settings />}
           </Suspense>
