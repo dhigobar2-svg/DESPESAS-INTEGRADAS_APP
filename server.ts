@@ -7,7 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new Database("expenses.db");
+// DATABASE_PATH lets the DB live on a persistent volume in production.
+const db = new Database(process.env.DATABASE_PATH || "expenses.db");
 
 db.exec("PRAGMA foreign_keys = ON;");
 

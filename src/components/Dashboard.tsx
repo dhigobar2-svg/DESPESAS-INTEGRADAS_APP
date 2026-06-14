@@ -11,12 +11,13 @@ import {
 import { ptBR } from "date-fns/locale";
 import {
   ChevronLeft, ChevronRight, Plus, TrendingUp, TrendingDown,
-  ArrowUpRight, ArrowDownRight, Minus, AlertCircle, CheckCircle2, SlidersHorizontal,
+  ArrowUpRight, ArrowDownRight, Minus, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
 import { formatCurrency, cn } from "../lib/utils";
 import ExpenseModal from "./ExpenseModal";
+import FilterBar from "./FilterBar";
 
 type PeriodMode = "month" | "quarter" | "year" | "all";
 
@@ -173,8 +174,6 @@ export default function Dashboard() {
     return out;
   }, [stats, monthBudgets]);
 
-  const hasFilter = !!(filterCat || filterResp);
-
   // ── KPI card ──────────────────────────────────────────────────────────────────
   const Delta = ({ value, goodWhenDown = false }: { value: number | null; goodWhenDown?: boolean }) => {
     if (value === null) return null;
@@ -238,22 +237,12 @@ export default function Dashboard() {
       </div>
 
       {/* ── Filters ─────────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
-        <SlidersHorizontal size={14} className="text-slate-400 shrink-0" />
-        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="input py-1.5 text-xs flex-1">
-          <option value="">Todas categorias</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <select value={filterResp} onChange={e => setFilterResp(e.target.value)} className="input py-1.5 text-xs flex-1">
-          <option value="">Todos responsáveis</option>
-          {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
-        {hasFilter && (
-          <button onClick={() => { setFilterCat(""); setFilterResp(""); }} className="text-xs text-emerald-600 font-bold hover:underline shrink-0">
-            Limpar
-          </button>
-        )}
-      </div>
+      <FilterBar
+        categories={categories}
+        responsibles={responsibles}
+        category={filterCat}     onCategory={setFilterCat}
+        responsible={filterResp} onResponsible={setFilterResp}
+      />
 
       {/* ── KPI cards ───────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
