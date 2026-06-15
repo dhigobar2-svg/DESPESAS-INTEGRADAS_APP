@@ -197,12 +197,12 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="label">Lançamento</label>
-                    <input type="date" name="date" required className="input py-2 text-sm"
+                    <input type="date" name="date" required className="input"
                       defaultValue={defDate} />
                   </div>
                   <div>
                     <label className="label">Vencimento</label>
-                    <input type="date" name="due_date" required className="input py-2 text-sm"
+                    <input type="date" name="due_date" required className="input"
                       defaultValue={defDue} />
                   </div>
                 </div>

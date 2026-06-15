@@ -2,7 +2,7 @@ import React, { useState, lazy, Suspense } from "react";
 import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
-  ChevronLeft, ChevronRight, Wifi, WifiOff,
+  ChevronLeft, ChevronRight, Wifi, WifiOff, HardDrive,
   TrendingUp, NotebookPen, Loader2,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
@@ -22,7 +22,7 @@ type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, expenses, recurring, recurringSkips, incomes } = useData();
+  const { profile, isOnline, isConnected, serverReachable, expenses, recurring, recurringSkips, incomes } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
@@ -156,18 +156,23 @@ function Shell() {
 
           {/* Connection status */}
           <div className="flex items-center gap-1.5">
-            {isOnline ? (
+            {!isOnline ? (
+              <div className="flex items-center gap-1.5" title="Offline">
+                <WifiOff size={14} className="text-red-500" />
+                <div className="w-2 h-2 rounded-full bg-red-500" />
+              </div>
+            ) : !serverReachable ? (
+              <div className="flex items-center gap-1.5" title="Modo local — sem servidor">
+                <HardDrive size={14} className="text-slate-400" />
+                <div className="w-2 h-2 rounded-full bg-slate-300" />
+              </div>
+            ) : (
               <div className="flex items-center gap-1.5" title={isConnected ? "Conectado" : "Reconectando…"}>
                 <Wifi size={14} className={cn(isConnected ? "text-emerald-500" : "text-amber-400")} />
                 <div className={cn(
                   "w-2 h-2 rounded-full",
                   isConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-400 animate-pulse",
                 )} />
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5" title="Offline">
-                <WifiOff size={14} className="text-red-500" />
-                <div className="w-2 h-2 rounded-full bg-red-500" />
               </div>
             )}
           </div>
@@ -179,6 +184,15 @@ function Shell() {
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center">
           <p className="text-xs font-bold text-amber-700 uppercase tracking-widest">
             Modo offline — alterações serão sincronizadas ao reconectar
+          </p>
+        </div>
+      )}
+
+      {/* Local-only banner — online but no backend reachable (e.g. static host) */}
+      {isOnline && !serverReachable && (
+        <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 text-center">
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+            Modo local — sem servidor; os dados ficam apenas neste dispositivo
           </p>
         </div>
       )}

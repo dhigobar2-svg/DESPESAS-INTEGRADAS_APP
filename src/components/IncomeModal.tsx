@@ -150,7 +150,7 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
                       type="date" required
                       value={form.date ?? format(new Date(), "yyyy-MM-dd")}
                       onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-                      className="input py-2 text-sm"
+                      className="input"
                     />
                   </div>
                   <div>
