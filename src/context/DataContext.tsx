@@ -29,6 +29,7 @@ interface DataContextValue {
   notes:            Note[];
   isOnline:     boolean;
   isConnected:  boolean;
+  serverReachable: boolean;
   notificationsEnabled: boolean;
   toasts:       ToastMessage[];
 
@@ -87,6 +88,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [notes,           setNotes]           = useState<Note[]>([]);
   const [isOnline,     setIsOnline]     = useState(navigator.onLine);
   const [isConnected,  setIsConnected]  = useState(false);
+  // false when online but the API isn't reachable (e.g. deployed to a static
+  // host with no backend) — the app then runs in local-only mode.
+  const [serverReachable, setServerReachable] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted",
   );
@@ -135,13 +139,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        // Server reachable but rejected the save — surface it and reconcile,
-        // so the user isn't left thinking an unsaved change persisted.
-        let msg = "Não foi possível salvar no servidor.";
-        try { msg = (await res.json()).error ?? msg; } catch { /* keep default */ }
-        addToast("error", msg);
+      if (res.ok) { setServerReachable(true); return; }
+
+      // Distinguish a real app-level rejection (JSON {error}) from "there is no
+      // backend here" (static hosting returns a 404 HTML page). The former is
+      // surfaced; the latter switches the app to local-only mode silently.
+      let serverError: string | null = null;
+      try { serverError = (await res.json())?.error ?? null; } catch { /* non-JSON body */ }
+      if (serverError) {
+        setServerReachable(true);
+        addToast("error", serverError);
         fetchDataRef.current();
+      } else {
+        setServerReachable(false);
       }
     } catch (err) {
       console.error("Sync failed", err);
@@ -282,6 +292,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/data");
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
+      setServerReachable(true);
 
       let exps: Expense[] = data.expenses ?? [];
       let incs: Income[]  = data.incomes ?? [];
@@ -362,6 +373,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       onSuccess?.();
     } catch (err) {
       console.error("Fetch failed, using local data", err);
+      // Online but the API didn't respond → no backend here (local-only mode).
+      if (navigator.onLine) setServerReachable(false);
       setExpenses(    lsGet("expenses",     []));
       setCategories(  lsGet("categories",   []));
       setResponsibles(lsGet("responsibles", []));
@@ -374,6 +387,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecurringIncomes(lsGet("recurringIncomes", []));
       setRecurringSkips(lsGet("recurringSkips", []));
       setNotes(    lsGet("notes",    []));
+
+      // Local-only first run (no backend, no cached data): seed the defaults the
+      // server normally provides so the app is usable straight away.
+      if (lsGet<Category[]>("categories", []).length === 0) {
+        const cats: Category[] = [
+          { id: "1", name: "Alimentação", color: "#ef4444" },
+          { id: "2", name: "Transporte",  color: "#3b82f6" },
+          { id: "3", name: "Lazer",       color: "#10b981" },
+          { id: "4", name: "Moradia",     color: "#f59e0b" },
+        ];
+        setCategories(cats); lsSet("categories", cats);
+      }
+      if (lsGet<IncomeType[]>("incomeTypes", []).length === 0) {
+        const its: IncomeType[] = [
+          { id: "salario",     name: "Salário",     color: "#3b82f6" },
+          { id: "renda_extra", name: "Renda Extra", color: "#10b981" },
+          { id: "outro",       name: "Outro",       color: "#64748b" },
+        ];
+        setIncomeTypes(its); lsSet("incomeTypes", its);
+      }
     }
   }, [applyRecurring, applyRecurringIncomes, syncWithServer]);
 
@@ -583,13 +616,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     try {
       const res = await fetch(`/api/delete/${table}/${id}`, { method: "POST" });
-      if (!res.ok) {
-        // Server reachable but refused (e.g. category in use) — roll back.
-        const data = await res.json().catch(() => ({}));
-        rollback();
-        addToast("error", data.error ?? "Erro ao excluir.");
-      } else {
+      if (res.ok) {
+        setServerReachable(true);
         addToast("success", "Item excluído.");
+      } else {
+        // Real app-level rejection (JSON {error}, e.g. category in use) → roll back.
+        // No JSON body → there's no backend here (static host): keep the local
+        // deletion and switch to local-only mode instead of failing.
+        let serverError: string | null = null;
+        try { serverError = (await res.json())?.error ?? null; } catch { /* non-JSON */ }
+        if (serverError) {
+          setServerReachable(true);
+          rollback();
+          addToast("error", serverError);
+        } else {
+          setServerReachable(false);
+        }
       }
     } catch {
       // Network error: the request may or may not have reached the server.
@@ -712,7 +754,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataContextValue = {
     expenses, categories, responsibles, profile, budgets, recurring,
     incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
-    isOnline, isConnected, notificationsEnabled, toasts,
+    isOnline, isConnected, serverReachable, notificationsEnabled, toasts,
     saveExpense, deleteItem, togglePaid, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
     saveIncome, saveIncomeType, saveRecurringIncome, saveNote,

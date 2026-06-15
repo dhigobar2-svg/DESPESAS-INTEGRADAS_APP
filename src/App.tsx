@@ -22,7 +22,7 @@ type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, expenses, recurring, recurringSkips, incomes } = useData();
+  const { profile, isOnline, isConnected, serverReachable, expenses, recurring, recurringSkips, incomes } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
@@ -179,6 +179,15 @@ function Shell() {
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center">
           <p className="text-xs font-bold text-amber-700 uppercase tracking-widest">
             Modo offline — alterações serão sincronizadas ao reconectar
+          </p>
+        </div>
+      )}
+
+      {/* Local-only banner — online but no backend reachable (e.g. static host) */}
+      {isOnline && !serverReachable && (
+        <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 text-center">
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+            Modo local — sem servidor; os dados ficam apenas neste dispositivo
           </p>
         </div>
       )}
