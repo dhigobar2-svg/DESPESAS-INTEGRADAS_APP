@@ -1,4 +1,5 @@
 import React, { useState, lazy, Suspense } from "react";
+import { format } from "date-fns";
 import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
@@ -42,8 +43,10 @@ function Shell() {
     .filter(e => !e.paid && (e.due_date?.startsWith(mm) || (e.due_date && e.due_date < mm)))
     .reduce((s, e) => s + e.value, 0);
 
-  const today   = now.toISOString().slice(0, 10);
-  const in7days = new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
+  // Local (não UTC): em UTC-3 o dia "virava" às 21h e os contadores de
+  // vencidas / vence em breve ficavam errados até a meia-noite.
+  const today   = format(now, "yyyy-MM-dd");
+  const in7days = format(new Date(now.getTime() + 7 * 86_400_000), "yyyy-MM-dd");
 
   // Virtual future dates from active recurring expenses (not yet auto-created as real expenses)
   const virtualRecurringFutureDates: string[] = [];

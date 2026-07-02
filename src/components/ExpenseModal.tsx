@@ -97,7 +97,9 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
     const expense: Expense = {
       id:             editing?.id ?? generateId(),
       category_id:    fd.get("category")    as string,
-      description:    fd.get("description") as string,
+      // Trim: espaços extras burlavam o alerta de duplicidade e criavam
+      // descrições visualmente idênticas porém distintas.
+      description:    (fd.get("description") as string).trim(),
       date:           fd.get("date")        as string,
       due_date:       dueDate,
       value:          parseFloat(fd.get("value") as string),
@@ -185,7 +187,9 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                 {/* Categoria */}
                 <div>
                   <label className="label">Categoria</label>
-                  <select name="category" defaultValue={defCat} required className="input">
+                  {/* required só quando há opções: um select obrigatório com lista
+                      vazia bloqueia o envio do formulário sem feedback claro. */}
+                  <select name="category" defaultValue={defCat} required={categories.length > 0} className="input">
                     {categories.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
@@ -217,7 +221,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                 {/* Responsável */}
                 <div>
                   <label className="label">Responsável</label>
-                  <select name="responsible" defaultValue={defResp} required className="input">
+                  <select name="responsible" defaultValue={defResp} required={responsibles.length > 0} className="input">
                     {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     {responsibles.length === 0 && <option value="">Nenhum cadastrado</option>}
                   </select>

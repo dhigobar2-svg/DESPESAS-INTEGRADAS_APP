@@ -183,22 +183,31 @@ const ALLOWED_COLUMNS: Record<string, string[]> = {
   notes:               ["id", "title", "content", "updated_at"],
 };
 
-// Safe upsert: only uses whitelisted columns
+// Safe upsert: only uses whitelisted columns.
+// Columns are resolved PER ITEM: JSON omits undefined fields, so items in the
+// same batch can have different key sets — deriving columns from the first item
+// silently dropped fields (notes, recurring_id…) from every other row.
 function syncItems(table: string, items: unknown[]) {
   if (!items?.length) return;
   const allowed = ALLOWED_COLUMNS[table];
   if (!allowed) throw new Error(`Invalid table: ${table}`);
 
-  const firstItem = items[0] as Record<string, unknown>;
-  const cols = allowed.filter(col => Object.prototype.hasOwnProperty.call(firstItem, col));
-  if (!cols.includes("id")) throw new Error("Missing id field");
-
-  const placeholders = cols.map(() => "?").join(",");
-  const stmt = db.prepare(`REPLACE INTO ${table} (${cols.join(",")}) VALUES (${placeholders})`);
+  const stmtCache = new Map<string, ReturnType<typeof db.prepare>>();
 
   db.transaction((data: unknown[]) => {
     for (const item of data) {
       const row = item as Record<string, unknown>;
+      const cols = allowed.filter(col => Object.prototype.hasOwnProperty.call(row, col));
+      if (!cols.includes("id")) throw new Error("Missing id field");
+
+      const key = cols.join(",");
+      let stmt = stmtCache.get(key);
+      if (!stmt) {
+        const placeholders = cols.map(() => "?").join(",");
+        stmt = db.prepare(`REPLACE INTO ${table} (${key}) VALUES (${placeholders})`);
+        stmtCache.set(key, stmt);
+      }
+
       stmt.run(cols.map(col => {
         const v = row[col] ?? null;
         // Empty foreign-key strings would violate FK constraints — store NULL.
