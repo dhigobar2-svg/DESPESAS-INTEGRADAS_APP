@@ -12,22 +12,39 @@ serves both the Express REST/WebSocket API and the React SPA via Vite middleware
 
 ```
 /
-├── server.ts          # Express + Socket.IO backend, Vite dev middleware, SQLite setup
+├── server.ts              # Express + Socket.IO backend, Vite dev middleware, SQLite setup
 ├── src/
-│   ├── App.tsx        # Entire React frontend (single monolithic component)
-│   ├── main.tsx       # React DOM entry point
-│   ├── index.css      # Global styles (Tailwind imports)
+│   ├── App.tsx            # Shell: header, menu, tab routing, connection/pending badges
+│   ├── main.tsx           # React DOM entry point (StrictMode)
+│   ├── index.css          # Global styles (Tailwind imports, .card/.input/.btn-* utilities)
+│   ├── types.ts           # Shared entity interfaces (Expense, Income, Budget, …)
+│   ├── context/
+│   │   └── DataContext.tsx  # ALL state + sync logic: fetch, pending-sync queue,
+│   │                        # offline reconciliation, recurring materialisation, CRUD
+│   ├── components/
+│   │   ├── Dashboard.tsx      # "Visão Geral": KPIs, insights, charts, budgets (Recharts)
+│   │   ├── ExpenseList.tsx    # Expense table, filters, pagination, PDF/CSV/WhatsApp export
+│   │   ├── ExpenseModal.tsx   # Add/edit expense + recurrence toggle + duplicate warning
+│   │   ├── FutureExpenses.tsx # Overdue + upcoming view, virtual recurring occurrences
+│   │   ├── Incomes.tsx        # Incomes list ("Entradas / Receitas")
+│   │   ├── IncomeModal.tsx    # Add/edit income + recurrence toggle + duplicate warning
+│   │   ├── Notes.tsx          # Synced notepad ("Bloco de Notas")
+│   │   ├── Settings.tsx       # Profile, categories, responsibles, budgets, income types,
+│   │   │                      # notifications, JSON backup export/restore
+│   │   ├── FilterBar.tsx      # Shared filter controls
+│   │   ├── ConfirmModal.tsx   # Confirm dialog (tone: "danger" | "primary")
+│   │   └── Toast.tsx          # Toast notifications
 │   └── lib/
-│       └── utils.ts   # cn() helper (clsx + tailwind-merge)
-├── index.html         # HTML shell
-├── vite.config.ts     # Vite config (React plugin, Tailwind v4, path alias @/)
+│       └── utils.ts       # cn(), generateId(), formatCurrency(), recurringDueDate(),
+│                          # isRecurringCovered(), compressImage(), …
+├── index.html             # HTML shell
+├── vite.config.ts         # Vite config (React plugin, Tailwind v4, path alias @/ → root)
 ├── package.json
 ├── tsconfig.json
-└── metadata.json      # App metadata (name, description)
+└── metadata.json          # App metadata (name, description)
 ```
 
-There are **no sub-packages, no test files, and no separate component files** — all frontend
-logic lives in `src/App.tsx`.
+Tabs are lazy-loaded (`React.lazy`) to keep chart/PDF libraries out of the initial bundle.
 
 ---
 
@@ -37,13 +54,13 @@ logic lives in `src/App.tsx`.
 |---|---|
 | Frontend | React 19, TypeScript, TailwindCSS v4 |
 | Backend | Node.js, Express 4, Socket.IO 4 |
-| Database | SQLite via `better-sqlite3` (file: `expenses.db`) |
+| Database | SQLite via `better-sqlite3` (file: `expenses.db`, overridable via `DATABASE_PATH`) |
 | Build | Vite 6 |
 | Dev runner | `tsx` (runs `server.ts` directly) |
 | Charts | Recharts |
 | Animations | Motion (motion/react) |
 | Date handling | date-fns with `ptBR` locale |
-| PDF export | jsPDF + jspdf-autotable |
+| PDF export | jsPDF + jspdf-autotable (dynamically imported) |
 | Icons | lucide-react |
 
 ---
@@ -77,86 +94,124 @@ npm run clean     # Remove dist/
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/data` | Returns all `{ expenses, categories, responsibles }` |
-| `POST` | `/api/sync` | Upserts (`REPLACE INTO`) all client-side data to SQLite; emits `data_updated` via Socket.IO |
-| `DELETE` | `/api/:table/:id` | Deletes a row from `expenses`, `categories`, or `responsibles` |
+| `GET` | `/api/data` | Returns all data: `{ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes }` |
+| `POST` | `/api/sync` | Upserts (`REPLACE INTO`) any subset of tables; columns are whitelisted per table AND resolved **per item** (items in one batch may have different key sets). Emits `data_updated`. |
+| `DELETE` | `/api/:table/:id` | Deletes a row (tables whitelisted; categories/responsibles in use by an expense are rejected with HTTP 400 + pt-BR message) |
+| `POST` | `/api/delete/:table/:id` | Same as DELETE — fallback for environments that block the DELETE method (this is what the frontend uses) |
 
 ### Socket.IO Events
 
-- **`data_updated`** (server → all clients): Emitted after any mutation (sync or delete). All clients re-fetch `/api/data` on receipt.
+- **`data_updated`** (server → all clients): Emitted after any mutation (sync or delete).
+  Clients re-fetch `/api/data` on receipt, **coalesced with a 300 ms debounce**.
+- Client socket uses infinite reconnection (default backoff). Do not cap `reconnectionAttempts`.
 
 ---
 
 ## Database Schema
 
-SQLite file: `expenses.db` (created at server root on first run).
+SQLite file: `expenses.db` (or `DATABASE_PATH`), created at server root on first run.
 
 ```sql
-categories   (id TEXT PK, name TEXT, color TEXT)
-responsibles (id TEXT PK, name TEXT, photo TEXT)   -- photo stored as base64 data URL
-expenses     (id TEXT PK, category_id TEXT FK, description TEXT,
-              date TEXT, due_date TEXT, value REAL, responsible_id TEXT,
-              paid INTEGER DEFAULT 0, created_at DATETIME)
+categories        (id TEXT PK, name, color)
+responsibles      (id TEXT PK, name, photo)          -- photo = base64 data URL (compressed client-side)
+expenses          (id TEXT PK, category_id FK→SET NULL, description, date, due_date,
+                   value REAL, responsible_id FK→SET NULL, paid INTEGER 0/1,
+                   notes, created_by, recurring_id, created_at)
+user_profile      (id TEXT PK = 'default', name, photo)
+budgets           (id TEXT PK, category_id FK→CASCADE, month 'yyyy-MM', limit_value,
+                   UNIQUE(category_id, month))
+recurring_expenses(id TEXT PK, category_id, description, value, responsible_id,
+                   day_of_month, active INTEGER 0/1)
+incomes           (id TEXT PK, description, value, date, type, responsible_id,
+                   notes, recurring INTEGER (legacy), recurring_income_id)
+income_types      (id TEXT PK, name, color)
+recurring_incomes (id TEXT PK, description, value, type, responsible_id,
+                   day_of_month, active INTEGER 0/1)
+recurring_skips   (id TEXT PK = '<recurring_id>_<yyyy-MM>', recurring_id, month)
+notes             (id TEXT PK, title, content, updated_at)
+app_meta          (key TEXT PK, value)               -- one-time maintenance flags (e.g. dedup_v1)
 ```
 
 - Foreign keys are enforced (`PRAGMA foreign_keys = ON`).
-- Deleting a category/responsible with linked expenses returns HTTP 400 with a Portuguese error message.
-- Default seed categories on first run: Alimentação, Transporte, Lazer, Moradia.
-- A runtime migration adds the `description` column if it's missing (legacy support).
+- Default seeds on first run: 4 categories (Alimentação, Transporte, Lazer, Moradia),
+  3 income types (Salário, Renda Extra, Outro), the default profile.
+- Runtime migrations (`tryMigrate`) add columns that older databases lack.
+- `runDedupOnce()` performed a one-time cleanup of historic duplicate rows (flag `dedup_v1`).
 
 ---
 
-## Frontend Architecture (`src/App.tsx`)
+## Frontend Data Layer (`src/context/DataContext.tsx`)
 
-The entire UI is a single React functional component with four "tabs" managed by `activeTab` state:
+All state and sync logic lives in `DataProvider`; components consume it via `useData()`.
 
-| Tab value | Description |
-|---|---|
-| `'menu'` | Home screen with summary cards and navigation |
-| `'overview'` | Charts: pie (by category), bar (top 3 expenses), horizontal bar (by responsible) |
-| `'expenses'` | Full expense table with edit/delete, PDF export, WhatsApp share |
-| `'settings'` | User profile, categories CRUD, responsibles CRUD |
+### Sync rules (IMPORTANT — preserve these invariants)
 
-### Key State
+1. **Every save goes through the pending queue** (`pendingSync` in localStorage) and
+   then a flush attempt (`POST /api/sync`). If the request fails, rows stay queued and
+   are retried (10 s timer, socket reconnect, `online` event). **A save must never be
+   silently lost because one request failed.**
+2. **`fetchData` flushes the queue BEFORE pulling** and then **overlays still-pending
+   rows on top of the server response** (and drops rows with a queued offline delete),
+   so a refetch can never clobber an unconfirmed local change.
+3. **Deletions** can't go through `/api/sync` (upsert-only): offline deletes queue in
+   `pendingDeletes` (localStorage) and are replayed on reconnect. Deleting a row also
+   removes it from `pendingSync` so a later flush can't resurrect it.
+4. **Never re-push the full local snapshot** on reconnect — that resurrects rows other
+   devices deleted. Only the pending queue is flushed.
+5. `pendingCount` (queue size incl. pending deletes) is exposed to the UI; the header
+   shows an amber badge when > 0.
+6. Sync payload keys map to server tables via `TABLE_FOR_PAYLOAD`
+   (`recurring` → `recurring_expenses`, `incomeTypes` → `income_types`, …).
 
-```typescript
-expenses: Expense[]
-categories: Category[]
-responsibles: Responsible[]
-userProfile: UserProfile        // stored in React state only (not persisted to server)
-activeTab: 'menu' | 'overview' | 'expenses' | 'settings'
-showAddModal: boolean
-editingExpense: Expense | null
-isOnline: boolean
-```
+### Recurring expenses/incomes
 
-### Data Flow
+- Templates live in `recurring_expenses` / `recurring_incomes`; each month `fetchData`
+  materialises one real row per active template with a **deterministic id**
+  (`rec_<templateId>_<yyyy-MM>` / `recinc_<templateId>_<yyyy-MM>`) so two devices
+  generating the same month can't duplicate.
+- Deleting a generated occurrence records a `recurring_skips` row so it isn't regenerated.
+- `FutureExpenses` also renders **virtual** (not yet materialised) occurrences with
+  ids `virtual-<recId>-<date>` — these are display-only.
 
-1. On mount: fetch `/api/data`, store in state **and** `localStorage` (offline fallback).
-2. On network failure: load from `localStorage`.
-3. On reconnect (`window online` event): call `syncWithServer()` which POSTs localStorage data to `/api/sync`.
-4. Socket.IO `data_updated` event triggers a full re-fetch.
+### Other conventions in the data layer
 
-### ID Generation
-
-New entities use client-side IDs: `Date.now().toString(36) + Math.random().toString(36).substr(2, 5)`.
-
-### Optimistic Updates
-
-Deletes are applied locally first, then confirmed with the server. On server error the state is rolled back from saved snapshots.
-
-### Photo Uploads
-
-Photos (profile, responsibles) are read as base64 data URLs via `FileReader` and stored directly in SQLite as TEXT. The JSON limit for sync is `10mb`.
+- On mount and network failure, state falls back to localStorage (offline mode); when
+  online but `/api/*` is unreachable (static hosting), the app runs in **local-only
+  mode** (`serverReachable === false`) with a header banner.
+- Optimistic updates with rollback snapshots for deletes; app-level server rejections
+  (JSON `{error}`) roll back and toast, missing-backend responses switch to local-only.
+- `restoreBackup(raw)` merges an exported JSON backup (upsert by id, never deletes)
+  and queues everything for sync. Export/restore UI lives in Settings.
+- Photos are compressed client-side (`compressImage`, max 300 px, JPEG 0.75) before
+  being stored as base64. JSON body limit for sync is `10mb`.
 
 ---
 
-## Styling Conventions
+## Key Conventions
 
-- **TailwindCSS v4** (via `@tailwindcss/vite` plugin — no `tailwind.config.js` needed).
-- `cn()` utility from `src/lib/utils.ts` used for conditional class merging.
-- Design language: rounded cards (`rounded-2xl`, `rounded-3xl`), `slate-*` neutral palette, `emerald-600` as primary action color.
-- Motion/React `AnimatePresence` + `motion.div` used for tab and modal transitions.
+1. **All UI text is in Brazilian Portuguese.** Keep new UI strings in pt-BR.
+2. **Currency is BRL (R$).** Format values with `formatCurrency()` from `src/lib/utils.ts`.
+3. **Dates are local-timezone ISO strings** (`yyyy-MM-dd`) in storage. Always derive
+   "today" with `format(new Date(), "yyyy-MM-dd")` (date-fns, local) — **never
+   `toISOString()`**, which is UTC and flips the date at 21:00 in Brazil (UTC-3).
+   Display with `format(..., 'dd/MM/yyyy')`.
+4. **`paid`/`active`/`recurring` are stored as `INTEGER` (0 or 1)**, not booleans.
+5. **No test framework is configured.** Validate logic changes with `npm run lint`.
+6. **State lives in `DataContext`, presentation in `src/components/`.** Don't add
+   fetch/sync calls inside components — add a handler to the context instead.
+7. **The `@/` path alias** resolves to the project root (not `src/`). Relative imports
+   are the norm inside `src/`.
+8. **Socket.IO client** is initialized once in `DataProvider`'s mount effect and
+   disconnected on cleanup — mirror this pattern for any additional socket usage.
+9. **`/api/sync` uses `REPLACE INTO`** (upsert by primary key) — re-sending rows is
+   idempotent. Rows are replaced whole: always send full objects, never partial diffs.
+10. **Do not add a separate frontend dev server** (`vite dev`). Always start via
+    `npm run dev` (`tsx server.ts`) so the API and frontend run on the same port.
+11. **New entity ids** come from `generateId()` (`src/lib/utils.ts`), except
+    deterministic recurring ids (see above).
+12. **Duplicate guards**: expense/income modals warn before saving an identical entry
+    (description/value/date/responsible|type); Settings blocks duplicate names for
+    categories, responsibles and income types. Trim user text before comparing.
 
 ---
 
@@ -164,23 +219,9 @@ Photos (profile, responsibles) are read as base64 data URLs via `FileReader` and
 
 | Variable | Used by | Purpose |
 |---|---|---|
+| `DATABASE_PATH` | `server.ts` | SQLite file location (persistent volume in production; defaults to `expenses.db`) |
 | `GEMINI_API_KEY` | `vite.config.ts` | Exposed to frontend as `process.env.GEMINI_API_KEY` (available for future Gemini AI integration) |
 | `DISABLE_HMR` | `vite.config.ts` | Set to `"true"` to disable Vite HMR (used by AI Studio environment) |
 | `NODE_ENV` | `server.ts` | `"production"` switches to static file serving |
 
 Create a `.env` file at the project root to set these locally.
-
----
-
-## Key Conventions
-
-1. **All UI text is in Brazilian Portuguese.** Keep new UI strings in pt-BR.
-2. **Currency is BRL (R$).** Format values with `.toFixed(2)` and `toLocaleString('pt-BR', ...)`.
-3. **Dates are ISO strings** (`yyyy-MM-dd`) in storage; display with `date-fns` `format(..., 'dd/MM/yyyy')`.
-4. **`paid` is stored as `INTEGER` (0 or 1)**, not a boolean.
-5. **No test framework is configured.** Validate logic changes with `npm run lint`.
-6. **Do not split `App.tsx` into sub-components** without a clear reason — the existing monolithic pattern is intentional for this project size.
-7. **The `@/` path alias** resolves to the project root (not `src/`). Use `@/src/...` for imports from root.
-8. **Socket.IO client** is initialized inside a `useEffect` on mount and disconnected on cleanup — always mirror this pattern for any additional socket usage.
-9. **`/api/sync` uses `REPLACE INTO`** (upsert by primary key) — sending the full array is safe and idempotent.
-10. **Do not add a separate frontend dev server** (`vite dev`). Always start via `npm run dev` (`tsx server.ts`) so the API and frontend run on the same port.

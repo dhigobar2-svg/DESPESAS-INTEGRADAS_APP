@@ -4,7 +4,7 @@ import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, HardDrive,
-  TrendingUp, NotebookPen, Loader2,
+  TrendingUp, NotebookPen, Loader2, UploadCloud,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency, isRecurringCovered, recurringDueDate, buildSkipSet } from "./lib/utils";
@@ -23,7 +23,7 @@ type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, serverReachable, expenses, recurring, recurringSkips, incomes } = useData();
+  const { profile, isOnline, isConnected, serverReachable, pendingCount, expenses, recurring, recurringSkips, incomes } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
@@ -159,6 +159,16 @@ function Shell() {
 
           {/* Connection status */}
           <div className="flex items-center gap-1.5">
+            {/* Alterações ainda não confirmadas pelo servidor (fila de envio) */}
+            {pendingCount > 0 && (
+              <div
+                className="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
+                title={`${pendingCount} alteração${pendingCount > 1 ? "ões" : ""} aguardando envio ao servidor`}
+              >
+                <UploadCloud size={12} className="text-amber-500" />
+                <span className="text-[10px] font-black text-amber-600">{pendingCount}</span>
+              </div>
+            )}
             {!isOnline ? (
               <div className="flex items-center gap-1.5" title="Offline">
                 <WifiOff size={14} className="text-red-500" />

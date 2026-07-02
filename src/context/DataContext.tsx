@@ -31,6 +31,7 @@ interface DataContextValue {
   isConnected:  boolean;
   serverReachable: boolean;
   notificationsEnabled: boolean;
+  pendingCount: number;
   toasts:       ToastMessage[];
 
   // Handlers
@@ -46,6 +47,7 @@ interface DataContextValue {
   saveIncomeType:   (it: IncomeType, isEdit: boolean) => void;
   saveRecurringIncome: (rec: RecurringIncome, isEdit: boolean) => void;
   saveNote:         (note: Note) => void;
+  restoreBackup:    (raw: unknown) => number;
   readPhoto:        (file: File) => Promise<string>;
   requestNotificationPermission: () => Promise<boolean>;
   addToast:         (type: ToastMessage["type"], message: string) => void;
@@ -114,7 +116,23 @@ interface PendingStore {
 }
 
 const getPending = (): PendingStore => lsGet<PendingStore>("pendingSync", { rows: {} });
-const setPending = (p: PendingStore) => lsSet("pendingSync", p);
+
+// The provider registers a listener here so the header badge ("alterações
+// aguardando envio") reflects the queue without polling.
+let pendingNotify: (() => void) | null = null;
+
+const setPending = (p: PendingStore) => {
+  lsSet("pendingSync", p);
+  pendingNotify?.();
+};
+
+function countPendingChanges(): number {
+  const store = getPending();
+  let n = store.profile ? 1 : 0;
+  for (const t of PAYLOAD_TABLES) n += Object.keys(store.rows[t] ?? {}).length;
+  n += lsGet<unknown[]>("pendingDeletes", []).length;
+  return n;
+}
 
 function queuePending(data: SyncData) {
   const store = getPending();
@@ -194,6 +212,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted",
   );
+  const [pendingCount, setPendingCount] = useState(0);
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
 
   const socketRef             = useRef<Socket | null>(null);
@@ -292,6 +311,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!queue.some(q => q.table === table && q.id === id)) {
       queue.push({ table, id });
       lsSet("pendingDeletes", queue);
+      pendingNotify?.();
     }
   }, []);
 
@@ -309,6 +329,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     }
     lsSet("pendingDeletes", remaining);
+    pendingNotify?.();
   }, []);
 
   // Record that a recurrence occurrence was deleted so it isn't regenerated.
@@ -621,6 +642,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // ── Socket + lifecycle ────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Badge de pendências: reflete a fila de envio sem polling.
+    pendingNotify = () => setPendingCount(countPendingChanges());
+    pendingNotify();
+
     fetchData(migrateLegacyNotes);
 
     // Default reconnection = infinite with backoff. A capped attempt count made
@@ -671,6 +696,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
+      pendingNotify = null;
       s.disconnect();
       if (refetchTimer) clearTimeout(refetchTimer);
       if (flushTimer.current) clearTimeout(flushTimer.current);
@@ -902,6 +928,63 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addToast("success", isEdit ? "Entrada recorrente atualizada!" : "Entrada recorrente adicionada!");
   }, [syncWithServer, addToast]);
 
+  // ── Backup restore ────────────────────────────────────────────────────────────
+  // Merges a previously exported JSON backup into the current data (upsert by
+  // id — nothing is deleted) and queues everything for sync with the server.
+  // Returns how many rows were imported; -1 means the file is not a backup.
+  const restoreBackup = useCallback((raw: unknown): number => {
+    if (!raw || typeof raw !== "object") return -1;
+    const data = raw as Record<string, unknown>;
+    const cleanList = <T extends { id: string }>(v: unknown): T[] =>
+      Array.isArray(v)
+        ? v.filter((i): i is T => !!i && typeof i === "object" && typeof (i as { id?: unknown }).id === "string")
+        : [];
+
+    const payload: SyncData = {
+      expenses:         cleanList<Expense>(data.expenses),
+      categories:       cleanList<Category>(data.categories),
+      responsibles:     cleanList<Responsible>(data.responsibles),
+      budgets:          cleanList<Budget>(data.budgets),
+      recurring:        cleanList<RecurringExpense>(data.recurring),
+      incomes:          cleanList<Income>(data.incomes),
+      incomeTypes:      cleanList<IncomeType>(data.incomeTypes),
+      recurringIncomes: cleanList<RecurringIncome>(data.recurringIncomes),
+      recurringSkips:   cleanList<RecurringSkip>(data.recurringSkips),
+      notes:            cleanList<Note>(data.notes),
+    };
+    const prof = data.profile as UserProfile | undefined;
+    const hasProfile = !!prof && typeof prof === "object" && typeof prof.name === "string";
+
+    const total = PAYLOAD_TABLES.reduce((s, t) => s + ((payload[t] as unknown[])?.length ?? 0), 0);
+    if (total === 0 && !hasProfile) return 0;
+
+    const merge = <T extends { id: string }>(prev: T[], incoming: T[]): T[] => {
+      if (!incoming.length) return prev;
+      const map = new Map(prev.map(i => [i.id, i] as const));
+      for (const item of incoming) map.set(item.id, item);
+      return [...map.values()];
+    };
+
+    setExpenses(p =>         { const u = merge(p, payload.expenses!);         lsSet("expenses", u);         return u; });
+    setCategories(p =>       { const u = merge(p, payload.categories!);       lsSet("categories", u);       return u; });
+    setResponsibles(p =>     { const u = merge(p, payload.responsibles!);     lsSet("responsibles", u);     return u; });
+    setBudgets(p =>          { const u = merge(p, payload.budgets!);          lsSet("budgets", u);          return u; });
+    setRecurring(p =>        { const u = merge(p, payload.recurring!);        lsSet("recurring", u);        return u; });
+    setIncomes(p =>          { const u = merge(p, payload.incomes!);          lsSet("incomes", u);          return u; });
+    setIncomeTypes(p =>      { const u = merge(p, payload.incomeTypes!);      lsSet("incomeTypes", u);      return u; });
+    setRecurringIncomes(p => { const u = merge(p, payload.recurringIncomes!); lsSet("recurringIncomes", u); return u; });
+    setRecurringSkips(p =>   { const u = merge(p, payload.recurringSkips!);   lsSet("recurringSkips", u);   return u; });
+    setNotes(p =>            { const u = merge(p, payload.notes!);            lsSet("notes", u);            return u; });
+    if (hasProfile) {
+      payload.profile = prof;
+      setProfile(prof!);
+      lsSet("profile", prof);
+    }
+
+    syncWithServer(payload);
+    return total;
+  }, [syncWithServer]);
+
   const saveNote = useCallback((note: Note) => {
     setNotes(prev => {
       const exists = prev.some(n => n.id === note.id);
@@ -915,10 +998,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataContextValue = {
     expenses, categories, responsibles, profile, budgets, recurring,
     incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
-    isOnline, isConnected, serverReachable, notificationsEnabled, toasts,
+    isOnline, isConnected, serverReachable, notificationsEnabled, pendingCount, toasts,
     saveExpense, deleteItem, togglePaid, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
-    saveIncome, saveIncomeType, saveRecurringIncome, saveNote,
+    saveIncome, saveIncomeType, saveRecurringIncome, saveNote, restoreBackup,
     readPhoto, requestNotificationPermission, addToast, dismissToast,
   };
 

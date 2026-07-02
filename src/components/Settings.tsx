@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import {
   User, Tag, Users, Camera, Trash2, Edit2, Check, X,
   DollarSign, Plus, TrendingUp, Bell, BellOff, Copy,
+  DatabaseBackup, Download, Upload,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, cn } from "../lib/utils";
@@ -16,8 +17,9 @@ type DeleteTarget = { table: string; id: string; label: string } | null;
 export default function Settings() {
   const {
     categories, responsibles, profile, budgets, incomeTypes,
+    expenses, recurring, incomes, recurringIncomes, recurringSkips, notes,
     saveProfile, saveCategory, saveResponsible, saveBudget, saveIncomeType,
-    deleteItem, readPhoto, addToast,
+    deleteItem, readPhoto, addToast, restoreBackup,
     notificationsEnabled, requestNotificationPermission,
   } = useData();
 
@@ -169,6 +171,44 @@ export default function Settings() {
     e.currentTarget.reset();
   };
 
+  // ── Backup ────────────────────────────────────────────────────────────────────
+  const [importPending, setImportPending] = useState<{ data: unknown; count: number } | null>(null);
+
+  const exportBackup = () => {
+    const backup = {
+      app: "despesas-integradas", version: 1, exported_at: new Date().toISOString(),
+      profile, expenses, categories, responsibles, budgets, recurring,
+      incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url;
+    a.download = `backup-despesas-${format(new Date(), "yyyy-MM-dd")}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addToast("success", "Backup exportado!");
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite escolher o mesmo arquivo novamente
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text()) as Record<string, unknown>;
+      const lists: unknown[] = [
+        data?.expenses, data?.categories, data?.responsibles, data?.budgets, data?.recurring,
+        data?.incomes, data?.incomeTypes, data?.recurringIncomes, data?.recurringSkips, data?.notes,
+      ];
+      const count = lists.reduce<number>((s, l) => s + (Array.isArray(l) ? l.length : 0), 0);
+      if (!count) { addToast("error", "Arquivo de backup inválido ou vazio."); return; }
+      // Confirmação antes de aplicar — restauração mescla dados em massa.
+      setImportPending({ data, count });
+    } catch {
+      addToast("error", "Não foi possível ler o arquivo — não é um JSON válido.");
+    }
+  };
+
   // ── Available months for budget selector ──────────────────────────────────────
   // Current month first (it's the default), then upcoming, then a few past for
   // reference — so the user can set this month's budget without navigating back.
@@ -239,6 +279,28 @@ export default function Settings() {
               <BellOff size={14} /> Ativar
             </button>
           )}
+        </div>
+      </section>
+
+      {/* ── Backup ────────────────────────────────────────────────────────────── */}
+      <section className="card p-6">
+        <h3 className="section-title"><DatabaseBackup size={16} /> Backup dos Dados</h3>
+        <p className="text-sm text-slate-500 mb-4">
+          Exporte todos os dados (despesas, entradas, categorias, recorrentes, notas…)
+          para um arquivo JSON e restaure quando precisar. A restauração mescla os
+          dados com os atuais — nada é excluído.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            onClick={exportBackup}
+            className="btn-primary flex-1 py-3 flex items-center justify-center gap-1.5"
+          >
+            <Download size={14} /> Exportar backup
+          </button>
+          <label className="btn-secondary flex-1 py-3 flex items-center justify-center gap-1.5 cursor-pointer">
+            <Upload size={14} /> Restaurar backup
+            <input type="file" accept="application/json,.json" className="hidden" onChange={handleImportFile} />
+          </label>
         </div>
       </section>
 
@@ -441,6 +503,26 @@ export default function Settings() {
           setDeleteTarget(null);
         }}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* Confirm backup restore */}
+      <ConfirmModal
+        open={!!importPending}
+        title="Restaurar backup"
+        confirmLabel="Restaurar"
+        tone="primary"
+        message={`Restaurar backup com ${importPending?.count} registro(s)? Os dados serão mesclados aos atuais — nada será excluído.`}
+        onConfirm={() => {
+          if (importPending) {
+            const n = restoreBackup(importPending.data);
+            addToast(
+              n > 0 ? "success" : "error",
+              n > 0 ? `Backup restaurado — ${n} registro(s) importado(s).` : "Arquivo de backup inválido.",
+            );
+          }
+          setImportPending(null);
+        }}
+        onCancel={() => setImportPending(null)}
       />
     </motion.div>
   );
