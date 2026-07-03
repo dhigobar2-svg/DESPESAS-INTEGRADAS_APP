@@ -1,9 +1,10 @@
 import React, { useState, lazy, Suspense } from "react";
+import { format } from "date-fns";
 import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, HardDrive,
-  TrendingUp, NotebookPen, Loader2,
+  TrendingUp, NotebookPen, Loader2, UploadCloud,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency, isRecurringCovered, recurringDueDate, buildSkipSet } from "./lib/utils";
@@ -22,7 +23,7 @@ type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, serverReachable, expenses, recurring, recurringSkips, incomes } = useData();
+  const { profile, isOnline, isConnected, serverReachable, pendingCount, expenses, recurring, recurringSkips, incomes } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
@@ -42,8 +43,10 @@ function Shell() {
     .filter(e => !e.paid && (e.due_date?.startsWith(mm) || (e.due_date && e.due_date < mm)))
     .reduce((s, e) => s + e.value, 0);
 
-  const today   = now.toISOString().slice(0, 10);
-  const in7days = new Date(now.getTime() + 7 * 86_400_000).toISOString().slice(0, 10);
+  // Local (não UTC): em UTC-3 o dia "virava" às 21h e os contadores de
+  // vencidas / vence em breve ficavam errados até a meia-noite.
+  const today   = format(now, "yyyy-MM-dd");
+  const in7days = format(new Date(now.getTime() + 7 * 86_400_000), "yyyy-MM-dd");
 
   // Virtual future dates from active recurring expenses (not yet auto-created as real expenses)
   const virtualRecurringFutureDates: string[] = [];
@@ -156,6 +159,16 @@ function Shell() {
 
           {/* Connection status */}
           <div className="flex items-center gap-1.5">
+            {/* Alterações ainda não confirmadas pelo servidor (fila de envio) */}
+            {pendingCount > 0 && (
+              <div
+                className="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
+                title={`${pendingCount} alteração${pendingCount > 1 ? "ões" : ""} aguardando envio ao servidor`}
+              >
+                <UploadCloud size={12} className="text-amber-500" />
+                <span className="text-[10px] font-black text-amber-600">{pendingCount}</span>
+              </div>
+            )}
             {!isOnline ? (
               <div className="flex items-center gap-1.5" title="Offline">
                 <WifiOff size={14} className="text-red-500" />
