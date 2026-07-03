@@ -22,6 +22,7 @@ export interface Expense {
   notes?: string;
   created_by?: string;
   recurring_id?: string;  // links an auto-generated expense back to its recurring template
+  created_at?: string;    // set by the server (DATETIME DEFAULT CURRENT_TIMESTAMP)
 }
 
 export interface UserProfile {

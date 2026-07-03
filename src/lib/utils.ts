@@ -33,6 +33,33 @@ export function buildSkipSet(skips: { recurring_id: string; month: string }[]): 
   return new Set(skips.map(s => `${s.recurring_id}_${s.month}`));
 }
 
+/**
+ * Ids of exact duplicate recurring occurrences (same template, due date, value,
+ * description and responsible). Keeps one row per group — preferring the paid
+ * one, then the deterministic `rec_<template>_<month>` id, then the oldest —
+ * and returns the ids of the redundant copies so they can be deleted.
+ */
+export function findRecurringDuplicates(expenses: Expense[]): Set<string> {
+  const groups = new Map<string, Expense[]>();
+  for (const e of expenses) {
+    if (!e.recurring_id) continue;
+    const key = [e.recurring_id, e.due_date, e.value, e.description ?? "", e.responsible_id ?? ""].join("|");
+    const list = groups.get(key);
+    if (list) list.push(e); else groups.set(key, [e]);
+  }
+  const dupes = new Set<string>();
+  for (const rows of groups.values()) {
+    if (rows.length < 2) continue;
+    const sorted = [...rows].sort((a, b) =>
+      (b.paid ? 1 : 0) - (a.paid ? 1 : 0) ||
+      Number(!a.id.startsWith("rec_")) - Number(!b.id.startsWith("rec_")) ||
+      (a.created_at ?? "").localeCompare(b.created_at ?? "") ||
+      a.id.localeCompare(b.id));
+    for (const extra of sorted.slice(1)) dupes.add(extra.id);
+  }
+  return dupes;
+}
+
 /** Whether a recurring income template already has an instance in a given month. */
 export function isRecurringIncomeCovered(
   incomes: Income[],

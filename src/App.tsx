@@ -1,6 +1,5 @@
-import React, { useState, lazy, Suspense } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
 import { format } from "date-fns";
-import { AnimatePresence } from "motion/react";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, HardDrive,
@@ -20,15 +19,26 @@ const Settings          = lazy(() => import("./components/Settings"));
 type Tab = "menu" | "overview" | "expenses" | "incomes" | "notes" | "settings";
 type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 
+// State stored in browser history entries so the system/browser back button
+// navigates inside the app instead of leaving it.
+interface NavState {
+  despTab?: Tab;
+  view?: "list" | "futures";
+  filter?: FutureFilter;
+  dateRange?: { from: string; to: string } | null;
+  noteEditor?: boolean; // entry owned by the Notes full-screen editor
+}
+
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, serverReachable, pendingCount, expenses, recurring, recurringSkips, incomes } = useData();
+  const { profile, isOnline, isConnected, serverReachable, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
   const [expensesView,   setExpensesView]   = useState<"list" | "futures">("list");
   const [futuresFilter,  setFuturesFilter]  = useState<FutureFilter>(undefined);
+  const [expensesDateRange, setExpensesDateRange] = useState<{ from: string; to: string } | null>(null);
   const [expensesNonce,  setExpensesNonce]  = useState(0);
 
   const now = new Date();
@@ -48,14 +58,16 @@ function Shell() {
   const today   = format(now, "yyyy-MM-dd");
   const in7days = format(new Date(now.getTime() + 7 * 86_400_000), "yyyy-MM-dd");
 
-  // Virtual future dates from active recurring expenses (not yet auto-created as real expenses)
+  // Virtual future dates from active recurring expenses (not yet auto-created
+  // as real expenses). A paid occurrence counts as covered — otherwise the
+  // badges keep counting months the user already settled.
   const virtualRecurringFutureDates: string[] = [];
   for (const rec of recurring.filter(r => r.active)) {
     for (let mo = 0; mo <= 2; mo++) {
       const base = new Date(now.getFullYear(), now.getMonth() + mo, 1);
       const dateStr = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
       if (dateStr <= today) continue;
-      if (!isRecurringCovered(expenses, rec, dateStr, { unpaidOnly: true, skips: skipSet })) {
+      if (!isRecurringCovered(expenses, rec, dateStr, { skips: skipSet })) {
         virtualRecurringFutureDates.push(dateStr);
       }
     }
@@ -86,22 +98,60 @@ function Shell() {
 
   const balanceMonth = incomeMonth - totalMonth;
 
-  const handleTabChange = (tab: Tab) => {
-    setActiveTab(tab);
-    if (tab === "expenses") { setExpensesView("list"); setFuturesFilter(undefined); setExpensesNonce(n => n + 1); }
-    window.scrollTo(0, 0);
-  };
-
-  // Open "Minhas Despesas" already on the upcoming/overdue sub-tab with a filter.
-  const goToFutures = (filter?: FutureFilter) => {
-    setActiveTab("expenses");
-    setExpensesView("futures");
-    setFuturesFilter(filter);
+  // Apply a navigation state to the UI (used by both in-app navigation and the
+  // browser/system back button via popstate).
+  const applyNav = (st: NavState | null) => {
+    setActiveTab(st?.despTab ?? "menu");
+    setExpensesView(st?.view ?? "list");
+    setFuturesFilter(st?.filter);
+    setExpensesDateRange(st?.dateRange ?? null);
     setExpensesNonce(n => n + 1);
     window.scrollTo(0, 0);
   };
 
-  const goToIncomes = () => { setActiveTab("incomes"); window.scrollTo(0, 0); };
+  // Browser-history integration: every screen gets its own history entry, so
+  // the system/browser back button navigates inside the app (menu ← tab ←
+  // editor) instead of leaving the page.
+  useEffect(() => {
+    try { history.replaceState({ despTab: "menu" } as NavState, ""); } catch { /* ignore */ }
+    const onPop = (ev: PopStateEvent) => {
+      const st = ev.state as NavState | null;
+      if (st?.noteEditor) return; // that entry belongs to the notes editor
+      applyNav(st);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const navigate = (st: NavState) => {
+    try { history.pushState(st, ""); } catch { /* ignore */ }
+    applyNav(st);
+  };
+
+  const handleTabChange = (tab: Tab) => {
+    if (tab === "menu") {
+      // Going back to the menu consumes the history entry pushed when the tab
+      // was opened, keeping the in-app arrow and the system back in sync.
+      const cur = history.state as NavState | null;
+      if (cur?.despTab && cur.despTab !== "menu") { history.back(); return; }
+      applyNav({ despTab: "menu" });
+      return;
+    }
+    navigate({ despTab: tab });
+  };
+
+  // Open "Minhas Despesas" already on the upcoming/overdue sub-tab with a filter.
+  const goToFutures = (filter?: FutureFilter) => navigate({ despTab: "expenses", view: "futures", filter });
+
+  const goToIncomes = () => navigate({ despTab: "incomes" });
+
+  // Open the full expense list filtered to the current month (Total Geral tile).
+  const goToMonthExpenses = () => {
+    const from = `${mm}-01`;
+    const to   = format(new Date(now.getFullYear(), now.getMonth() + 1, 0), "yyyy-MM-dd");
+    navigate({ despTab: "expenses", view: "list", dateRange: { from, to } });
+  };
 
   const MenuButton = ({
     icon: Icon, title, subtitle, onClick, colorClass, badge, badgeUrgent, urgentCount,
@@ -161,13 +211,14 @@ function Shell() {
           <div className="flex items-center gap-1.5">
             {/* Alterações ainda não confirmadas pelo servidor (fila de envio) */}
             {pendingCount > 0 && (
-              <div
-                className="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5"
-                title={`${pendingCount} alteração${pendingCount > 1 ? "ões" : ""} aguardando envio ao servidor`}
+              <button
+                onClick={forceSync}
+                className="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 hover:bg-amber-100 active:scale-95 transition-all"
+                title={`${pendingCount} alteraç${pendingCount > 1 ? "ões" : "ão"} aguardando envio — toque para sincronizar agora`}
               >
                 <UploadCloud size={12} className="text-amber-500" />
                 <span className="text-[10px] font-black text-amber-600">{pendingCount}</span>
-              </div>
+              </button>
             )}
             {!isOnline ? (
               <div className="flex items-center gap-1.5" title="Offline">
@@ -212,7 +263,7 @@ function Shell() {
 
       {/* Content */}
       <main className="max-w-4xl mx-auto p-4">
-        <AnimatePresence mode="wait">
+        <>
           {activeTab === "menu" && (
             <div className="space-y-4 pt-4">
               {/* Welcome card */}
@@ -221,11 +272,14 @@ function Shell() {
                   <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80 mb-1">Bem-vindo(a) novamente,</p>
                   <h2 className="text-2xl font-black tracking-tighter mb-4">{profile.name}</h2>
                   <div className="grid grid-cols-2 gap-2">
-                    {/* Total Geral */}
-                    <div className="bg-white/20 backdrop-blur-md p-3 rounded-2xl">
+                    {/* Total Geral → lista de despesas do mês */}
+                    <button
+                      onClick={goToMonthExpenses}
+                      className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-left w-full transition-all active:scale-95"
+                    >
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Total Geral</p>
                       <p className="text-base font-black truncate">R$ {formatCurrency(totalMonth)}</p>
-                    </div>
+                    </button>
                     {/* Pendente */}
                     <button
                       onClick={() => goToFutures("pending")}
@@ -247,16 +301,19 @@ function Shell() {
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Entradas</p>
                       <p className="text-base font-black truncate">R$ {formatCurrency(incomeMonth)}</p>
                     </button>
-                    {/* Saldo */}
-                    <div className={cn(
-                      "backdrop-blur-md p-3 rounded-2xl border",
-                      balanceMonth >= 0 ? "bg-white/20 border-white/20" : "bg-red-500/40 border-red-300/40",
-                    )}>
+                    {/* Saldo → visão geral (entradas × saídas do mês) */}
+                    <button
+                      onClick={() => handleTabChange("overview")}
+                      className={cn(
+                        "backdrop-blur-md p-3 rounded-2xl border text-left w-full transition-all active:scale-95",
+                        balanceMonth >= 0 ? "bg-white/20 border-white/20" : "bg-red-500/40 border-red-300/40",
+                      )}
+                    >
                       <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Saldo</p>
                       <p className="text-base font-black truncate">
                         {balanceMonth >= 0 ? "+" : ""}R$ {formatCurrency(balanceMonth)}
                       </p>
-                    </div>
+                    </button>
                     {/* Vence em breve */}
                     <button
                       onClick={() => goToFutures("upcoming")}
@@ -265,9 +322,7 @@ function Shell() {
                         urgentFutureCount > 0 ? "bg-amber-500/40 border-amber-300/40" : "bg-white/20 border-white/0",
                       )}
                     >
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
-                        {urgentFutureCount > 0 ? "⚠ Vence em breve" : "Vence em breve"}
-                      </p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">Vence em breve</p>
                       <p className="text-base font-black">
                         {urgentFutureCount > 0 ? urgentFutureCount : (futureCount > 0 ? futureCount : "—")}
                       </p>
@@ -313,13 +368,15 @@ function Shell() {
                 key={`exp-${expensesNonce}`}
                 initialView={expensesView}
                 initialFutureFilter={futuresFilter}
+                initialDateFrom={expensesDateRange?.from}
+                initialDateTo={expensesDateRange?.to}
               />
             )}
             {activeTab === "incomes"   && <Incomes />}
             {activeTab === "notes"     && <Notes />}
             {activeTab === "settings"  && <Settings />}
           </Suspense>
-        </AnimatePresence>
+        </>
       </main>
 
       <Toast />

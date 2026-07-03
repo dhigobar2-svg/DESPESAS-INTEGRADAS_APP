@@ -7,7 +7,7 @@ import {
   AlertTriangle, SlidersHorizontal,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, generateId, isRecurringCovered, recurringDueDate, buildSkipSet } from "../lib/utils";
+import { formatCurrency, cn, isRecurringCovered, recurringDueDate, buildSkipSet } from "../lib/utils";
 import { Expense } from "../types";
 import ExpenseModal from "./ExpenseModal";
 import ConfirmModal from "./ConfirmModal";
@@ -95,8 +95,10 @@ export default function FutureExpenses({ filter }: Props) {
         const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
         const dueDate = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
         if (dueDate < todayStr) continue;
-        // Skip if an actual (still unpaid) expense covers this, or it was deleted
-        if (!isRecurringCovered(expenses, rec, dueDate, { unpaidOnly: true, skips: skipSet })) {
+        // Skip if a real expense (paid OR unpaid) already covers this month, or
+        // it was deleted. A paid occurrence must count as covered — otherwise
+        // the virtual row reappears after payment and invites duplicate saves.
+        if (!isRecurringCovered(expenses, rec, dueDate, { skips: skipSet })) {
           future.push({
             id:             `virtual-${rec.id}-${dueDate}`,
             category_id:    rec.category_id,
@@ -129,7 +131,7 @@ export default function FutureExpenses({ filter }: Props) {
     if (!filter) return overdue;
     if (filter === "upcoming") return [];
     if (filter === "pending")  return overdue;
-    if (filter === "recurring") return overdue.filter(e => e.isVirtual);
+    if (filter === "recurring") return overdue.filter(e => e.isVirtual || !!e.recurring_id);
     return overdue;
   }, [overdue, filter]);
 
@@ -144,7 +146,7 @@ export default function FutureExpenses({ filter }: Props) {
     } else if (filter === "pending") {
       filtered = allEntries.filter(e => e.due_date.slice(0, 7) === currentMonthStr);
     } else if (filter === "recurring") {
-      filtered = allEntries.filter(e => e.isVirtual);
+      filtered = allEntries.filter(e => e.isVirtual || !!e.recurring_id);
     } else {
       filtered = allEntries;
     }
@@ -259,8 +261,11 @@ export default function FutureExpenses({ filter }: Props) {
             <button
               onClick={() => {
                 if (e.isVirtual) {
+                  // Deterministic id (template + month): tapping again replaces
+                  // the same row instead of creating a duplicate.
+                  const realId = `rec_${e.recurring_id}_${e.due_date.slice(0, 7)}`;
                   saveExpense({
-                    id: generateId(),
+                    id: realId,
                     category_id: e.category_id,
                     description: e.description,
                     date: todayStr,
@@ -269,7 +274,7 @@ export default function FutureExpenses({ filter }: Props) {
                     responsible_id: e.responsible_id,
                     paid: 1,
                     recurring_id: e.recurring_id,
-                  }, false);
+                  }, expenses.some(x => x.id === realId), "Pagamento registrado!");
                 } else {
                   togglePaid(e.id);
                 }

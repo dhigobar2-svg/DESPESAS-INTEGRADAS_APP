@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Plus, Trash2, NotebookPen, Search } from "lucide-react";
+import { Plus, Trash2, NotebookPen, Search, ChevronLeft } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId } from "../lib/utils";
 import { Note } from "../types";
@@ -29,6 +29,8 @@ export default function Notes() {
   const [search,    setSearch]    = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // Whether the open editor pushed a history entry that still needs consuming.
+  const editorHistoryRef = useRef(false);
 
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
@@ -60,6 +62,12 @@ export default function Notes() {
   const closeEditor = () => {
     setEditing(null);
     setIsNew(false);
+    // Closing via a UI button must consume the history entry pushed when the
+    // editor opened, or the next back press would pop a stale entry.
+    if (editorHistoryRef.current) {
+      editorHistoryRef.current = false;
+      try { history.back(); } catch { /* ignore */ }
+    }
   };
 
   const saveEditing = useCallback(() => {
@@ -75,6 +83,25 @@ export default function Notes() {
     });
     closeEditor();
   }, [editing, saveNote]);
+
+  // System/browser back button: close the editor (keeping the note) instead of
+  // leaving the app. The editor gets its own history entry while it's open.
+  const saveEditingRef = useRef(saveEditing);
+  saveEditingRef.current = saveEditing;
+  const editorOpen = !!editing;
+  useEffect(() => {
+    if (!editorOpen) return;
+    if (!editorHistoryRef.current) {
+      editorHistoryRef.current = true;
+      try { history.pushState({ ...(history.state ?? {}), noteEditor: true }, ""); } catch { /* ignore */ }
+    }
+    const onPop = () => {
+      editorHistoryRef.current = false;
+      saveEditingRef.current();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [editorOpen]);
 
   const deleteNote = (id: string) => {
     deleteItem("notes", id);
@@ -193,11 +220,14 @@ export default function Notes() {
           >
             {/* Toolbar */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-amber-200 bg-amber-50 shrink-0">
+              {/* Voltar salva a nota (nada se perde) e fecha o editor */}
               <button
-                onClick={closeEditor}
-                className="text-sm font-bold text-amber-600 hover:text-amber-800 transition-colors min-w-[64px]"
+                onClick={saveEditing}
+                title="Voltar"
+                className="flex items-center gap-0.5 -ml-2 text-sm font-bold text-amber-600 hover:text-amber-800 transition-colors min-w-[64px]"
               >
-                Cancelar
+                <ChevronLeft size={20} />
+                Voltar
               </button>
               <span className="text-xs font-black uppercase tracking-widest text-slate-400">
                 {isNew ? "Nova nota" : "Editar nota"}
