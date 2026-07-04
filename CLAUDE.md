@@ -137,6 +137,9 @@ app_meta          (key TEXT PK, value)               -- one-time maintenance fla
   3 income types (Salário, Renda Extra, Outro), the default profile.
 - Runtime migrations (`tryMigrate`) add columns that older databases lack.
 - `runDedupOnce()` performed a one-time cleanup of historic duplicate rows (flag `dedup_v1`).
+- `dedupRecurringOccurrences()` runs on **every** start: deletes exact duplicate
+  recurring occurrences (same `recurring_id`, due date, value, description,
+  responsible), keeping the paid one, then the deterministic `rec_…` id, then the oldest.
 
 ---
 
@@ -148,8 +151,12 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
 
 1. **Every save goes through the pending queue** (`pendingSync` in localStorage) and
    then a flush attempt (`POST /api/sync`). If the request fails, rows stay queued and
-   are retried (10 s timer, socket reconnect, `online` event). **A save must never be
-   silently lost because one request failed.**
+   are retried (10 s timer on network error, 30 s on a non-JSON HTTP failure, socket
+   reconnect, `online` event). When a whole batch fails without a JSON `{error}` body
+   (proxy error, size limit…), the flush retries in chunks of 10 rows so one oversized
+   row can't wedge the queue forever. **A save must never be silently lost because one
+   request failed.** The header badge is a button: tapping it runs `forceSync()`
+   (flush + refetch + toast with the outcome).
 2. **`fetchData` flushes the queue BEFORE pulling** and then **overlays still-pending
    rows on top of the server response** (and drops rows with a queued offline delete),
    so a refetch can never clobber an unconfirmed local change.
@@ -171,7 +178,15 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
   generating the same month can't duplicate.
 - Deleting a generated occurrence records a `recurring_skips` row so it isn't regenerated.
 - `FutureExpenses` also renders **virtual** (not yet materialised) occurrences with
-  ids `virtual-<recId>-<date>` — these are display-only.
+  ids `virtual-<recId>-<date>` — these are display-only. Marking a virtual occurrence
+  as paid creates the real row **with the deterministic id** (never `generateId()`),
+  so a repeated tap replaces the same row instead of duplicating it.
+- **A paid occurrence counts as "covered"**: never pass `unpaidOnly: true` to
+  `isRecurringCovered` when deciding whether to *show* a virtual row — that made paid
+  months reappear and invited duplicate saves (real bug, fixed).
+- Exact duplicate occurrences (same template/due date/value/description/responsible)
+  are self-healed: the server dedups on every start (`dedupRecurringOccurrences`) and
+  `fetchData` drops client-side copies via `findRecurringDuplicates()` + queued deletes.
 
 ### Other conventions in the data layer
 
@@ -212,6 +227,11 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
 12. **Duplicate guards**: expense/income modals warn before saving an identical entry
     (description/value/date/responsible|type); Settings blocks duplicate names for
     categories, responsibles and income types. Trim user text before comparing.
+13. **Navigation uses browser history** (no router): `App.tsx` pushes a `NavState`
+    entry per screen and handles `popstate`, so the system/browser back button
+    navigates menu ← tab ← notes editor instead of leaving the app. Full-screen
+    overlays (Notes editor) push their own entry flagged `noteEditor: true` and must
+    consume it (`history.back()`) when closed via UI buttons.
 
 ---
 

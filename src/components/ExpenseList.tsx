@@ -22,9 +22,14 @@ interface Props {
   initialResponsibleFilter?: string;
   initialView?: "list" | "futures";
   initialFutureFilter?: FutureFilter;
+  initialDateFrom?: string;
+  initialDateTo?: string;
 }
 
-export default function ExpenseList({ initialResponsibleFilter = "", initialView = "list", initialFutureFilter }: Props) {
+export default function ExpenseList({
+  initialResponsibleFilter = "", initialView = "list", initialFutureFilter,
+  initialDateFrom = "", initialDateTo = "",
+}: Props) {
   const { expenses, categories, responsibles, incomes, incomeTypes, recurring, togglePaid, deleteItem } = useData();
   const activeRecurringIds = new Set(recurring.filter(r => r.active).map(r => r.id));
 
@@ -34,8 +39,8 @@ export default function ExpenseList({ initialResponsibleFilter = "", initialView
   const [confirmId,        setConfirmId]        = useState<string | null>(null);
   const [page,             setPage]             = useState(1);
   const [search,           setSearch]           = useState("");
-  const [filterDateFrom,   setFilterDateFrom]   = useState("");
-  const [filterDateTo,     setFilterDateTo]     = useState("");
+  const [filterDateFrom,   setFilterDateFrom]   = useState(initialDateFrom);
+  const [filterDateTo,     setFilterDateTo]     = useState(initialDateTo);
   const [filterCat,        setFilterCat]        = useState("");
   const [filterResp,       setFilterResp]       = useState(initialResponsibleFilter);
   const [filterPaid,       setFilterPaid]       = useState("");

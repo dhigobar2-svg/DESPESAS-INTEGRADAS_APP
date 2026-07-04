@@ -168,6 +168,31 @@ function runDedupOnce() {
 }
 runDedupOnce();
 
+// Remove exact duplicate recurring occurrences — same template, due date,
+// value, description and responsible. A past frontend bug let the "mark as
+// paid" button on the upcoming-expenses screen create such copies. Keeps the
+// paid one, then the deterministic `rec_<template>_<month>` id, then the
+// oldest. Runs on every start: it's cheap, idempotent, and old clients may
+// still push queued copies after the one-time flag would have been consumed.
+function dedupRecurringOccurrences() {
+  db.exec(`
+    DELETE FROM expenses WHERE id IN (
+      SELECT id FROM (
+        SELECT id, ROW_NUMBER() OVER (
+          PARTITION BY recurring_id, due_date, value,
+                       COALESCE(description, ''), COALESCE(responsible_id, '')
+          ORDER BY paid DESC,
+                   (CASE WHEN id LIKE 'rec\\_%' ESCAPE '\\' THEN 0 ELSE 1 END),
+                   created_at ASC, rowid ASC
+        ) AS rn
+        FROM expenses
+        WHERE recurring_id IS NOT NULL AND recurring_id != ''
+      ) WHERE rn > 1
+    );
+  `);
+}
+dedupRecurringOccurrences();
+
 
 // Whitelist of allowed columns per table — prevents SQL injection via sync
 const ALLOWED_COLUMNS: Record<string, string[]> = {

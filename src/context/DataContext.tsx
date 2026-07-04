@@ -10,6 +10,7 @@ import {
 } from "../types";
 import {
   generateId, compressImage, isRecurringCovered, isRecurringIncomeCovered, recurringDueDate, buildSkipSet,
+  findRecurringDuplicates,
 } from "../lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -35,9 +36,10 @@ interface DataContextValue {
   toasts:       ToastMessage[];
 
   // Handlers
-  saveExpense:      (expense: Expense, isEdit: boolean) => void;
+  saveExpense:      (expense: Expense, isEdit: boolean, toastMsg?: string) => void;
   deleteItem:       (table: string, id: string) => Promise<void>;
   togglePaid:       (id: string) => void;
+  forceSync:        () => Promise<void>;
   saveProfile:      (p: UserProfile) => Promise<void>;
   saveCategory:     (cat: Category, isEdit: boolean) => void;
   saveResponsible:  (resp: Responsible, isEdit: boolean) => void;
@@ -250,6 +252,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
     flushTimer.current = setTimeout(() => { flushPendingRef.current(); }, delayMs);
   }, []);
 
+  // POSTs one payload. "rejected" = the app itself refused it (JSON {error}) —
+  // terminal, the rows must leave the queue; "failed" = no usable backend
+  // answer (proxy error, size limit, blocked method…) — keep the rows queued.
+  const postSync = useCallback(async (payload: SyncData): Promise<"ok" | "rejected" | "failed"> => {
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) return "ok";
+    let serverError: string | null = null;
+    try { serverError = (await res.json())?.error ?? null; } catch { /* non-JSON body */ }
+    if (serverError) {
+      addToast("error", serverError);
+      return "rejected";
+    }
+    return "failed";
+  }, [addToast]);
+
   const flushPending = useCallback(async (): Promise<boolean> => {
     if (flushInFlight.current) return false;
     const store = getPending();
@@ -259,34 +280,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
     flushInFlight.current = true;
     try {
       const payload = pendingToPayload(store);
-      const res = await fetch("/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
+      const result = await postSync(payload);
+      if (result !== "failed") {
         clearSentPending(payload);
         setServerReachable(true);
+        if (result === "rejected") fetchDataRef.current(); // resync after an app-level rejection
         // Rows queued while this request was in flight: flush again shortly.
         if (!pendingIsEmpty(getPending())) scheduleFlush(500);
-        return true;
+        return result === "ok";
       }
 
-      // Distinguish a real app-level rejection (JSON {error}) from "there is no
-      // backend here" (static hosting returns a 404 HTML page). The former is
-      // terminal — drop the rejected rows and resync; the latter switches the
-      // app to local-only mode silently.
-      let serverError: string | null = null;
-      try { serverError = (await res.json())?.error ?? null; } catch { /* non-JSON body */ }
-      if (serverError) {
-        clearSentPending(payload);
-        setServerReachable(true);
-        addToast("error", serverError);
-        fetchDataRef.current();
-      } else {
-        setServerReachable(false);
+      // The whole batch failed without a JSON error (no backend here, or the
+      // request was blocked/too large along the way). Retry in small chunks so
+      // one oversized row can't wedge the entire queue forever — this is what
+      // made the header counter climb without ever going down.
+      let anyOk = false;
+      let anyRejected = false;
+      const rowCount = PAYLOAD_TABLES.reduce(
+        (s, t) => s + ((payload[t] as unknown[] | undefined)?.length ?? 0), 0,
+      ) + (payload.profile ? 1 : 0);
+      if (rowCount > 1) {
+        const CHUNK = 10;
+        for (const t of PAYLOAD_TABLES) {
+          const rows = payload[t] as { id: string }[] | undefined;
+          if (!rows?.length) continue;
+          for (let i = 0; i < rows.length; i += CHUNK) {
+            const chunk = { [t]: rows.slice(i, i + CHUNK) } as SyncData;
+            const r = await postSync(chunk);
+            if (r !== "failed") { clearSentPending(chunk); anyOk = anyOk || r === "ok"; anyRejected = anyRejected || r === "rejected"; }
+          }
+        }
+        if (payload.profile) {
+          const r = await postSync({ profile: payload.profile });
+          if (r !== "failed") { clearSentPending({ profile: payload.profile }); anyOk = anyOk || r === "ok"; anyRejected = anyRejected || r === "rejected"; }
+        }
       }
-      return false;
+
+      setServerReachable(anyOk || anyRejected);
+      if (anyRejected) fetchDataRef.current();
+      // Keep retrying on our own — without this, a failed queue was only
+      // re-sent on the next user action and the badge never went down.
+      if (!pendingIsEmpty(getPending())) scheduleFlush(30_000);
+      return pendingIsEmpty(getPending());
     } catch (err) {
       console.error("Sync falhou — alterações mantidas na fila para reenvio", err);
       scheduleFlush(10_000);
@@ -294,7 +329,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } finally {
       flushInFlight.current = false;
     }
-  }, [addToast, scheduleFlush]);
+  }, [postSync, scheduleFlush]);
   flushPendingRef.current = flushPending;
 
   const syncWithServer = useCallback(async (data: SyncData) => {
@@ -417,8 +452,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const fetchData = useCallback(async (onSuccess?: () => void) => {
     try {
-      // Push pending local changes BEFORE pulling, so the server snapshot we
-      // apply already contains them and can't clobber an unsent save.
+      // Push pending local changes (and replay queued deletes) BEFORE pulling,
+      // so the server snapshot we apply already contains them and can't
+      // clobber an unsent save.
+      await flushPendingDeletes();
       await flushPending();
 
       const res = await fetch("/api/data");
@@ -499,6 +536,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Self-heal exact duplicate recurring occurrences (a past bug let the
+      // "mark as paid" button create copies). One row per template/month is
+      // kept; redundant copies are removed here and deleted on the server.
+      const dupeIds = findRecurringDuplicates(exps);
+      if (dupeIds.size) {
+        exps = exps.filter(e => !dupeIds.has(e.id));
+        for (const id of dupeIds) {
+          removePendingRow("expenses", id); // a queued copy must not resurrect
+          enqueueDelete("expenses", id);
+        }
+        flushPendingDeletes();
+      }
+
       setExpenses(exps);
       setCategories(cats);
       setResponsibles(resps);
@@ -562,10 +612,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setIncomeTypes(its); lsSet("incomeTypes", its);
       }
     }
-  }, [applyRecurring, applyRecurringIncomes, syncWithServer, flushPending]);
+  }, [applyRecurring, applyRecurringIncomes, syncWithServer, flushPending, flushPendingDeletes, enqueueDelete]);
 
   // Keep a ref so syncWithServer (defined earlier) can reconcile after a failure.
   fetchDataRef.current = fetchData;
+
+  // Manual "sync now" — triggered by tapping the pending badge in the header,
+  // so the user can drain the queue (or learn why it isn't draining).
+  const forceSync = useCallback(async () => {
+    if (!navigator.onLine) {
+      addToast("info", "Sem conexão — as alterações serão enviadas ao reconectar.");
+      return;
+    }
+    await flushPendingDeletes();
+    await flushPending();
+    await fetchData();
+    const remaining = countPendingChanges();
+    if (remaining === 0) {
+      addToast("success", "Tudo sincronizado!");
+    } else {
+      addToast("error", `${remaining} alteraç${remaining > 1 ? "ões" : "ão"} ainda aguardando envio ao servidor.`);
+    }
+  }, [flushPendingDeletes, flushPending, fetchData, addToast]);
 
   // ── Browser notifications for upcoming/overdue expenses ──────────────────────
 
@@ -690,6 +758,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     window.addEventListener("online",  onOnline);
     window.addEventListener("offline", onOffline);
 
+    // Another tab flushing/queueing changes must update this tab's badge too.
+    const onStorage = (ev: StorageEvent) => {
+      if (ev.key === "pendingSync" || ev.key === "pendingDeletes") pendingNotify?.();
+    };
+    window.addEventListener("storage", onStorage);
+
     // Re-pull (and re-materialise recurrences) when the app is brought back to
     // the foreground — covers PWAs/tabs left open across a month boundary.
     const onVisible = () => { if (document.visibilityState === "visible") fetchData(); };
@@ -702,6 +776,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (flushTimer.current) clearTimeout(flushTimer.current);
       window.removeEventListener("online",  onOnline);
       window.removeEventListener("offline", onOffline);
+      window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onVisible);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -723,9 +798,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // ── CRUD handlers ─────────────────────────────────────────────────────────────
 
-  const saveExpense = useCallback((expense: Expense, isEdit: boolean) => {
+  const saveExpense = useCallback((expense: Expense, isEdit: boolean, toastMsg?: string) => {
     setExpenses(prev => {
-      const updated = isEdit
+      // Upsert by id (the primary key) regardless of isEdit — appending a row
+      // whose id already exists would show a duplicate the server doesn't have.
+      const exists = prev.some(e => e.id === expense.id);
+      const updated = exists
         ? prev.map(e => e.id === expense.id ? expense : e)
         : [...prev, expense];
       lsSet("expenses", updated);
@@ -733,7 +811,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
     // Sync only the changed row so concurrent edits by other clients aren't clobbered.
     syncWithServer({ expenses: [expense] });
-    addToast("success", isEdit ? "Despesa atualizada!" : "Despesa adicionada!");
+    addToast("success", toastMsg ?? (isEdit ? "Despesa atualizada!" : "Despesa adicionada!"));
   }, [syncWithServer, addToast]);
 
   const deleteItem = useCallback(async (table: string, id: string) => {
@@ -836,7 +914,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return updated;
     });
     syncWithServer({ expenses: [changed] });
-  }, [expenses, syncWithServer]);
+    addToast("success", changed.paid ? "Pagamento registrado!" : "Despesa marcada como pendente.");
+  }, [expenses, syncWithServer, addToast]);
 
   const saveProfile = useCallback(async (p: UserProfile) => {
     setProfile(p);
@@ -999,7 +1078,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     expenses, categories, responsibles, profile, budgets, recurring,
     incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
     isOnline, isConnected, serverReachable, notificationsEnabled, pendingCount, toasts,
-    saveExpense, deleteItem, togglePaid, saveProfile,
+    saveExpense, deleteItem, togglePaid, forceSync, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
     saveIncome, saveIncomeType, saveRecurringIncome, saveNote, restoreBackup,
     readPhoto, requestNotificationPermission, addToast, dismissToast,
