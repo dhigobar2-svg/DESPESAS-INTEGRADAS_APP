@@ -245,3 +245,15 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
 | `NODE_ENV` | `server.ts` | `"production"` switches to static file serving |
 
 Create a `.env` file at the project root to set these locally.
+
+---
+
+## Deploy (Railway) — workflow
+
+Production is hosted on **Railway**, which **auto-deploys on every push to `main`**
+(SQLite on a persistent volume at `/data`; see `RAILWAY.md` and `railway.json`).
+
+**Standing instruction from the repo owner:** every code change must be committed
+and pushed **directly to `main`** — pushing to `main` is what ships the deploy.
+Do not park changes on a separate feature branch and wait; land them on `main`
+so Railway publishes them. (Still run `npm run lint` before pushing.)
