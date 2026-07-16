@@ -1,0 +1,2572 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Gestão da Telemetria · Logon | Arauco · Projeto Sucuriú</title>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.2/dist/apexcharts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+<style>
+/* ===================== PALETA ARAUCO ===================== */
+:root{
+  --verde-sucuriu:#728046;
+  --eco-verde:#BFB800;
+  --naranjo:#EA7600;
+  --corteza:#696158;
+  --amarelo-arauco:#F3D01C;
+  --laranja-claro:#F4BA80;
+  --madera:#DFD1A7;
+  --verde-claro:#DFDB80;
+  --branco:#FFFFFF;
+
+  --bg:#F4F5F0;
+  --surface:#FFFFFF;
+  --surface-2:#FAFBF7;
+  --ink:#2B2A26;
+  --ink-soft:#5E5B52;
+  --line:#E4E5DC;
+  --line-strong:#D4D6C8;
+
+  --risco-baixo:#728046;
+  --risco-medio:#EA7600;
+  --risco-alto:#C0392B;
+
+  --shadow-sm:0 1px 2px rgba(43,42,38,.06), 0 1px 3px rgba(43,42,38,.05);
+  --shadow-md:0 2px 8px rgba(43,42,38,.07), 0 8px 24px rgba(43,42,38,.06);
+  --shadow-lg:0 10px 40px rgba(43,42,38,.12);
+  --radius:14px;
+  --radius-sm:10px;
+}
+html[data-theme="dark"]{
+  --bg:#1E201B;
+  --surface:#282A24;
+  --surface-2:#2E312A;
+  --ink:#ECEDE4;
+  --ink-soft:#A9AB9E;
+  --line:#3A3D34;
+  --line-strong:#484B40;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.3);
+  --shadow-md:0 2px 10px rgba(0,0,0,.35);
+  --shadow-lg:0 12px 44px rgba(0,0,0,.5);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:var(--bg);
+  background-image:radial-gradient(circle at 0% 0%,rgba(114,128,70,.045),transparent 45%),radial-gradient(circle at 100% 0%,rgba(191,184,0,.035),transparent 40%);
+  background-attachment:fixed;
+  color:var(--ink);
+  font-size:14px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  transition:background .3s ease,color .3s ease;
+}
+h1,h2,h3,h4{font-weight:700;color:var(--ink);letter-spacing:-.01em}
+/* Títulos em caixa alta (padrão corporativo) */
+.topbar__title h1,.panel__head h3,.table-toolbar h3,.filterbar__head h3,
+.insight-card__head h3,.modal__head h3,.km-card__plate,.dropzone h3,.nav-label{
+  text-transform:uppercase;letter-spacing:.03em;
+}
+.topbar__title h1{letter-spacing:.02em;font-weight:800}
+.panel__head h3,.table-toolbar h3,.filterbar__head h3{letter-spacing:.05em;font-size:12.5px;font-weight:800}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:6px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* Gráfico de barras horizontal próprio (Registros por Condutor):
+   nome nunca corta (quebra de linha), valor SEMPRE fora da barra, na ponta direita.
+   A barra mais longa ocupa 86% da pista, reservando 14% para o valor por construção. */
+.hbar-list{display:flex;flex-direction:column;gap:6px;padding:6px 4px 10px}
+.hbar{display:grid;grid-template-columns:158px 1fr;gap:10px;align-items:center;width:100%;text-align:left;border-radius:8px;padding:3px 6px;transition:background .15s,opacity .2s}
+.hbar:hover{background:var(--surface-2)}
+.hbar.dim{opacity:.38}
+.hbar.active{background:var(--surface-2)}
+.hbar.active .hbar__name{color:var(--verde-sucuriu)}
+.hbar__name{font-size:11px;font-weight:600;color:var(--ink);line-height:1.25;word-break:break-word}
+.hbar__track{position:relative;height:20px;min-width:0}
+.hbar__fill{position:absolute;left:0;top:1px;height:18px;border-radius:5px;min-width:3px;transition:width .35s ease}
+.hbar__val{position:absolute;top:0;height:20px;display:flex;align-items:center;font-size:11px;font-weight:700;color:var(--ink);white-space:nowrap}
+
+/* Contêiner com rolagem vertical para gráficos extensos (todos os condutores) */
+.panel__body--scroll{max-height:430px;overflow-y:auto;overflow-x:hidden}
+/* Cabeçalho de tabela ordenável (padrão asc/desc ao clicar) */
+.th-sort{cursor:pointer;user-select:none;white-space:nowrap}
+.th-sort .sort-ar{margin-left:4px;font-size:9px}
+
+/* ===================== APP SHELL ===================== */
+.app{display:flex;min-height:100vh}
+
+/* Sidebar */
+.sidebar{
+  width:248px;flex-shrink:0;
+  background:var(--surface);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;
+  transition:width .25s ease;
+  z-index:40;
+}
+.sidebar__brand{
+  padding:22px 20px 18px;
+  border-bottom:1px solid var(--line);
+}
+.brand-logo{display:flex;align-items:center;gap:11px}
+.brand-txt strong{display:block;font-size:14px;line-height:1.1}
+.brand-txt span{font-size:11px;color:var(--ink-soft)}
+.sidebar__nav{padding:14px 12px;flex:1;overflow-y:auto}
+.nav-label{
+  font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;
+  color:var(--ink-soft);font-weight:700;padding:12px 10px 6px;
+}
+.nav-item{
+  display:flex;align-items:center;gap:11px;
+  padding:10px 12px;border-radius:var(--radius-sm);
+  color:var(--ink-soft);font-weight:600;font-size:13.5px;
+  cursor:pointer;transition:all .15s ease;margin-bottom:2px;
+  width:100%;text-align:left;
+}
+.nav-item:hover{background:var(--surface-2);color:var(--ink)}
+.nav-item.active{
+  background:linear-gradient(90deg,rgba(114,128,70,.13),rgba(114,128,70,.04));
+  color:var(--verde-sucuriu);
+}
+html[data-theme="dark"] .nav-item.active{color:var(--eco-verde)}
+.nav-item.active .nav-ic{color:var(--verde-sucuriu)}
+html[data-theme="dark"] .nav-item.active .nav-ic{color:var(--eco-verde)}
+.nav-ic{width:19px;height:19px;flex-shrink:0;display:grid;place-items:center}
+.nav-ic svg{width:19px;height:19px;stroke-width:1.9}
+.sidebar__foot{padding:14px;border-top:1px solid var(--line)}
+
+/* Main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+
+/* Topbar */
+.topbar{
+  height:64px;flex-shrink:0;
+  background:color-mix(in srgb,var(--surface) 88%,transparent);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:16px;
+  padding:0 24px;position:sticky;top:0;z-index:30;
+}
+.topbar__title{flex:1;min-width:0}
+.topbar__title h1{font-size:17px;line-height:1.2}
+.topbar__title p{font-size:12px;color:var(--ink-soft)}
+.topbar__meta{display:flex;align-items:center;gap:18px}
+.meta-chip{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2}
+.meta-chip .k{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700}
+.meta-chip .v{font-size:13px;font-weight:700}
+.status-dot{
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:12px;font-weight:700;color:var(--verde-sucuriu);
+  padding:6px 12px;border-radius:20px;background:rgba(114,128,70,.1);
+}
+.status-dot i{width:8px;height:8px;border-radius:50%;background:var(--verde-sucuriu);
+  box-shadow:0 0 0 0 rgba(114,128,70,.5);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(114,128,70,.45)}70%{box-shadow:0 0 0 8px rgba(114,128,70,0)}100%{box-shadow:0 0 0 0 rgba(114,128,70,0)}}
+.icon-btn{
+  width:38px;height:38px;border-radius:10px;
+  display:grid;place-items:center;color:var(--ink-soft);
+  border:1px solid var(--line);background:var(--surface);transition:all .15s ease;
+}
+.icon-btn:hover{background:var(--surface-2);color:var(--ink);border-color:var(--line-strong)}
+.icon-btn svg{width:19px;height:19px}
+
+/* Content area */
+.content{padding:24px;flex:1}
+.view{display:none;animation:fade .35s ease}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ===================== EMPTY / UPLOAD ===================== */
+.dropzone{
+  border:2px dashed var(--line-strong);border-radius:var(--radius);
+  padding:48px 28px;text-align:center;background:var(--surface);
+  transition:all .2s ease;
+}
+.dropzone.drag{border-color:var(--verde-sucuriu);background:rgba(114,128,70,.05)}
+.dropzone__ic{
+  width:64px;height:64px;margin:0 auto 16px;border-radius:16px;
+  background:linear-gradient(135deg,rgba(114,128,70,.15),rgba(191,184,0,.12));
+  display:grid;place-items:center;color:var(--verde-sucuriu);
+}
+.dropzone__ic svg{width:30px;height:30px}
+.dropzone h3{font-size:18px;margin-bottom:6px}
+.dropzone p{color:var(--ink-soft);font-size:13.5px;max-width:520px;margin:0 auto 18px}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:10px 18px;border-radius:10px;font-weight:700;font-size:13.5px;
+  background:var(--verde-sucuriu);color:#fff;transition:all .15s ease;
+  box-shadow:var(--shadow-sm);
+}
+.btn:hover{filter:brightness(1.06);transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.btn--ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line-strong)}
+.btn--ghost:hover{background:var(--surface-2)}
+.btn--sm{padding:7px 13px;font-size:12.5px}
+.btn svg{width:16px;height:16px}
+
+/* File chips */
+.file-strip{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px;justify-content:center}
+.file-chip{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:7px 12px;border-radius:20px;background:var(--surface-2);
+  border:1px solid var(--line);font-size:12.5px;font-weight:600;
+}
+.file-chip .plate{color:var(--verde-sucuriu);font-weight:800}
+.file-chip button{color:var(--ink-soft);display:grid;place-items:center;width:16px;height:16px}
+.file-chip button:hover{color:var(--risco-alto)}
+.file-chip svg{width:14px;height:14px}
+
+/* ===================== FILTER BAR ===================== */
+.filterbar{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:16px 18px;margin-bottom:20px;
+  box-shadow:var(--shadow-sm);
+}
+.filterbar__head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.filterbar__head h3{font-size:13.5px;display:flex;align-items:center;gap:8px}
+.filterbar__head h3 svg{width:17px;height:17px;color:var(--verde-sucuriu)}
+.filter-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px 14px;
+}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em}
+.field input,.field select{
+  padding:8px 10px;border:1px solid var(--line-strong);border-radius:9px;
+  background:var(--surface-2);color:var(--ink);font-size:13px;font-family:inherit;
+  transition:border-color .15s ease;width:100%;
+}
+.field input:focus,.field select:focus{outline:none;border-color:var(--verde-sucuriu);box-shadow:0 0 0 3px rgba(114,128,70,.12)}
+.field-row{display:flex;gap:8px}
+.field-row .field{flex:1}
+.filter-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center}
+.applied-count{margin-left:auto;font-size:12px;color:var(--ink-soft);font-weight:600}
+
+/* Período — botão + popover */
+.period-btn{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:8px 11px;border:1px solid var(--line-strong);border-radius:9px;
+  background:var(--surface-2);color:var(--ink);font-size:13px;font-weight:600;
+  transition:border-color .15s ease;text-align:left;
+}
+.period-btn:hover{border-color:var(--verde-sucuriu)}
+.period-btn svg{width:16px;height:16px;color:var(--verde-sucuriu);flex-shrink:0}
+.period-btn .pv{flex:1}
+.period-btn .chev{width:13px;height:13px;color:var(--ink-soft);opacity:.7}
+.period-pop{
+  position:absolute;z-index:50;margin-top:6px;min-width:280px;
+  background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;
+  box-shadow:var(--shadow-lg);padding:16px;
+}
+.period-pop .pp-row{display:flex;gap:10px;margin-bottom:12px}
+.period-pop .pp-row .field{flex:1}
+.period-pop .pp-foot{display:flex;gap:10px;justify-content:space-between;align-items:center}
+.period-pop .pp-hint{font-size:11px;color:var(--ink-soft);font-weight:600;line-height:1.3;flex:1}
+.field-wrap{position:relative}
+
+/* ===================== MULTISELECT (filtros de lista) ===================== */
+.ms{position:relative}
+.ms-btn{
+  display:flex;align-items:center;gap:8px;width:100%;
+  padding:8px 11px;border:1px solid var(--line-strong);border-radius:9px;
+  background:var(--surface-2);color:var(--ink);font-size:13px;font-weight:600;
+  text-align:left;transition:border-color .15s ease;cursor:pointer;
+}
+.ms-btn:hover{border-color:var(--verde-sucuriu)}
+.ms-btn .ms-summary{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ms-btn svg{width:13px;height:13px;color:var(--ink-soft);flex-shrink:0}
+.ms-pop{
+  position:absolute;z-index:60;left:0;right:0;margin-top:5px;min-width:0;max-width:260px;
+  background:var(--surface);border:1px solid var(--line-strong);border-radius:9px;
+  box-shadow:var(--shadow-lg);padding:8px;
+}
+.ms-search{display:flex;align-items:center;gap:6px;border:1px solid var(--line-strong);
+  border-radius:7px;padding:4px 8px;margin-bottom:7px;background:var(--surface-2)}
+.ms-search svg{width:13px;height:13px;color:var(--ink-soft);flex-shrink:0}
+.ms-search input{border:none;background:transparent;outline:none;color:var(--ink);
+  font-size:12px;width:100%;font-family:inherit}
+.ms-actions{display:flex;gap:14px;margin-bottom:6px;padding:1px 4px 5px}
+.ms-actions button{flex:0 0 auto;font-size:11px;font-weight:800;letter-spacing:.05em;
+  text-transform:uppercase;padding:0;border:none;background:none;color:#8a850a;
+  cursor:pointer;font-family:inherit}
+.ms-actions button:hover{color:var(--verde-sucuriu);text-decoration:underline}
+.ms-list{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:1px}
+.ms-list label{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;
+  font-size:12px;font-weight:600;cursor:pointer}
+.ms-list label:hover{background:var(--surface-2)}
+.ms-list input{width:14px;height:14px;accent-color:var(--verde-sucuriu);flex-shrink:0}
+.ms-list .ms-empty{font-size:11.5px;color:var(--ink-soft);padding:5px 6px}
+
+/* ===================== MENU DE EXPORTAÇÃO (kebab) ===================== */
+#exportWrap{position:relative}
+.export-menu{
+  position:absolute;right:0;top:calc(100% + 8px);min-width:200px;z-index:130;
+  background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;
+  box-shadow:var(--shadow-lg);padding:6px;
+}
+.export-menu .em-head{font-size:10.5px;font-weight:800;letter-spacing:.06em;
+  color:var(--ink-soft);padding:7px 11px 5px;text-transform:uppercase}
+.export-menu button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;
+  border-radius:8px;background:transparent;border:none;color:var(--ink);font-size:13px;
+  font-weight:600;text-align:left;font-family:inherit;cursor:pointer}
+.export-menu button:hover{background:var(--surface-2)}
+.export-menu .em-sep{height:1px;background:var(--line);margin:5px 8px}
+.export-menu button svg{width:17px;height:17px;color:var(--verde-sucuriu);flex-shrink:0}
+.export-menu button small{display:block;font-size:10.5px;font-weight:600;color:var(--ink-soft)}
+.export-busy{display:flex;align-items:center;gap:8px;padding:9px 11px;font-size:12.5px;color:var(--ink-soft)}
+
+/* ===================== KPI CARDS ===================== */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px}
+.kpi{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px 18px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden;
+  transition:transform .18s ease,box-shadow .18s ease;
+}
+.kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--verde-sucuriu)}
+.kpi[data-tone="warn"]::before{background:var(--naranjo)}
+.kpi[data-tone="alto"]::before{background:var(--risco-alto)}
+.kpi[data-tone="info"]::before{background:var(--eco-verde)}
+.kpi__top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.kpi__ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;
+  background:rgba(114,128,70,.12);color:var(--verde-sucuriu)}
+.kpi[data-tone="warn"] .kpi__ic{background:rgba(234,118,0,.13);color:var(--naranjo)}
+.kpi[data-tone="alto"] .kpi__ic{background:rgba(192,57,43,.12);color:var(--risco-alto)}
+.kpi[data-tone="info"] .kpi__ic{background:rgba(191,184,0,.14);color:#8a850a}
+.kpi__ic svg{width:19px;height:19px}
+.kpi__trend{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:20px}
+.kpi__trend.up{color:var(--risco-alto);background:rgba(192,57,43,.1)}
+.kpi__trend.down{color:var(--verde-sucuriu);background:rgba(114,128,70,.12)}
+.kpi__trend.flat{color:var(--ink-soft);background:var(--surface-2)}
+.kpi__val{font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.kpi__val small{font-size:14px;font-weight:700;color:var(--ink-soft)}
+.kpi__label{font-size:12px;color:var(--ink-soft);font-weight:600;margin-top:4px}
+
+/* ===================== PANELS / CHARTS ===================== */
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;margin-bottom:16px}
+.panel{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow-sm);overflow:hidden;
+}
+.panel__head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:15px 18px 10px;
+}
+.panel__head h3{font-size:14px;display:flex;align-items:center;gap:9px;color:var(--verde-sucuriu)}
+.panel__head h3 svg{width:17px;height:17px;color:var(--verde-sucuriu)}
+.panel__sub{font-size:11.5px;color:var(--ink-soft);font-weight:600}
+.panel__body{padding:6px 10px 14px}
+.panel__total{
+  font-size:11.5px;color:var(--ink-soft);font-weight:700;
+  padding:0 18px 12px;
+}
+.panel__total b{color:var(--ink);font-size:14px}
+
+/* ===================== INSIGHTS ===================== */
+.insight-card{
+  background:linear-gradient(135deg,var(--surface),var(--surface-2));
+  border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow-sm);
+  position:relative;
+}
+.insight-card__head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.insight-card__head .bulb{
+  width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  background:rgba(243,208,28,.18);color:var(--amarelo-arauco);flex-shrink:0;
+}
+html[data-theme="dark"] .insight-card__head .bulb{color:#F3D01C}
+.insight-card__head .bulb svg{width:19px;height:19px}
+.insight-card__head h3{font-size:15px}
+.insight-card__head p{font-size:11.5px;color:var(--ink-soft)}
+.insight-list{display:flex;flex-direction:column;gap:10px}
+.insight{
+  display:flex;gap:12px;padding:12px 14px;border-radius:var(--radius-sm);
+  background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--verde-sucuriu);
+}
+.insight[data-sev="alto"]{border-left-color:var(--risco-alto);background:rgba(192,57,43,.03)}
+.insight[data-sev="medio"]{border-left-color:var(--naranjo);background:rgba(234,118,0,.03)}
+.insight[data-sev="info"]{border-left-color:var(--eco-verde)}
+.insight__ic{flex-shrink:0;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+  background:rgba(114,128,70,.1);color:var(--verde-sucuriu)}
+.insight[data-sev="alto"] .insight__ic{background:rgba(192,57,43,.1);color:var(--risco-alto)}
+.insight[data-sev="medio"] .insight__ic{background:rgba(234,118,0,.1);color:var(--naranjo)}
+.insight__ic svg{width:17px;height:17px}
+.insight__txt{flex:1;font-size:13px;line-height:1.5}
+.insight__txt b{color:var(--ink);font-weight:700}
+.insight__badge{
+  align-self:flex-start;font-size:10px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.04em;padding:3px 9px;border-radius:20px;white-space:nowrap;
+  background:var(--surface-2);color:var(--ink-soft);
+}
+.insight[data-sev="alto"] .insight__badge{background:rgba(192,57,43,.12);color:var(--risco-alto)}
+.insight[data-sev="medio"] .insight__badge{background:rgba(234,118,0,.12);color:var(--naranjo)}
+
+/* ===================== TABLE ===================== */
+.table-wrap{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow-sm);overflow:hidden;
+}
+.table-toolbar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.table-toolbar h3{font-size:14px;flex:1;display:flex;align-items:center;gap:9px;color:var(--verde-sucuriu)}
+.table-toolbar h3 svg{width:17px;height:17px;color:var(--verde-sucuriu)}
+.search-inp{position:relative}
+.search-inp svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--ink-soft)}
+.search-inp input{padding:8px 12px 8px 32px;border:1px solid var(--line-strong);border-radius:9px;
+  background:var(--surface-2);color:var(--ink);font-size:13px;font-family:inherit;width:220px}
+.search-inp input:focus{outline:none;border-color:var(--verde-sucuriu)}
+.tscroll{overflow-x:auto;max-height:520px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{
+  position:sticky;top:0;z-index:2;background:var(--surface-2);
+  text-align:left;padding:11px 14px;font-weight:700;font-size:11px;
+  text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);
+  border-bottom:1px solid var(--line-strong);cursor:pointer;user-select:none;white-space:nowrap;
+}
+thead th:hover{color:var(--ink)}
+thead th .sort-ar{display:inline-block;margin-left:4px;opacity:0;transition:opacity .15s}
+thead th.sorted .sort-ar{opacity:1;color:var(--verde-sucuriu)}
+tbody td{padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+tbody tr{transition:background .12s ease}
+tbody tr:hover{background:var(--surface-2)}
+.tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.tag--alto{background:rgba(192,57,43,.12);color:var(--risco-alto)}
+.tag--medio{background:rgba(234,118,0,.12);color:var(--naranjo)}
+.tag--ok{background:rgba(114,128,70,.12);color:var(--verde-sucuriu)}
+.vel-cell{font-weight:800}
+.vel-cell.over{color:var(--risco-alto)}
+.mini-link{color:var(--verde-sucuriu);font-weight:700;display:inline-flex;align-items:center;gap:4px}
+.mini-link:hover{text-decoration:underline}
+.mini-link svg{width:13px;height:13px}
+.table-foot{padding:12px 18px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);flex-wrap:wrap;gap:10px}
+.pager{display:flex;gap:6px;align-items:center}
+.pager button{width:32px;height:32px;border-radius:8px;border:1px solid var(--line-strong);
+  background:var(--surface);display:grid;place-items:center;color:var(--ink-soft);font-weight:700}
+.pager button:hover:not(:disabled){background:var(--surface-2);color:var(--ink)}
+.pager button:disabled{opacity:.4;cursor:default}
+.pager button.active{background:var(--verde-sucuriu);color:#fff;border-color:var(--verde-sucuriu)}
+
+/* ===================== KM MONITOR ===================== */
+.km-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:20px;align-items:stretch}
+.km-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;height:100%}
+.km-card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px;min-height:42px}
+.km-card__plate{font-size:16px;font-weight:800;color:var(--verde-sucuriu)}
+.km-card__driver{font-size:12px;color:var(--ink-soft);font-weight:600;display:flex;align-items:center;gap:5px;margin-top:3px}
+.km-card__driver svg{width:14px;height:14px;flex-shrink:0}
+.km-bar{height:12px;border-radius:8px;background:var(--surface-2);overflow:hidden;margin:10px 0 8px;border:1px solid var(--line)}
+.km-bar__fill{height:100%;border-radius:8px;transition:width .6s ease}
+.km-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.km-stat{text-align:center;padding:8px;border-radius:9px;background:var(--surface-2);min-height:52px;display:flex;flex-direction:column;justify-content:center}
+.km-stat .n{font-size:16px;font-weight:800;line-height:1}
+.km-stat .l{font-size:10px;color:var(--ink-soft);font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-top:3px}
+.km-eta{margin-top:auto;padding:10px 12px;border-radius:9px;font-size:12.5px;font-weight:600;
+  display:flex;align-items:center;gap:8px;min-height:44px}
+.km-eta svg{width:16px;height:16px;flex-shrink:0}
+.km-eta.ok{background:rgba(114,128,70,.1);color:var(--verde-sucuriu)}
+.km-eta.warn{background:rgba(234,118,0,.1);color:var(--naranjo)}
+.km-eta.alto{background:rgba(192,57,43,.1);color:var(--risco-alto)}
+
+/* ===================== MODAL ===================== */
+.modal-bg{position:fixed;inset:0;background:rgba(30,32,27,.55);backdrop-filter:blur(3px);
+  z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-bg.open{display:flex;animation:fade .2s ease}
+.modal{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow-lg);
+  max-width:560px;width:100%;max-height:88vh;overflow:hidden;display:flex;flex-direction:column}
+.modal__head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.modal__head h3{font-size:16px}
+.modal__body{padding:20px;overflow-y:auto}
+.modal__foot{padding:16px 20px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+/* Fullscreen modal (pico) */
+.modal-bg.fs{padding:0;align-items:stretch;justify-content:stretch}
+.fs-modal{background:var(--surface);width:100%;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.fs-modal__head{display:flex;align-items:flex-start;justify-content:space-between;padding:24px 32px;border-bottom:1px solid var(--line);
+  background:linear-gradient(135deg,rgba(192,57,43,.05),transparent)}
+.fs-eyebrow{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--risco-alto);display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.fs-eyebrow svg{width:15px;height:15px}
+.fs-modal__head h2{font-size:26px;letter-spacing:-.01em;margin-bottom:4px}
+.fs-modal__head p{font-size:13.5px;color:var(--ink-soft);font-weight:600}
+.fs-modal__body{padding:24px 32px;overflow-y:auto;flex:1}
+.fs-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.fs-kpi{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:16px 18px;border-left:4px solid var(--verde-sucuriu)}
+.fs-kpi.alto{border-left-color:var(--risco-alto)}
+.fs-kpi.ok{border-left-color:var(--verde-sucuriu)}
+.fs-kpi .l{font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);text-transform:uppercase;margin-bottom:6px}
+.fs-kpi .v{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.fs-endereco{display:flex;align-items:center;gap:10px;padding:14px 18px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;margin-bottom:18px;font-size:13.5px;font-weight:600;flex-wrap:wrap}
+.fs-endereco svg{width:18px;height:18px;color:var(--verde-sucuriu);flex-shrink:0}
+.fs-endereco span{flex:1;min-width:200px}
+.fs-tblwrap{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.fs-tbl-title{padding:14px 18px;font-size:12.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;color:var(--verde-sucuriu)}
+.fs-tbl-title svg{width:16px;height:16px;color:var(--verde-sucuriu)}
+.evt-table{table-layout:fixed;width:100%;font-size:11px}
+.evt-table th,.evt-table td{padding:7px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.evt-table .tag{margin-left:4px}
+@media(max-width:640px){.fs-modal__head,.fs-modal__body{padding:16px}.fs-modal__head h2{font-size:20px}}
+.loc-detail{display:flex;flex-direction:column;gap:12px}
+.loc-row{display:flex;gap:12px;padding:12px;border-radius:9px;background:var(--surface-2)}
+.loc-row__ic{width:32px;height:32px;border-radius:8px;background:rgba(114,128,70,.12);color:var(--verde-sucuriu);display:grid;place-items:center;flex-shrink:0}
+.loc-row__ic svg{width:17px;height:17px}
+.loc-row__txt{flex:1}
+.loc-row__txt .l{font-size:11px;color:var(--ink-soft);font-weight:700;text-transform:uppercase}
+.loc-row__txt .v{font-size:14px;font-weight:600}
+
+/* ===================== TABS (limites) ===================== */
+.limit-list{display:flex;flex-direction:column;gap:10px}
+.limit-row{display:flex;gap:10px;align-items:flex-end;padding:12px;border-radius:9px;background:var(--surface-2);border:1px solid var(--line)}
+.limit-row input,.limit-row select{flex:1}
+.row-actions{display:flex;gap:6px;flex-shrink:0}
+.icon-mini{
+  width:38px;height:38px;border-radius:9px;flex-shrink:0;
+  background:var(--surface);border:1px solid var(--line-strong);
+  display:inline-flex;align-items:center;justify-content:center;color:var(--ink-soft);
+  transition:all .15s ease;
+}
+.icon-mini svg{width:17px;height:17px;display:block}
+.icon-mini.del:hover{color:var(--risco-alto);border-color:var(--risco-alto);background:rgba(192,57,43,.06)}
+.icon-mini.edit:hover{color:var(--verde-sucuriu);border-color:var(--verde-sucuriu);background:rgba(114,128,70,.06)}
+
+/* ===================== CROSS-FILTER (estilo Power BI) ===================== */
+.xf-bar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:10px 14px;margin-bottom:16px;box-shadow:var(--shadow-sm);
+}
+.xf-bar__label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--verde-sucuriu);display:flex;align-items:center;gap:7px}
+.xf-bar__label svg{width:15px;height:15px}
+.xf-chip{
+  display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;
+  padding:5px 11px;border-radius:20px;background:rgba(114,128,70,.1);color:var(--verde-sucuriu);
+}
+.xf-chip .k{opacity:.7;font-weight:600;text-transform:uppercase;font-size:10px}
+.xf-chip button{width:15px;height:15px;display:grid;place-items:center;color:inherit;opacity:.7}
+.xf-chip button:hover{opacity:1}
+.xf-chip button svg{width:12px;height:12px}
+.xf-clear{margin-left:auto;font-size:12px;font-weight:700;color:var(--ink-soft)}
+.xf-clear:hover{color:var(--risco-alto)}
+.xf-hint{font-size:10.5px;color:var(--ink-soft);font-weight:600;font-style:italic;padding:0 18px 10px}
+.apexcharts-bar-area,.apexcharts-pie-area{cursor:pointer}
+
+/* ===================== RESPONSIVE ===================== */
+.menu-toggle{display:none}
+@media(max-width:1024px){
+  .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);box-shadow:var(--shadow-lg)}
+  .sidebar.open{transform:none}
+  .menu-toggle{display:grid}
+  .topbar__meta .meta-chip{display:none}
+}
+@media(max-width:640px){
+  .content{padding:16px}
+  .topbar{padding:0 14px}
+  .kpi__val{font-size:22px}
+  .search-inp input{width:140px}
+}
+
+.hidden{display:none!important}
+.muted{color:var(--ink-soft)}
+.center-empty{text-align:center;padding:40px;color:var(--ink-soft)}
+.center-empty svg{width:40px;height:40px;margin-bottom:12px;opacity:.5}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<div class="modal-bg" id="modalBg"></div>
+<script id="APP_DATA" type="application/json">{"files":[]}</script>
+
+<script>
+/* ============================================================
+   PAINEL DE GESTÃO DA TELEMETRIA LOGON — Projeto Sucuriú
+   Single-file. HTML + CSS + JS puro. ApexCharts + SheetJS.
+   ============================================================ */
+
+/* -------- Biblioteca de ícones (SVG inline, stroke) -------- */
+const IC = {
+  dash:'<path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>',
+  speed:'<path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 12l4-4"/>',
+  gauge:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/><path d="M4 6l1.5 1.5M20 6l-1.5 1.5"/>',
+  car:'<path d="M5 17h14M6 17l1.5-6h9L18 17M4 17v2m16-2v2M7 11l1-4h8l1 4"/><circle cx="7.5" cy="17" r="1.5"/><circle cx="16.5" cy="17" r="1.5"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>',
+  users:'<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-5 7-5"/><circle cx="17" cy="9" r="3"/><path d="M14 15c4 0 6 2 6 5"/>',
+  route:'<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8 19h6a3 3 0 003-3V8"/>',
+  alert:'<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
+  filter:'<path d="M3 5h18l-7 8v5l-4 2v-7z"/>',
+  pin:'<path d="M12 22s7-6 7-12a7 7 0 10-14 0c0 6 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  bulb:'<path d="M9 18h6M10 21h4M12 3a6 6 0 00-4 10c1 1 1 2 1 3h6c0-1 0-2 1-3a6 6 0 00-4-10z"/>',
+  clip:'<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 10h6M9 14h4"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
+  download:'<path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>',
+  moon:'<path d="M21 12.8A8 8 0 1111 3a6 6 0 0010 9.8z"/>',
+  refresh:'<path d="M4 12a8 8 0 0114-5l2 2M20 12a8 8 0 01-14 5l-2-2"/><path d="M18 5v4h-4M6 19v-4h4"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  trend:'<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>',
+  chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  map:'<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/>',
+  check:'<path d="M4 12l5 5L20 6"/>',
+  eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  hash:'<path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/>',
+  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/>',
+  chev:'<path d="M6 9l6 6 6-6"/>',
+  expand:'<path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/>',
+  layers:'<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>',
+  dots:'<circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>',
+  file:'<path d="M7 2h7l4 4v16H7z"/><path d="M14 2v4h4"/><path d="M10 13h5M10 16h5"/>'
+};
+function svg(name,cls){return `<svg class="${cls||''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${IC[name]||''}</svg>`;}
+
+/* -------- Estado global -------- */
+const S = {
+  files: [],            // {plate, name, rows:[...]}
+  rows: [],             // registros consolidados (todos os arquivos)
+  filtered: [],         // após filtros
+  limits: [],           // limites de velocidade por via {via, limite, tolSeg}
+  defaultLimit: null,   // limite geral (km/h) quando via não cadastrada
+  kmMonitors: [],       // {plate, limite} — monitoramento km/mês
+  kmEdit: null,         // índice em edição no cadastro de km
+  xf: {},               // cross-filter ativo {dimensão: valor}
+  filters: {ign:'ON'},  // ignição ON pré-selecionada
+  theme: 'light',
+  table: { sort:'data', dir:'desc', page:1, per:50, search:'' },
+  charts: {}
+};
+
+/* -------- Utilitários -------- */
+const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const fmt = n => (n==null||isNaN(n))?'—':Number(n).toLocaleString('pt-BR');
+const fmt1 = n => (n==null||isNaN(n))?'—':Number(n).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+function plateFromName(name){
+  // extrai padrão de placa Mercosul/antiga do nome do arquivo
+  const m = name.toUpperCase().match(/[A-Z]{3}[-\s]?\d[A-Z0-9]\d{2}/);
+  if(m) return m[0].replace(/[-\s]/,'');
+  const first = name.split(/[_\s]/)[0].toUpperCase();
+  return first || name;
+}
+function parseDate(v){
+  if(v instanceof Date) return v;
+  if(typeof v==='number'){ // serial excel (data "naive", sem fuso): reconstruir em horário local
+    const ms = Math.round((v-25569)*86400*1000);
+    const u = new Date(ms);
+    return new Date(u.getUTCFullYear(),u.getUTCMonth(),u.getUTCDate(),u.getUTCHours(),u.getUTCMinutes(),u.getUTCSeconds());
+  }
+  const s = String(v).trim();
+  const m = s.match(/(\d{2})\/(\d{2})\/(\d{4})[ ,]+(\d{2}):(\d{2}):(\d{2})/);
+  if(m) return new Date(+m[3],+m[2]-1,+m[1],+m[4],+m[5],+m[6]);
+  const d = new Date(s); return isNaN(d)?null:d;
+}
+function toNum(v){
+  if(v==null||v==='') return NaN;
+  if(typeof v==='number') return v;
+  const s=String(v).replace(/[^\d,.-]/g,'').replace(/\.(?=\d{3}\b)/g,'').replace(',','.');
+  return parseFloat(s);
+}
+function extractVia(endereco){
+  if(!endereco) return null;
+  const s = String(endereco).toUpperCase();
+  const m = s.match(/\b(MS|BR|SP|GO)[-\s]?(\d{3})\b/);
+  if(m) return `${m[1]}-${m[2]}`;
+  return null;
+}
+function pad(n){return String(n).padStart(2,'0');}
+function fmtDateTime(d){ if(!d)return'—'; return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;}
+function fmtTime(d){ if(!d)return'—'; return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;}
+function fmtDateOnly(d){ if(!d)return'—'; return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;}
+function mesAno(d){ if(!d)return'—'; const M=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']; return `${M[d.getMonth()]}/${d.getFullYear()}`;}
+function toast(msg){
+  let t=$('#toast'); if(!t){t=document.createElement('div');t.id='toast';
+    t.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:11px 20px;border-radius:10px;font-weight:700;font-size:13px;z-index:200;box-shadow:var(--shadow-lg);transition:opacity .3s';
+    document.body.appendChild(t);}
+  t.textContent=msg; t.style.opacity='1'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.opacity='0',2600);
+}
+
+/* ============================================================
+   INGESTÃO DE ARQUIVOS XLSX
+   ============================================================ */
+const COLMAP = {
+  data:['data'], motorista:['motorista','condutor'], ign:['ign.','ign','ignicao','ignição'],
+  vel:['vel.','vel','velocidade'], odom:['odom.','odom','odometro','odômetro','hodometro'],
+  lat:['latitude','lat'], lon:['longitude','lon','lng'], endereco:['endereço','endereco','local'],
+  origem:['origem'], rotulo:['rótulo','rotulo']
+};
+function findCol(headers, keys){
+  const H = headers.map(h=>String(h||'').trim().toLowerCase());
+  for(const k of keys){ const i=H.indexOf(k); if(i>=0) return i; }
+  for(const k of keys){ const i=H.findIndex(h=>h.includes(k)); if(i>=0) return i; }
+  return -1;
+}
+async function ingestFile(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf,{type:'array',cellDates:true});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+  // localizar linha de cabeçalho (a que contém "Data" e "Motorista"/"Vel")
+  let hIdx = 0;
+  for(let i=0;i<Math.min(aoa.length,15);i++){
+    const row = aoa[i].map(c=>String(c||'').toLowerCase());
+    if(row.includes('data') && (row.some(c=>c.includes('vel'))||row.includes('motorista'))){ hIdx=i; break; }
+  }
+  const headers = aoa[hIdx]||[];
+  const col = {};
+  for(const k in COLMAP) col[k]=findCol(headers,COLMAP[k]);
+  const plate = plateFromName(file.name);
+  const rows = [];
+  for(let i=hIdx+1;i<aoa.length;i++){
+    const r = aoa[i]; if(!r) continue;
+    const d = parseDate(r[col.data]);
+    if(!d || isNaN(d)) continue; // pula rodapés/linhas inválidas
+    rows.push({
+      plate,
+      data:d,
+      ts:d.getTime(),
+      motorista: (r[col.motorista]!=null && String(r[col.motorista]).trim()) ? String(r[col.motorista]).trim() : 'Não informado',
+      ign: String(r[col.ign]||'').trim().toUpperCase(),
+      vel: toNum(r[col.vel]),
+      odom: toNum(r[col.odom]),
+      lat: toNum(r[col.lat]),
+      lon: toNum(r[col.lon]),
+      endereco: r[col.endereco]!=null ? String(r[col.endereco]).trim() : '',
+      via: extractVia(r[col.endereco])
+    });
+  }
+  return { plate, name:file.name, rows };
+}
+
+/* Consolida todos os arquivos em S.rows */
+function rebuildDataset(){
+  S.rows = [];
+  S.files.forEach(f=>{ f.rows.forEach(r=>S.rows.push(r)); });
+  S.rows.sort((a,b)=>a.ts-b.ts);
+  // deriva limite e tolerância aplicáveis a cada registro
+  // Map de limites: O(1) por registro (o find linear degradava em bases grandes).
+  // Semântica preservada: via cadastrada SEM limite retorna null (não cai no padrão).
+  const lmap=new Map();
+  S.limits.forEach(l=>{ if(l.via){ const k=l.via.toUpperCase(); if(!lmap.has(k)) lmap.set(k,l); } }); // primeira via duplicada vence, como no find() original
+  S.rows.forEach(r=>{
+    const L=r.via?lmap.get(r.via.toUpperCase()):undefined;
+    r.limite = L!==undefined ? L.limite : S.defaultLimit;
+    r.tolSeg = (L&&L.tolSeg!=null) ? L.tolSeg : 5;
+  });
+  // gap (s) até o próximo registro da mesma placa e se ele também está acima do limite
+  const nextByPlate = {};
+  for(let i=S.rows.length-1;i>=0;i--){
+    const r=S.rows[i], nx=nextByPlate[r.plate];
+    r.gapNext = nx ? (nx.ts-r.ts)/1000 : null;
+    r.nextOver = nx ? (nx.limite!=null && nx.ign==='ON' && nx.vel>0 && nx.vel>nx.limite) : false;
+    nextByPlate[r.plate]=r;
+  }
+}
+
+/* Critério ÚNICO de violação (usado em KPIs, tabelas, insights e exports):
+   registro em movimento acima do limite da via, desconsiderando excursões
+   comprovadamente mais curtas que a tolerância (o ponto seguinte da mesma
+   placa, dentro da janela de tolerância, já voltou ao limite). Com telemetria
+   de granularidade em minutos o comportamento é idêntico ao anterior. */
+function isViol(r){
+  if(!(r.ign==='ON' && r.vel>0 && r.limite!=null && r.vel>r.limite)) return false;
+  const tol = r.tolSeg??5;
+  if(r.gapNext==null) return true;      // último ponto da placa: não há como descartar
+  if(r.gapNext>=tol) return true;       // excursão durou pelo menos a tolerância
+  return !!r.nextOver;                  // ponto seguinte (antes da tolerância) segue acima
+}
+
+/* ============================================================
+   MOTOR DE FILTROS
+   ============================================================ */
+function applyFilters(){
+  const f = S.filters;
+  const ign = f.ign===undefined ? 'ON' : f.ign; // default ON
+  S.filtered = S.rows.filter(r=>{
+    if(f.dataIni && r.ts < f.dataIni) return false;
+    if(f.dataFim && r.ts > f.dataFim) return false;
+    if(f.horaIni!=null || f.horaFim!=null){
+      const sec = r.data.getHours()*3600+r.data.getMinutes()*60+r.data.getSeconds();
+      if(f.horaIni!=null && sec < f.horaIni) return false;
+      if(f.horaFim!=null && sec > f.horaFim) return false;
+    }
+    if(ign && r.ign!==ign) return false;
+    if(f.plates && f.plates.length && !f.plates.includes(r.plate)) return false;
+    if(f.drivers && f.drivers.length && !f.drivers.includes(r.motorista)) return false;
+    if(f.velMin!=null && !(r.vel>=f.velMin)) return false;
+    if(f.velMax!=null && !(r.vel<=f.velMax)) return false;
+    if(f.vias && f.vias.length && !f.vias.includes(r.via)) return false;
+    // ---- cross-filter (estilo Power BI): dimensões selecionadas em gráficos ----
+    if(!matchesXF(r)) return false;
+    return true;
+  });
+}
+
+/* ============================================================
+   CROSS-FILTER — dimensões clicáveis (estilo Power BI)
+   S.xf = { dimKey: valor, ... } — múltiplas dimensões combináveis
+   ============================================================ */
+function xfValue(r, dim){
+  switch(dim){
+    case 'condutor': return r.motorista;
+    case 'via': return r.via||'Vias urbanas / outras';
+    case 'faixa': return faixaDe(r.vel);
+    case 'dia': return fmtDateOnly(r.data);
+    case 'hora': return r.data.getHours()+'h';
+    case 'mesano': return mesAno(r.data);
+    case 'placa': return r.plate;
+    default: return null;
+  }
+}
+function matchesXF(r){
+  const xf = S.xf||{};
+  for(const dim in xf){
+    if(xf[dim]==null) continue;
+    if(xfValue(r,dim)!==xf[dim]) return false;
+  }
+  return true;
+}
+function faixaDe(v){
+  if(v==null||isNaN(v))return null;
+  if(v<=40)return'0–40'; if(v<=60)return'41–60'; if(v<=80)return'61–80';
+  if(v<=100)return'81–100'; if(v<=120)return'101–120'; return'>120';
+}
+function setXF(dim,val){
+  S.xf = S.xf||{};
+  if(S.xf[dim]===val) delete S.xf[dim]; // clicar de novo remove
+  else S.xf[dim]=val;
+  applyFilters();
+  renderView();
+}
+function clearXF(dim){ if(S.xf){ if(dim) delete S.xf[dim]; else S.xf={}; } applyFilters(); renderView(); }
+function xfLabel(dim){
+  return {condutor:'Condutor',via:'Via',faixa:'Faixa de vel.',dia:'Dia',hora:'Hora',mesano:'Mês/Ano',placa:'Placa'}[dim]||dim;
+}
+function xfBar(){
+  const xf=S.xf||{}; const keys=Object.keys(xf).filter(k=>xf[k]!=null);
+  if(!keys.length) return '';
+  return `<div class="xf-bar">
+    <span class="xf-bar__label">${svg('layers')} Filtros ativos por seleção</span>
+    ${keys.map(k=>`<span class="xf-chip"><span class="k">${xfLabel(k)}:</span> ${xf[k]}
+      <button data-xfdel="${k}" title="Remover">${svg('x')}</button></span>`).join('')}
+    <button class="xf-clear" id="xfClearAll">Limpar seleções</button>
+  </div>`;
+}
+function bindXFBar(){
+  $$('[data-xfdel]').forEach(b=>b.onclick=()=>clearXF(b.dataset.xfdel));
+  $('#xfClearAll') && ($('#xfClearAll').onclick=()=>clearXF());
+}
+
+/* Subconjunto "em movimento" para análises de velocidade */
+function moving(rows){ return rows.filter(r=>r.ign==='ON' && r.vel>0); }
+
+/* Detecta violações: critério único com tolerância (ver isViol) */
+function violations(rows){
+  return rows.filter(isViol); // isViol já exige Ign. ON e Vel. > 0
+}
+
+/* KM rodado por placa no conjunto (odom max - min) */
+function kmByPlate(rows){
+  const map = {};
+  rows.forEach(r=>{
+    if(isNaN(r.odom)) return;
+    if(!map[r.plate]) map[r.plate]={min:r.odom,max:r.odom,driver:{}};
+    map[r.plate].min=Math.min(map[r.plate].min,r.odom);
+    map[r.plate].max=Math.max(map[r.plate].max,r.odom);
+    if(r.ign==='ON'&&r.vel>0) map[r.plate].driver[r.motorista]=(map[r.plate].driver[r.motorista]||0)+1;
+  });
+  const out={};
+  for(const p in map){
+    const topDriver = Object.entries(map[p].driver).sort((a,b)=>b[1]-a[1])[0];
+    out[p]={ km: map[p].max-map[p].min, driver: topDriver?topDriver[0]:'Não informado' };
+  }
+  return out;
+}
+
+/* ============================================================
+   RENDER — SHELL
+   ============================================================ */
+const NAV = [
+  {id:'visao',   label:'Visão Geral',      ic:'dash'},
+  {id:'veloc',   label:'Velocidade',       ic:'gauge'},
+  {id:'intel',   label:'Leitura Inteligente', ic:'bulb'},
+  {id:'km',      label:'Monitor de KM',    ic:'route'},
+  {id:'registros',label:'Registros',       ic:'clip'},
+  {id:'config',  label:'Limites & Config', ic:'target'}
+];
+let VIEW = 'visao';
+
+function renderShell(){
+  const app = $('#app');
+  app.innerHTML = `
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar__brand">
+      <div class="brand-logo">
+        <div class="brand-txt"><strong>Telemetria Logon</strong><span>Arauco · Projeto Sucuriú</span></div>
+      </div>
+    </div>
+    <nav class="sidebar__nav">
+      <div class="nav-label">Módulos</div>
+      ${NAV.map(n=>`<button class="nav-item ${n.id===VIEW?'active':''}" data-nav="${n.id}">
+        <span class="nav-ic">${svg(n.ic)}</span>${n.label}</button>`).join('')}
+    </nav>
+    <div class="sidebar__foot">
+      <button class="nav-item" id="reloadBtn"><span class="nav-ic">${svg('refresh')}</span>Recarregar dados</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn menu-toggle" id="menuToggle">${svg('menu')}</button>
+      <div class="topbar__title">
+        <h1 id="viewTitle">Visão Geral</h1>
+        <p id="viewSub">Gestão da condução veicular · Logon</p>
+      </div>
+      <div class="topbar__meta">
+        <div class="meta-chip"><span class="k">Período</span><span class="v" id="metaPeriodo">—</span></div>
+        <div class="meta-chip"><span class="k">Veículos</span><span class="v" id="metaVeic">0</span></div>
+        <span class="status-dot"><i></i><span id="statusTxt">Operacional</span></span>
+        <div id="exportWrap">
+          <button class="icon-btn" id="exportMenuBtn" title="Exportar esta aba">${svg('dots')}</button>
+          <div class="export-menu hidden" id="exportMenu">
+            <div class="em-head">Exportar aba atual</div>
+            <button data-export="pdf">${svg('file')} PDF <small>gráficos e tabelas em documento</small></button>
+            <button data-export="ppt">${svg('file')} PowerPoint <small>um slide por gráfico e tabela</small></button>
+            <button data-export="xlsx">${svg('file')} Excel <small>dados e tabelas em planilha</small></button>
+            <div class="em-sep"></div>
+            <button data-export="json">${svg('copy')} Backup JSON <small>dados, limites e cadastros; suba de volta no painel para restaurar tudo</small></button>
+            <button data-export="all">${svg('layers')} Painel completo <small>todos os gráficos e tabelas do painel em um PDF</small></button>
+          </div>
+        </div>
+        <button class="icon-btn" id="themeBtn" title="Tema">${svg('moon')}</button>
+      </div>
+    </header>
+    <div class="content" id="content"></div>
+  </div>`;
+
+  // nav bindings
+  $$('.nav-item[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav));
+  $('#menuToggle').onclick=()=>$('#sidebar').classList.toggle('open');
+  $('#themeBtn').onclick=toggleTheme;
+  $('#reloadBtn').onclick=()=>openUploadModal();
+  bindExportMenu();
+  bindOutsideClose();
+  updateTopMeta();
+  renderView();
+}
+
+function go(id){
+  VIEW=id;
+  $$('.nav-item[data-nav]').forEach(b=>b.classList.toggle('active',b.dataset.nav===id));
+  $('#sidebar')?.classList.remove('open');
+  const titles={visao:['Visão Geral','Gestão da condução veicular · Logon'],
+    veloc:['Análise de Velocidade','Distribuição, picos e comportamento por condutor'],
+    intel:['Leitura Inteligente do Cenário Operacional','Insights automáticos e evidências de violação'],
+    km:['Monitor de KM Mensal','Controle de quilometragem por veículo cadastrado'],
+    registros:['Registros de Telemetria','Base detalhada com filtros e rastreabilidade'],
+    config:['Limites & Configuração','Cadastro de limites de velocidade e monitoramento de KM']};
+  $('#viewTitle').textContent=titles[id][0];
+  $('#viewSub').textContent=titles[id][1];
+  renderView();
+}
+
+function updateTopMeta(){
+  const veic = new Set(S.rows.map(r=>r.plate)).size;
+  $('#metaVeic') && ($('#metaVeic').textContent=veic);
+  if(S.rows.length){
+    const min=S.rows[0].data, max=S.rows[S.rows.length-1].data;
+    $('#metaPeriodo') && ($('#metaPeriodo').textContent=`${fmtDateOnly(min)} – ${fmtDateOnly(max)}`);
+  } else {
+    $('#metaPeriodo') && ($('#metaPeriodo').textContent='—');
+  }
+}
+
+function toggleTheme(){
+  S.theme = S.theme==='light'?'dark':'light';
+  document.documentElement.setAttribute('data-theme',S.theme);
+  $('#themeBtn').innerHTML=svg(S.theme==='light'?'moon':'sun');
+  // re-render charts para trocar cores
+  if(S.rows.length) renderView();
+}
+
+/* Roteia a view atual */
+function renderView(){
+  const c = $('#content');
+  if(!S.rows.length){ c.innerHTML=emptyState(); bindUpload(); return; }
+  if(VIEW==='visao') renderVisao(c);
+  else if(VIEW==='veloc') renderVeloc(c);
+  else if(VIEW==='intel') renderIntel(c);
+  else if(VIEW==='km') renderKm(c);
+  else if(VIEW==='registros') renderRegistros(c);
+  else if(VIEW==='config') renderConfig(c);
+}
+
+/* ============================================================
+   ESTADO VAZIO + UPLOAD
+   ============================================================ */
+function emptyState(){
+  return `
+  <div class="dropzone" id="dropzone">
+    <div class="dropzone__ic">${svg('download')}</div>
+    <h3>Suba os relatórios de telemetria</h3>
+    <p>Arraste um ou vários arquivos <b>.xlsx</b> no padrão do relatório de posição do veículo, ou um <b>backup .json</b> gerado pelo próprio painel (restaura dados, limites e cadastros). A <b>placa é lida do nome do arquivo</b> (ex.: <code>UEL9G71_Posição...</code>).</p>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.json" multiple hidden>
+    <button class="btn" id="pickBtn">${svg('plus')} Selecionar arquivos</button>
+    ${S.files.length?`<div class="file-strip">${S.files.map((f,i)=>fileChip(f,i)).join('')}</div>`:''}
+  </div>`;
+}
+function fileChip(f,i){
+  return `<span class="file-chip">${svg('car')}<span class="plate">${esc(f.plate)}</span>· ${fmt(f.rows.length)} reg.
+    <button data-rmfile="${i}" title="Remover">${svg('x')}</button></span>`;
+}
+function bindUpload(){
+  const dz=$('#dropzone'), inp=$('#fileInput'), pick=$('#pickBtn');
+  if(!dz) return;
+  pick && (pick.onclick=()=>inp.click());
+  inp && (inp.onchange=e=>handleFiles([...e.target.files]));
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag');}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag');}));
+  dz.addEventListener('drop',e=>handleFiles([...e.dataTransfer.files]));
+  $$('[data-rmfile]').forEach(b=>b.onclick=()=>{ S.files.splice(+b.dataset.rmfile,1); rebuildDataset(); persist(); renderView(); updateTopMeta(); });
+}
+async function handleFiles(fileList){
+  const xlsx = fileList.filter(f=>/\.xls[xm]?$/i.test(f.name));
+  const jsons = fileList.filter(f=>/\.json$/i.test(f.name));
+  if(!xlsx.length && !jsons.length){ toast('Selecione arquivos .xlsx ou um backup .json'); return; }
+  // backup JSON restaura o estado completo (dados + limites + cadastros)
+  for(const jf of jsons){
+    try{
+      const obj=JSON.parse(await jf.text());
+      importJson(obj);
+      toast('Backup restaurado: '+jf.name);
+    }catch(err){ console.error(err); toast('JSON inválido: '+jf.name); }
+  }
+  if(xlsx.length) toast('Processando '+xlsx.length+' arquivo(s)...');
+  for(const file of xlsx){
+    try{
+      const parsed = await ingestFile(file);
+      if(!parsed.rows.length){ toast('Sem registros válidos em '+file.name); continue; }
+      // substitui se já existe mesma placa+nome
+      const idx = S.files.findIndex(f=>f.name===parsed.name);
+      if(idx>=0) S.files[idx]=parsed; else S.files.push(parsed);
+    }catch(err){ console.error(err); toast('Erro ao ler '+file.name); }
+  }
+  rebuildDataset(); autoRegisterVias(); persist();
+  updateTopMeta();
+  if(S.rows.length){ go('visao'); toast(fmt(S.rows.length)+' registros carregados'); }
+  else renderView();
+}
+/* pré-registra vias detectadas para o usuário definir limites */
+function autoRegisterVias(){
+  const vias = [...new Set(S.rows.map(r=>r.via).filter(Boolean))];
+  vias.forEach(v=>{ if(!S.limits.find(l=>l.via===v)) S.limits.push({via:v,limite:null,tolSeg:5}); });
+}
+
+function openUploadModal(){
+  const html=`
+    <div class="modal">
+      <div class="modal__head"><h3>Gerenciar arquivos</h3><button class="icon-btn" data-close>${svg('x')}</button></div>
+      <div class="modal__body">
+        <input type="file" id="mFileInput" accept=".xlsx,.xls,.json" multiple hidden>
+        <button class="btn" id="mPick">${svg('plus')} Adicionar arquivos</button>
+        <div class="file-strip" style="justify-content:flex-start;margin-top:16px">
+          ${S.files.length?S.files.map((f,i)=>fileChip(f,i)).join(''):'<span class="muted">Nenhum arquivo carregado.</span>'}
+        </div>
+      </div>
+      <div class="modal__foot"><button class="btn btn--ghost" data-close>Fechar</button></div>
+    </div>`;
+  openModal(html);
+  $('#mPick').onclick=()=>$('#mFileInput').click();
+  $('#mFileInput').onchange=e=>{ handleFiles([...e.target.files]).then(()=>closeModal()); };
+  $$('[data-rmfile]').forEach(b=>b.onclick=()=>{ S.files.splice(+b.dataset.rmfile,1); rebuildDataset(); persist(); closeModal(); renderView(); updateTopMeta(); });
+}
+
+/* ============================================================
+   BARRA DE FILTROS COMPARTILHADA
+   ============================================================ */
+function filterBar(){
+  const plates=[...new Set(S.rows.map(r=>r.plate))].sort();
+  const drivers=[...new Set(S.rows.map(r=>r.motorista))].sort();
+  const vias=[...new Set(S.rows.map(r=>r.via).filter(Boolean))].sort();
+  const f=S.filters;
+  const dmin=S.rows[0]?.data, dmax=S.rows[S.rows.length-1]?.data;
+  const di=f._dataIni||(dmin?isoLocal(dmin):'');
+  const df=f._dataFim||(dmax?isoLocal(dmax):'');
+  // ignição: default ON se ainda não definido
+  const ign = f.ign===undefined ? 'ON' : f.ign;
+  const periodLabel = (f._dataIni||f._dataFim)
+    ? `${f._dataIni?fmtBR(f._dataIni):'…'} até ${f._dataFim?fmtBR(f._dataFim):'…'}`
+    : 'Todo o período';
+  return `
+  <div class="filterbar">
+    <div class="filterbar__head">
+      <h3>${svg('filter')} FILTROS DA ANÁLISE</h3>
+      <span class="applied-count" id="fCount"></span>
+    </div>
+    <div class="filter-grid">
+      <div class="field field-wrap"><label>Período</label>
+        <button type="button" class="period-btn" id="periodBtn">
+          ${svg('calendar')}<span class="pv" id="periodLabel">${periodLabel}</span>${svg('chev')}
+        </button>
+        <div class="period-pop hidden" id="periodPop">
+          <div class="pp-row">
+            <div class="field"><label>De</label><input type="date" id="fDataIni" value="${di}"></div>
+            <div class="field"><label>Até</label><input type="date" id="fDataFim" value="${df}"></div>
+          </div>
+          <div class="pp-foot">
+            <span class="pp-hint">O filtro aplica assim que você escolhe as datas.</span>
+            <button class="btn btn--ghost btn--sm" id="periodReset">Limpar</button>
+          </div>
+        </div>
+      </div>
+      <div class="field"><label>Hora início</label><input type="time" step="1" id="fHoraIni" value="${f._horaIni||''}"></div>
+      <div class="field"><label>Hora fim</label><input type="time" step="1" id="fHoraFim" value="${f._horaFim||''}"></div>
+      ${msControl('ign','Ignição',[{value:'ON',label:'Ligada (ON)'},{value:'OFF',label:'Desligada (OFF)'}], ign===''?['ON','OFF']:[ign])}
+      ${msControl('plates','Placa(s)',plates.map(p=>({value:p,label:p})),f.plates||[])}
+      ${msControl('drivers','Condutor(es)',drivers.map(d=>({value:d,label:d})),f.drivers||[])}
+      ${msControl('vias','Rodovia / Via',vias.map(v=>({value:v,label:v})),f.vias||[])}
+      <div class="field-row" style="grid-column:span 1">
+        <div class="field"><label>Vel. &ge; (km/h)</label><input type="number" id="fVelMin" placeholder="0" value="${f._velMin??''}"></div>
+        <div class="field"><label>Vel. &le; (km/h)</label><input type="number" id="fVelMax" placeholder="—" value="${f._velMax??''}"></div>
+      </div>
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn--sm" id="fApply">${svg('check')} Aplicar filtros</button>
+      <button class="btn btn--ghost btn--sm" id="fClear">Limpar tudo</button>
+    </div>
+  </div>`;
+}
+function fmtBR(iso){ if(!iso)return''; const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`; }
+/* data em ISO local (yyyy-mm-dd) sem conversão para UTC */
+function isoLocal(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+
+/* Componente de filtro multi-seleção padronizado: Todos / Limpar / Buscar / caixas */
+function msControl(key,label,items,selected){
+  const sel=new Set(selected||[]);
+  return `<div class="field ms" data-ms="${key}">
+    <label>${label}</label>
+    <button type="button" class="ms-btn"><span class="ms-summary">Todos</span>${svg('chev')}</button>
+    <div class="ms-pop hidden">
+      <div class="ms-actions"><button type="button" data-msall>Todos</button><button type="button" data-msclear>Limpar</button></div>
+      <div class="ms-search">${svg('search')}<input type="text" placeholder="Buscar..."></div>
+      <div class="ms-list">
+        ${items.length?items.map(it=>`<label><input type="checkbox" value="${esc(it.value)}" ${sel.has(it.value)?'checked':''}><span>${esc(it.label)}</span></label>`).join(''):'<div class="ms-empty">Sem opções.</div>'}
+      </div>
+    </div>
+  </div>`;
+}
+function msSelected(key){ return $$(`.ms[data-ms="${key}"] .ms-list input:checked`).map(i=>i.value); }
+function updateMsSummary(ms){
+  const sum=ms.querySelector('.ms-summary'); if(!sum) return;
+  const checked=[...ms.querySelectorAll('.ms-list input:checked')];
+  const total=ms.querySelectorAll('.ms-list input').length;
+  if(checked.length===0||checked.length===total) sum.textContent='Todos';
+  else if(checked.length===1) sum.textContent=checked[0].parentElement.querySelector('span').textContent;
+  else sum.textContent=checked.length+' selecionados';
+}
+function bindMultiselects(){
+  $$('.ms').forEach(ms=>{
+    const btn=ms.querySelector('.ms-btn');
+    const pop=ms.querySelector('.ms-pop');
+    const list=ms.querySelector('.ms-list');
+    btn.onclick=e=>{ e.stopPropagation(); const willOpen=pop.classList.contains('hidden'); closeAllPops(); if(willOpen) pop.classList.remove('hidden'); };
+    const all=ms.querySelector('[data-msall]'), clr=ms.querySelector('[data-msclear]');
+    if(all) all.onclick=e=>{ e.preventDefault(); list.querySelectorAll('input').forEach(cb=>{ if(cb.parentElement.style.display!=='none') cb.checked=true; }); updateMsSummary(ms); };
+    if(clr) clr.onclick=e=>{ e.preventDefault(); list.querySelectorAll('input').forEach(cb=>cb.checked=false); updateMsSummary(ms); };
+    const search=ms.querySelector('.ms-search input');
+    if(search) search.oninput=()=>{ const q=search.value.toLowerCase(); list.querySelectorAll('label').forEach(l=>{ l.style.display=l.textContent.toLowerCase().includes(q)?'':'none'; }); };
+    list.querySelectorAll('input').forEach(cb=>cb.addEventListener('change',()=>{ updateMsSummary(ms); }));
+    updateMsSummary(ms);
+  });
+}
+function closeAllPops(){ $$('.ms-pop,.period-pop').forEach(p=>p.classList.add('hidden')); S._periodOpen=false; }
+function bindOutsideClose(){
+  if(window.__popOutside) return; window.__popOutside=true;
+  document.addEventListener('click',ev=>{
+    $$('.period-pop:not(.hidden)').forEach(p=>{ const w=p.closest('.field-wrap'); if(w&&!w.contains(ev.target)){ p.classList.add('hidden'); S._periodOpen=false; } });
+    $$('.ms-pop:not(.hidden)').forEach(p=>{ const w=p.closest('.ms'); if(w&&!w.contains(ev.target)) p.classList.add('hidden'); });
+    const em=$('#exportMenu'); if(em&&!em.classList.contains('hidden')){ const w=$('#exportWrap'); if(w&&!w.contains(ev.target)) em.classList.add('hidden'); }
+  });
+}
+
+function bindFilterBar(afterApply){
+  const g=id=>$('#'+id);
+  bindMultiselects();
+  const apply=()=>{
+    const f=S.filters;
+    f._dataIni=g('fDataIni').value; f._dataFim=g('fDataFim').value;
+    f._horaIni=g('fHoraIni').value; f._horaFim=g('fHoraFim').value;
+    f.dataIni = f._dataIni?new Date(f._dataIni+'T00:00:00').getTime():null;
+    f.dataFim = f._dataFim?new Date(f._dataFim+'T23:59:59').getTime():null;
+    f.horaIni = f._horaIni?horaToSec(f._horaIni):null;
+    f.horaFim = f._horaFim?horaToSec(f._horaFim):null;
+    f.plates = msSelected('plates'); f.drivers = msSelected('drivers');
+    f.vias = msSelected('vias');
+    // Ignição em checkbox: 1 marcada filtra por ela; 0 ou 2 marcadas significam ambas.
+    const ignSel = msSelected('ign'); f.ign = ignSel.length===1 ? ignSel[0] : '';
+    f._velMin=g('fVelMin').value; f._velMax=g('fVelMax').value;
+    f.velMin = f._velMin!==''?+f._velMin:null; f.velMax = f._velMax!==''?+f._velMax:null;
+    applyFilters(); afterApply&&afterApply();
+  };
+  // popover período: sem botão aplicar, a escolha das datas aplica sozinha
+  const pop=g('periodPop'), pbtn=g('periodBtn');
+  if(pbtn){
+    pbtn.onclick=e=>{ e.stopPropagation(); const willOpen=pop.classList.contains('hidden'); closeAllPops(); if(willOpen){ pop.classList.remove('hidden'); S._periodOpen=true; } };
+    g('fDataIni').addEventListener('change',apply);
+    g('fDataFim').addEventListener('change',apply);
+    g('periodReset').onclick=()=>{ g('fDataIni').value=''; g('fDataFim').value=''; apply(); };
+  }
+  g('fApply').onclick=apply;
+  g('fClear').onclick=()=>{ S.filters={ign:'ON'}; S.xf={}; S._periodOpen=false; applyFilters(); renderView(); };
+  // reabre o popover de período se ele estava aberto antes do re-render disparado pelo apply
+  if(S._periodOpen && pop) pop.classList.remove('hidden');
+}
+function horaToSec(hhmmss){
+  const p=hhmmss.split(':').map(Number);
+  return (p[0]||0)*3600+(p[1]||0)*60+(p[2]||0);
+}
+function fcountTxt(){
+  return `${fmt(S.filtered.length)} de ${fmt(S.rows.length)} registros`;
+}
+
+/* ============================================================
+   HELPERS DE GRÁFICO (ApexCharts + paleta Arauco)
+   ============================================================ */
+const PALETTE = ['#728046','#EA7600','#BFB800','#F3D01C','#696158','#F4BA80','#DFD1A7','#DFDB80'];
+function chartTheme(){
+  const dark = S.theme==='dark';
+  return {
+    ink: dark?'#ECEDE4':'#2B2A26',
+    soft: dark?'#A9AB9E':'#5E5B52',
+    grid: dark?'#3A3D34':'#E4E5DC',
+    mode: dark?'dark':'light'
+  };
+}
+function mkChart(el, opt, xfDim, xfCats){
+  const t=chartTheme();
+  const dark=S.theme==='dark';
+  const base={
+    chart:{
+      fontFamily:'inherit',foreColor:t.soft,background:'transparent',
+      toolbar:{show:false},
+      animations:{easing:'easeinout',speed:450},
+      events:{}
+    },
+    theme:{mode:t.mode},
+    colors:PALETTE,
+    grid:{show:false,padding:{left:6,right:6,top:0,bottom:0}},
+    dataLabels:{
+      enabled:true,
+      style:{fontSize:'12px',fontWeight:800,colors:[dark?'#ECEDE4':'#2B2A26']},
+      background:{enabled:false},
+      dropShadow:{enabled:false}
+    },
+    xaxis:{axisBorder:{show:false},axisTicks:{show:false},labels:{style:{colors:t.soft,fontSize:'11px'}}},
+    yaxis:{show:false,labels:{show:false}},
+    legend:{labels:{colors:t.soft},fontSize:'12px'},
+    tooltip:{theme:t.mode}
+  };
+  // cross-filter: liga clique no ponto à dimensão
+  if(xfDim && xfCats){
+    base.chart.events.dataPointSelection = function(ev,ctx,cfg){
+      const i=cfg.dataPointIndex;
+      const val = xfCats[i];
+      if(val!=null) setXF(xfDim, val);
+    };
+    base.states={active:{filter:{type:'darken',value:.75}}};
+  }
+  const merged=deepMerge(base,opt);
+  const ch=new ApexCharts(el,merged); ch.render(); return ch;
+}
+function deepMerge(a,b){
+  const out={...a};
+  for(const k in b){
+    if(b[k]&&typeof b[k]==='object'&&!Array.isArray(b[k])) out[k]=deepMerge(a[k]||{},b[k]);
+    else out[k]=b[k];
+  } return out;
+}
+
+/* ============================================================
+   ORDENAÇÃO GENÉRICA DE TABELAS — clique no cabeçalho alterna
+   crescente/decrescente (números, datas via data-sv; texto A–Z/Z–A pt-BR)
+   ============================================================ */
+function makeSortable(tbl, skipCols){
+  if(!tbl) return;
+  const skip=new Set(skipCols||[]);
+  const ths=[...tbl.querySelectorAll('thead th')];
+  ths.forEach((th,ci)=>{
+    if(skip.has(ci)) return;
+    th.classList.add('th-sort');
+    th.title='Clique para ordenar';
+    let ar=th.querySelector('.sort-ar');
+    if(!ar){ ar=document.createElement('span'); ar.className='sort-ar'; ar.textContent='▼'; ar.style.color='var(--line-strong)'; th.appendChild(ar); }
+    th.addEventListener('click',()=>{
+      const dir = th.dataset.dir==='asc'?'desc':'asc';
+      ths.forEach(o=>{ delete o.dataset.dir; const a=o.querySelector('.sort-ar'); if(a){ a.textContent='▼'; a.style.color='var(--line-strong)'; } });
+      th.dataset.dir=dir; ar.textContent=dir==='asc'?'▲':'▼'; ar.style.color='var(--verde-sucuriu)';
+      const tb=tbl.querySelector('tbody');
+      const rows=[...tb.querySelectorAll(':scope > tr')].filter(r=>r.children.length>1); // ignora a linha de estado vazio
+      const val=tr=>{
+        const td=tr.children[ci]; if(!td) return '';
+        if(td.dataset.sv!==undefined) return +td.dataset.sv; // valor bruto p/ números, datas e durações
+        return td.textContent.trim();
+      };
+      rows.sort((a,b)=>{
+        let x=val(a), y=val(b);
+        if(typeof x==='number' && typeof y==='number') return dir==='asc'? x-y : y-x;
+        x=String(x).toLowerCase(); y=String(y).toLowerCase();
+        return dir==='asc'? x.localeCompare(y,'pt-BR') : y.localeCompare(x,'pt-BR');
+      });
+      rows.forEach(r=>tb.appendChild(r));
+    });
+  });
+}
+
+/* ============================================================
+   MODAL
+   ============================================================ */
+function openModal(html){
+  const bg=$('#modalBg'); bg.innerHTML=html; bg.classList.add('open');
+  $$('[data-close]',bg).forEach(b=>b.onclick=closeModal);
+  bg.onclick=e=>{ if(e.target===bg) closeModal(); };
+}
+function closeModal(){ const bg=$('#modalBg'); bg.classList.remove('open'); bg.innerHTML=''; }
+
+/* ============================================================
+   VIEW: VISÃO GERAL
+   ============================================================ */
+function renderVisao(c){
+  applyFilters();
+  const data=S.filtered, mov=moving(data), viol=violations(data);
+  const veic=new Set(data.map(r=>r.plate)).size;
+  const cond=new Set(mov.map(r=>r.motorista)).size;
+  const velMed = mov.length? mov.reduce((s,r)=>s+r.vel,0)/mov.length : 0;
+  const peakRow = mov.length? mov.reduce((m,r)=>r.vel>m.vel?r:m,mov[0]) : null;
+  const velMax = peakRow? peakRow.vel : 0;
+  const kmMap=kmByPlate(data);
+  const kmTotal=Object.values(kmMap).reduce((s,v)=>s+v.km,0);
+  const pctViol = mov.length? (viol.length/mov.length*100):0;
+
+  c.innerHTML = filterBar() + xfBar() + `
+  <div class="kpi-grid">
+    ${kpi('car','VEÍCULOS ATIVOS',fmt(veic),'','info')}
+    ${kpi('users','CONDUTORES',fmt(cond),'','info')}
+    ${kpi('route','KM RODADO (PERÍODO)',fmt1(kmTotal)+' <small>km</small>','')}
+    ${kpi('gauge','VEL. MÉDIA (MOVIMENTO)',fmt(Math.round(velMed))+' <small>km/h</small>','')}
+    ${kpi('speed','PICO DE VELOCIDADE',fmt(velMax)+' <small>km/h</small>',velMax>=110?'warn':'','warn','Toque para detalhar','peak')}
+    ${kpi('alert','VIOLAÇÕES DE LIMITE',fmt(viol.length),pctViol>=15?'up':pctViol>0?'flat':'down', pctViol>=15?'alto':pctViol>0?'warn':'info', pctViol.toFixed(1)+'% dos registros em movimento')}
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel__head"><h3>${svg('trend')} VELOCIDADE MÉDIA POR DIA</h3><span class="panel__sub">registros em movimento</span></div>
+      <div class="panel__body"><div id="chVelDia"></div></div>
+      <div class="xf-hint">Toque numa coluna para filtrar todo o painel por aquele dia.</div>
+    </div>
+    <div class="panel">
+      <div class="panel__head"><h3>${svg('users')} REGISTROS POR CONDUTOR</h3><span class="panel__sub">todos os ${fmt(cond)} condutores · em movimento</span></div>
+      <div class="panel__body panel__body--scroll"><div id="chCond"></div></div>
+      <div class="xf-hint">Toque numa barra para filtrar por condutor.</div>
+    </div>
+  </div>
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel__head"><h3>${svg('gauge')} DISTRIBUIÇÃO DE FAIXAS DE VELOCIDADE</h3><span class="panel__sub">km/h</span></div>
+      <div class="panel__body"><div id="chFaixa"></div></div>
+      <div class="xf-hint">Toque numa faixa para filtrar por faixa de velocidade.</div>
+    </div>
+    <div class="panel">
+      <div class="panel__head"><h3>${svg('map')} REGISTROS POR VIA</h3><span class="panel__sub">vias percorridas</span></div>
+      <div class="panel__body"><div id="chVia"></div></div>
+      <div class="xf-hint">Toque numa fatia para filtrar por via.</div>
+    </div>
+  </div>`;
+
+  S.exportCtx={
+    title:'Visão Geral',
+    kpis:[
+      {label:'Veículos ativos',value:fmt(veic)},
+      {label:'Condutores',value:fmt(cond)},
+      {label:'Km rodado (período)',value:fmt1(kmTotal)+' km'},
+      {label:'Vel. média (movimento)',value:fmt(Math.round(velMed))+' km/h'},
+      {label:'Pico de velocidade',value:fmt(velMax)+' km/h'},
+      {label:'Violações de limite',value:fmt(viol.length)+` (${pctViol.toFixed(1)}% do movimento)`}
+    ],
+    charts:[
+      {title:'Velocidade média por dia',key:'velDia'},
+      {title:'Registros por condutor',key:'cond'},
+      {title:'Distribuição de faixas de velocidade',key:'faixa'},
+      {title:'Registros por via',key:'via'}
+    ],
+    tables:[]
+  };
+
+  bindFilterBar(()=>renderVisao(c));
+  bindXFBar();
+  $('#fCount').textContent=fcountTxt();
+  // pico clicável — tela cheia com registros de telemetria
+  const peakCard=$('[data-kpi="peak"]');
+  if(peakCard && peakRow){ peakCard.style.cursor='pointer'; peakCard.onclick=()=>openPeakFullscreen(peakRow,mov); }
+
+  drawVelDia('chVelDia',mov);
+  drawCond('chCond',mov);
+  drawFaixa('chFaixa',mov);
+  drawVia('chVia',mov);
+}
+
+function kpi(ic,label,val,trend,tone,sub,kpiKey){
+  const tclass = trend==='up'?'up':trend==='down'?'down':'flat';
+  const tlabel = trend==='up'?'▲ atenção':trend==='down'?'▼ controlado':trend==='flat'?'—':'';
+  return `<div class="kpi" ${tone?`data-tone="${tone}"`:''} ${kpiKey?`data-kpi="${kpiKey}"`:''}>
+    <div class="kpi__top"><div class="kpi__ic">${svg(ic)}</div>
+      ${kpiKey==='peak'?`<span class="kpi__trend flat">${svg('expand')}</span>`:trend?`<span class="kpi__trend ${tclass}">${tlabel}</span>`:''}</div>
+    <div class="kpi__val">${val}</div>
+    <div class="kpi__label">${label}${sub?` · ${sub}`:''}</div>
+  </div>`;
+}
+
+/* ============================================================
+   PICO DE VELOCIDADE — DETALHAMENTO EM TELA CHEIA
+   ============================================================ */
+function openPeakFullscreen(peak, mov){
+  // contexto: registros próximos no tempo, do mesmo veículo (evidência do fato)
+  const janela = mov.filter(r=>r.plate===peak.plate)
+    .sort((a,b)=>a.ts-b.ts);
+  const idx = janela.findIndex(r=>r.ts===peak.ts && r.vel===peak.vel);
+  const ctx = janela.slice(Math.max(0,idx-6), idx+7);
+  const gmaps=(peak.lat&&peak.lon)?`https://www.google.com/maps?q=${peak.lat},${peak.lon}`:null;
+  const overLim = peak.limite!=null && peak.vel>peak.limite;
+
+  const html=`<div class="fs-modal">
+    <div class="fs-modal__head">
+      <div>
+        <div class="fs-eyebrow">${svg('speed')} EVIDÊNCIA · PICO DE VELOCIDADE</div>
+        <h2>${fmt(peak.vel)} km/h · ${esc(peak.motorista)}</h2>
+        <p>${esc(peak.plate)} · ${fmtDateTime(peak.data)} · ${peak.via?esc(peak.via):'Via urbana'}</p>
+      </div>
+      <button class="icon-btn" data-close>${svg('x')}</button>
+    </div>
+    <div class="fs-modal__body">
+      <div class="fs-kpis">
+        ${fsKpi('VELOCIDADE REGISTRADA',fmt(peak.vel)+' km/h',overLim?'alto':'')}
+        ${fsKpi('LIMITE DA VIA',peak.limite!=null?fmt(peak.limite)+' km/h':'não definido','')}
+        ${fsKpi('EXCESSO',overLim?'+'+fmt(peak.vel-peak.limite)+' km/h':'—',overLim?'alto':'ok')}
+        ${fsKpi('LOCALIZAÇÃO',peak.lat&&peak.lon?`${peak.lat.toFixed(5)}, ${peak.lon.toFixed(5)}`:'—','')}
+      </div>
+      <div class="fs-endereco">
+        ${svg('pin')} <span>${peak.endereco?esc(peak.endereco):'Endereço não informado'}</span>
+        ${gmaps?`<a class="btn btn--sm" href="${gmaps}" target="_blank" rel="noopener">${svg('map')} Abrir no mapa</a>`:''}
+      </div>
+      <div class="fs-tblwrap">
+        <div class="fs-tbl-title">${svg('clip')} REGISTROS DE TELEMETRIA · SEQUÊNCIA DO EVENTO (${esc(peak.plate)})</div>
+        <div class="tscroll" style="max-height:none;overflow-x:hidden">
+          <table class="evt-table" id="evtTbl"><colgroup>
+            <col style="width:15%"><col style="width:14%"><col style="width:9%"><col style="width:9%"><col style="width:6%"><col style="width:9%"><col style="width:12%"><col style="width:20%"><col style="width:6%">
+          </colgroup><thead><tr>
+            <th>Data / Hora</th><th>Condutor</th><th>Vel.</th><th>Limite</th><th>Ign.</th><th>Odôm.</th><th>Via</th><th>Endereço</th><th>Local</th>
+          </tr></thead><tbody>
+          ${ctx.map(r=>{
+            const isPeak=r.ts===peak.ts&&r.vel===peak.vel;
+            const over=isViol(r);
+            return `<tr ${isPeak?'style="background:rgba(192,57,43,.08)"':''}>
+              <td data-sv="${r.ts}" title="${fmtDateTime(r.data)}">${fmtDateTime(r.data)}${isPeak?' <span class="tag tag--alto">PICO</span>':''}</td>
+              <td title="${esc(r.motorista)}">${esc(shortName(r.motorista))}</td>
+              <td data-sv="${r.vel}" class="vel-cell ${over?'over':''}">${fmt(r.vel)} km/h</td>
+              <td data-sv="${r.limite??-1}">${r.limite!=null?fmt(r.limite)+' km/h':'—'}</td>
+              <td>${r.ign}</td><td data-sv="${isNaN(r.odom)?-1:r.odom}">${isNaN(r.odom)?'—':fmt1(r.odom)}</td>
+              <td title="${esc(r.via)}">${r.via?esc(r.via):'—'}</td>
+              <td title="${esc(r.endereco)}">${r.endereco?esc(r.endereco):'—'}</td>
+              <td>${r.lat&&r.lon?`<a class="mini-link" href="https://www.google.com/maps?q=${r.lat},${r.lon}" target="_blank" rel="noopener">${svg('pin')}</a>`:'—'}</td>
+            </tr>`;
+          }).join('')}
+          </tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  const bg=$('#modalBg'); bg.innerHTML=html; bg.classList.add('open','fs');
+  makeSortable($('#evtTbl'),[8]); // 'Local' não é ordenável; ordem inicial permanece cronológica
+  $$('[data-close]',bg).forEach(b=>b.onclick=()=>{ bg.classList.remove('open','fs'); bg.innerHTML=''; });
+  bg.onclick=e=>{ if(e.target===bg){ bg.classList.remove('open','fs'); bg.innerHTML=''; } };
+}
+function fsKpi(label,val,tone){
+  return `<div class="fs-kpi ${tone==='alto'?'alto':tone==='ok'?'ok':''}"><div class="l">${label}</div><div class="v">${val}</div></div>`;
+}
+
+/* --- desenhos (valores sobre os gráficos, sem eixos/grade, clique = cross-filter) --- */
+function drawVelDia(id,mov){
+  const by={};
+  mov.forEach(r=>{ const k=fmtDateOnly(r.data); (by[k]=by[k]||[]).push(r.vel); });
+  const cats=Object.keys(by); const ser=cats.map(k=>Math.round(by[k].reduce((a,b)=>a+b,0)/by[k].length));
+  S.charts.velDia?.destroy();
+  S.charts.velDia=mkChart($('#'+id),{
+    chart:{type:'bar',height:270},
+    series:[{name:'Vel. média',data:ser}],
+    // folga superior para o rótulo (offsetY -18) da coluna mais alta não ser cortado
+    grid:{padding:{left:6,right:6,top:26,bottom:0}},
+    xaxis:{categories:cats.map(c=>c.slice(0,5)),labels:{rotate:-45,style:{fontSize:'10px'}}},
+    plotOptions:{bar:{borderRadius:5,columnWidth:'60%',dataLabels:{position:'top'}}}, // valor na ponta da coluna
+    dataLabels:{enabled:true,formatter:v=>fmt(v),offsetY:-18,style:{fontSize:'11px'}},
+    colors:['#728046'],
+    tooltip:{y:{formatter:v=>fmt(v)+' km/h'}}
+  },'dia',cats);
+}
+function shortName(n){ if(typeof n!=='string')return n; const p=n.trim().split(/\s+/); return p.length>1?p[0]+' '+p[1]:p[0]; }
+function drawCond(id,mov){
+  const by={}; mov.forEach(r=>by[r.motorista]=(by[r.motorista]||0)+1);
+  const arr=Object.entries(by).sort((a,b)=>b[1]-a[1]); // TODOS os condutores
+  const maxVal=arr.length?arr[0][1]:1;
+  // reserva à direita proporcional ao tamanho do maior valor (nunca sobrepõe a barra)
+  const reserva=Math.min(30, 8+String(fmt(maxVal)).length*2.6); // teto 30%: cobre até 7 dígitos em pista de 280px
+  const sel=(S.xf||{}).condutor;
+  const el=$('#'+id);
+  el.innerHTML=`<div class="hbar-list">${arr.map(([name,n],i)=>{
+    const w=(n/maxVal*(100-reserva));      // barra mais longa deixa a reserva livre p/ o valor
+    const active=sel===name;
+    return `<button class="hbar ${sel&&!active?'dim':''} ${active?'active':''}" data-cond="${esc(name)}" title="${esc(name)} · ${fmt(n)} registros">
+      <span class="hbar__name">${esc(shortName(name))}</span>
+      <span class="hbar__track">
+        <span class="hbar__fill" style="width:${w.toFixed(2)}%;background:${PALETTE[i%PALETTE.length]}"></span>
+        <span class="hbar__val" style="left:calc(${w.toFixed(2)}% + 8px)">${fmt(n)}</span>
+      </span>
+    </button>`;}).join('')||'<div class="center-empty">Sem registros em movimento.</div>'}</div>`;
+  $$('.hbar',el).forEach(b=>b.onclick=()=>setXF('condutor',b.dataset.cond));
+  // adaptador com a mesma interface do ApexCharts (dataURI/destroy):
+  // desenha o gráfico em canvas para os exports PDF/PPT continuarem funcionando
+  S.charts.cond?.destroy?.();
+  S.charts.cond=condCanvasAdapter(arr);
+}
+/* Renderiza o gráfico de condutores em canvas (nome, barra, valor na ponta) p/ exportação */
+function condCanvasAdapter(arr){
+  return {
+    destroy(){},
+    dataURI:async(opt)=>{
+      const sc=(opt&&opt.scale)||3;
+      const W=760,rowH=30,top=14,nameW=180,valW=70,padR=14;
+      const H=top*2+Math.max(1,arr.length)*rowH;
+      const cv=document.createElement('canvas'); cv.width=W*sc; cv.height=H*sc;
+      const g=cv.getContext('2d'); g.scale(sc,sc);
+      g.fillStyle='#FFFFFF'; g.fillRect(0,0,W,H);
+      const maxVal=arr.length?arr[0][1]:1;
+      const barMax=W-nameW-valW-padR;
+      g.textBaseline='middle';
+      arr.forEach(([name,n],i)=>{
+        const y=top+i*rowH;
+        g.fillStyle='#2B2A26'; g.font='600 11px Helvetica,Arial';
+        g.fillText(shortName(name).slice(0,30),8,y+rowH/2);
+        const bw=Math.max(3,n/maxVal*barMax);
+        g.fillStyle=PALETTE[i%PALETTE.length];
+        if(g.roundRect){ g.beginPath(); g.roundRect(nameW,y+6,bw,rowH-12,4); g.fill(); }
+        else g.fillRect(nameW,y+6,bw,rowH-12);
+        g.fillStyle='#2B2A26'; g.font='700 11px Helvetica,Arial';
+        g.fillText(fmt(n),nameW+bw+8,y+rowH/2);
+      });
+      return {imgURI:cv.toDataURL('image/png')};
+    }
+  };
+}
+function drawFaixa(id,mov){
+  // mesma classificação do cross-filter (faixaDe): garante que o número da coluna
+  // seja idêntico ao total filtrado ao clicar na faixa, inclusive p/ velocidades fracionadas
+  const cats=['0–40','41–60','61–80','81–100','101–120','>120'];
+  const counts=cats.map(()=>0);
+  mov.forEach(r=>{ const i=cats.indexOf(faixaDe(r.vel)); if(i>=0)counts[i]++; });
+  S.charts.faixa?.destroy();
+  S.charts.faixa=mkChart($('#'+id),{
+    chart:{type:'bar',height:270},
+    series:[{name:'Registros',data:counts}],
+    grid:{padding:{left:6,right:6,top:26,bottom:0}},
+    xaxis:{categories:cats},
+    plotOptions:{bar:{borderRadius:6,columnWidth:'58%',distributed:true,dataLabels:{position:'top'}}},
+    dataLabels:{enabled:true,formatter:v=>v>0?fmt(v):'',offsetY:-18,style:{fontSize:'12px'}},
+    legend:{show:false},
+    colors:['#728046','#8a9155','#BFB800','#F3D01C','#EA7600','#C0392B']
+  },'faixa',cats);
+}
+function drawVia(id,mov){
+  const by={}; mov.forEach(r=>{ const v=r.via||'Vias urbanas / outras'; by[v]=(by[v]||0)+1; });
+  const all=Object.entries(by).sort((a,b)=>b[1]-a[1]);
+  const arr=all.slice(0,7);
+  // agrega o restante em "Outras": o TOTAL central passa a refletir 100% dos registros
+  const restSum=all.slice(7).reduce((s,a)=>s+a[1],0);
+  if(restSum>0) arr.push([`Outras (${all.length-7} vias)`,restSum]);
+  const labels=arr.map(a=>a[0]);
+  // clique em "Outras" não aplica cross-filter (não corresponde a uma via única)
+  const xcats=arr.map((a,i)=>(restSum>0&&i===arr.length-1)?null:a[0]);
+  S.charts.via?.destroy();
+  S.charts.via=mkChart($('#'+id),{
+    chart:{type:'donut',height:270},
+    series:arr.map(a=>a[1]),
+    labels:labels,
+    dataLabels:{enabled:true,formatter:(p,o)=>fmt(arr[o.seriesIndex][1]),style:{fontSize:'12px',fontWeight:800,colors:['#000000']},dropShadow:{enabled:true,top:0,left:0,blur:2,color:'#ffffff',opacity:1}},
+    plotOptions:{pie:{donut:{size:'60%',labels:{show:true,total:{show:true,label:'TOTAL',fontSize:'12px',formatter:()=>fmt(arr.reduce((s,a)=>s+a[1],0))}}},dataLabels:{minAngleToShowLabel:22}}},
+    legend:{position:'bottom',fontSize:'11px'},
+    colors:PALETTE
+  },'via',xcats);
+}
+
+/* ============================================================
+   VIEW: VELOCIDADE
+   ============================================================ */
+function renderVeloc(c){
+  applyFilters();
+  const mov=moving(S.filtered);
+  const viol=violations(mov);
+  // por condutor: registros, vel média, pico (com quando/onde), tempo estimado acima do limite
+  const byC={};
+  mov.forEach(r=>{
+    const k=r.motorista; byC[k]=byC[k]||{n:0,sum:0,max:0,peak:null,viol:0};
+    byC[k].n++; byC[k].sum+=r.vel;
+    if(r.vel>byC[k].max){ byC[k].max=r.vel; byC[k].peak=r; }
+    if(isViol(r))byC[k].viol++;
+  });
+  // tempo estimado acima do limite por condutor (soma dos intervalos entre pontos consecutivos em violação)
+  const tempoViol=tempoAcimaLimitePorCondutor(mov);
+  const rows=Object.entries(byC).map(([k,v])=>({
+    cond:k,med:v.sum/v.n,max:v.max,peak:v.peak,viol:v.viol,n:v.n,
+    tempo: tempoViol[k]||0
+  })).sort((a,b)=>b.max-a.max);
+  const velMedV = mov.length? mov.reduce((s,r)=>s+r.vel,0)/mov.length : 0;
+  const velMaxV = mov.reduce((m,r)=>r.vel>m?r.vel:m,0); // reduce: spread estoura em bases grandes
+
+  c.innerHTML=filterBar()+xfBar()+`
+  <div class="kpi-grid">
+    ${kpi('gauge','VEL. MÉDIA GERAL', fmt(Math.round(velMedV))+' <small>km/h</small>')}
+    ${kpi('speed','PICO REGISTRADO', fmt(velMaxV)+' <small>km/h</small>','','warn')}
+    ${kpi('alert','TOTAL DE VIOLAÇÕES', fmt(viol.length),'', viol.length?'alto':'info')}
+    ${kpi('users','CONDUTORES C/ VIOLAÇÃO', fmt(rows.filter(r=>r.viol>0).length),'', rows.some(r=>r.viol>0)?'warn':'info')}
+  </div>
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel__head"><h3>${svg('trend')} VELOCIDADE AO LONGO DO TEMPO</h3><span class="panel__sub">série temporal · movimento</span></div>
+      <div class="panel__body"><div id="chSerie"></div></div>
+    </div>
+    <div class="panel">
+      <div class="panel__head"><h3>${svg('clock')} VELOCIDADE MÉDIA POR HORA DO DIA</h3><span class="panel__sub">0h–23h</span></div>
+      <div class="panel__body"><div id="chHora"></div></div>
+      <div class="xf-hint">Toque numa coluna para filtrar por hora.</div>
+    </div>
+  </div>
+  <div class="table-wrap" style="margin-top:16px">
+    <div class="table-toolbar"><h3>${svg('users')} COMPORTAMENTO POR CONDUTOR</h3><span class="panel__sub">tempo acima do limite estimado pelos intervalos entre registros</span></div>
+    <div class="tscroll"><table id="velCondTbl"><thead><tr>
+      <th>Condutor</th><th>Registros</th><th>Vel. média</th><th>Pico</th><th>Tempo acima do limite</th><th>Violações</th><th>Situação</th><th>Local do pico</th>
+    </tr></thead><tbody>
+      ${rows.map(r=>`<tr>
+        <td>${esc(r.cond)}</td><td data-sv="${r.n}">${fmt(r.n)}</td><td data-sv="${r.med}">${fmt1(r.med)} km/h</td>
+        <td data-sv="${r.max}" class="vel-cell ${r.max>=110?'over':''}">${fmt(r.max)} km/h</td>
+        <td data-sv="${r.tempo}">${r.tempo>0?formatDur(r.tempo):'<span class="muted">—</span>'}</td>
+        <td data-sv="${r.viol}">${r.viol?`<span class="tag tag--alto">${r.viol}</span>`:'<span class="tag tag--ok">0</span>'}</td>
+        <td data-sv="${r.viol>=5?2:r.viol>0?1:0}">${r.viol>=5?'<span class="tag tag--alto">Recorrente</span>':r.viol>0?'<span class="tag tag--medio">Pontual</span>':'<span class="tag tag--ok">Regular</span>'}</td>
+        <td>${r.peak&&r.peak.lat&&r.peak.lon?`<button class="mini-link" data-loc='${encodeURIComponent(JSON.stringify({lat:r.peak.lat,lon:r.peak.lon,end:r.peak.endereco,dt:fmtDateTime(r.peak.data),vel:r.peak.vel,lim:r.peak.limite??'—',cond:r.cond,plate:r.peak.plate}))}'>${svg('pin')} Ver no mapa</button>`:'<span class="muted">—</span>'}</td>
+      </tr>`).join('')}
+    </tbody></table></div>
+  </div>`;
+
+  S.exportCtx={
+    title:'Análise de Velocidade',
+    kpis:[
+      {label:'Vel. média geral',value:fmt(Math.round(velMedV))+' km/h'},
+      {label:'Pico registrado',value:fmt(velMaxV)+' km/h'},
+      {label:'Total de violações',value:fmt(viol.length)},
+      {label:'Condutores c/ violação',value:fmt(rows.filter(r=>r.viol>0).length)}
+    ],
+    charts:[
+      {title:'Velocidade ao longo do tempo',key:'serie'},
+      {title:'Velocidade média por hora do dia',key:'hora'}
+    ],
+    tables:[{
+      title:'Comportamento por condutor',
+      columns:['Condutor','Registros','Vel. média','Pico','Tempo acima do limite','Violações','Situação'],
+      rows:rows.map(r=>[r.cond,fmt(r.n),fmt1(r.med)+' km/h',fmt(r.max)+' km/h',
+        r.tempo>0?formatDur(r.tempo):'—',r.viol,r.viol>=5?'Recorrente':r.viol>0?'Pontual':'Regular'])
+    }]
+  };
+
+  bindFilterBar(()=>renderVeloc(c));
+  bindXFBar();
+  $('#fCount').textContent=fcountTxt();
+  makeSortable($('#velCondTbl'),[7]); // 'Local do pico' não é ordenável
+  $$('[data-loc]').forEach(b=>b.onclick=()=>openLocModal(JSON.parse(decodeURIComponent(b.dataset.loc))));
+  drawSerie('chSerie',mov);
+  drawHora('chHora',mov);
+}
+/* Tempo estimado acima do limite, por condutor (soma de intervalos entre registros consecutivos em violação) */
+function tempoAcimaLimitePorCondutor(mov){
+  const out={};
+  const byPlateCond={};
+  mov.forEach(r=>{ const k=r.plate+'|'+r.motorista; (byPlateCond[k]=byPlateCond[k]||[]).push(r); });
+  for(const k in byPlateCond){
+    const list=byPlateCond[k].sort((a,b)=>a.ts-b.ts);
+    const cond=k.split('|')[1];
+    for(let i=0;i<list.length-1;i++){
+      const cur=list[i], nxt=list[i+1];
+      const over = isViol(cur);
+      if(over){
+        const gap=(nxt.ts-cur.ts)/1000; // segundos
+        // só soma se o intervalo for razoável (< 10 min), senão conta a tolerância
+        if(gap>0 && gap<=600){ out[cond]=(out[cond]||0)+gap; }
+      }
+    }
+  }
+  return out;
+}
+function formatDur(seg){
+  seg=Math.round(seg);
+  if(seg<60) return seg+'s';
+  const m=Math.floor(seg/60), s=seg%60;
+  if(m<60) return `${m}min ${s}s`;
+  const h=Math.floor(m/60), mm=m%60;
+  return `${h}h ${mm}min`;
+}
+function drawSerie(id,mov){
+  const pts=mov.slice().sort((a,b)=>a.ts-b.ts).map(r=>({x:r.ts,y:r.vel}));
+  const t=chartTheme();
+  S.charts.serie?.destroy();
+  S.charts.serie=mkChart($('#'+id),{
+    chart:{type:'line',height:270,zoom:{enabled:true},toolbar:{show:true,tools:{zoom:true,reset:true,pan:true,download:true}}},
+    series:[{name:'Velocidade',data:pts}],
+    // grade horizontal + eixo Y visível: leitura da velocidade sem depender do mouse
+    grid:{show:true,borderColor:t.grid,strokeDashArray:3,
+      yaxis:{lines:{show:true}},xaxis:{lines:{show:false}},
+      padding:{left:6,right:6,top:0,bottom:0}},
+    yaxis:{show:true,tickAmount:5,labels:{show:true,style:{colors:t.soft,fontSize:'10px'},
+      formatter:v=>fmt(Math.round(v))}},
+    xaxis:{type:'datetime',labels:{datetimeUTC:false,format:'dd/MM',style:{fontSize:'10px'}}},
+    dataLabels:{enabled:false},
+    stroke:{width:2,curve:'straight'},
+    colors:['#EA7600'],
+    markers:{size:0},
+    tooltip:{x:{format:'dd/MM HH:mm:ss'},y:{formatter:v=>fmt(Math.round(v))+' km/h'}}
+  });
+}
+function drawHora(id,mov){
+  const by=Array.from({length:24},()=>({s:0,n:0}));
+  mov.forEach(r=>{ const h=r.data.getHours(); by[h].s+=r.vel; by[h].n++; });
+  const ser=by.map(b=>b.n?Math.round(b.s/b.n):0);
+  const cats=by.map((_,h)=>h+'h');
+  S.charts.hora?.destroy();
+  S.charts.hora=mkChart($('#'+id),{
+    chart:{type:'bar',height:270},
+    series:[{name:'Vel. média',data:ser}],
+    grid:{padding:{left:6,right:6,top:24,bottom:0}},
+    xaxis:{categories:cats,labels:{style:{fontSize:'10px'}}},
+    plotOptions:{bar:{borderRadius:4,columnWidth:'64%',dataLabels:{position:'top'}}},
+    dataLabels:{enabled:true,formatter:v=>v>0?fmt(v):'',offsetY:-16,style:{fontSize:'10px'}},
+    colors:['#728046'],
+    tooltip:{y:{formatter:v=>fmt(v)+' km/h'}}
+  },'hora',cats);
+}
+
+/* ============================================================
+   VIEW: LEITURA INTELIGENTE
+   ============================================================ */
+function renderIntel(c){
+  applyFilters();
+  const mov=moving(S.filtered);
+  const viol=violations(mov);
+  const insights=buildInsights(S.filtered,mov,viol);
+
+  // agrupa violações por condutor para as evidências
+  const byC={};
+  viol.forEach(r=>{ const k=r.motorista; byC[k]=byC[k]||[]; byC[k].push(r); });
+  const condOrder=Object.entries(byC).sort((a,b)=>b[1].length-a[1].length);
+
+  const noLimit = S.limits.every(l=>l.limite==null) && S.defaultLimit==null;
+
+  c.innerHTML=filterBar()+xfBar()+`
+  <div class="insight-card">
+    <div class="insight-card__head">
+      <div class="bulb">${svg('bulb')}</div>
+      <div><h3>LEITURA INTELIGENTE DO CENÁRIO OPERACIONAL</h3>
+      <p>Análise automática baseada nos registros em movimento (Ign. ON e Vel. &gt; 0)</p></div>
+    </div>
+    ${noLimit?`<div class="insight" data-sev="medio"><div class="insight__ic">${svg('target')}</div>
+      <div class="insight__txt">Nenhum <b>limite de velocidade</b> foi cadastrado ainda. Defina os limites por rodovia em <b>Limites &amp; Config</b> para que o painel identifique e evidencie as violações.</div>
+      <span class="insight__badge">configurar</span></div>`:''}
+    <div class="insight-list">${insights.map(i=>`
+      <div class="insight" data-sev="${i.sev}"><div class="insight__ic">${svg(i.ic)}</div>
+        <div class="insight__txt">${i.txt}</div>
+        <span class="insight__badge">${i.badge}</span></div>`).join('')||'<div class="center-empty">Sem sinais relevantes no recorte atual.</div>'}
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-toolbar">
+      <h3>${svg('alert')} EVIDÊNCIAS DE VIOLAÇÃO · CONDUTORES ACIMA DO LIMITE</h3>
+      <button class="btn btn--ghost btn--sm" id="expViol">${svg('download')} Exportar evidências</button>
+    </div>
+    <div class="tscroll"><table id="violTbl"><thead><tr>
+      <th>Condutor</th><th>Placa</th><th>Data / Hora</th><th>Via</th><th>Vel.</th><th>Limite</th><th>Excesso</th><th>Localização</th>
+    </tr></thead><tbody>
+    ${viol.length? condOrder.flatMap(([cond,list])=>
+      list.sort((a,b)=>b.vel-a.vel).map(r=>`<tr>
+        <td>${esc(r.motorista)}</td><td><b>${esc(r.plate)}</b></td><td data-sv="${r.ts}">${fmtDateTime(r.data)}</td>
+        <td>${r.via?esc(r.via):'—'}</td><td data-sv="${r.vel}" class="vel-cell over">${fmt(r.vel)} km/h</td>
+        <td data-sv="${r.limite}">${fmt(r.limite)} km/h</td><td data-sv="${r.vel-r.limite}"><span class="tag tag--alto">+${fmt(r.vel-r.limite)}</span></td>
+        <td><button class="mini-link" data-loc='${encodeURIComponent(JSON.stringify({lat:r.lat,lon:r.lon,end:r.endereco,dt:fmtDateTime(r.data),vel:r.vel,lim:r.limite,cond:r.motorista,plate:r.plate}))}'>${svg('pin')} Ver local</button></td>
+      </tr>`)).join('')
+      : `<tr><td colspan="8"><div class="center-empty">${svg('check')}<div>Nenhuma violação de limite no recorte atual.</div></div></td></tr>`}
+    </tbody></table></div>
+  </div>`;
+
+  S.exportCtx={
+    title:'Leitura Inteligente',
+    kpis:[],
+    charts:[],
+    insights:insights.map(i=>i.txt.replace(/<[^>]+>/g,'').trim()),
+    tables:[{
+      title:'Evidências de violação',
+      columns:['Condutor','Placa','Data / Hora','Via','Vel. (km/h)','Limite (km/h)','Excesso (km/h)'],
+      rows: viol.length? condOrder.flatMap(([cond,list])=>list.sort((a,b)=>b.vel-a.vel).map(r=>[
+        r.motorista,r.plate,fmtDateTime(r.data),r.via||'—',fmt(r.vel),fmt(r.limite),'+'+fmt(r.vel-r.limite)])) : []
+    }]
+  };
+
+  bindFilterBar(()=>renderIntel(c));
+  bindXFBar();
+  $('#fCount').textContent=fcountTxt();
+  makeSortable($('#violTbl'),[7]); // 'Localização' não é ordenável
+  $$('[data-loc]').forEach(b=>b.onclick=()=>openLocModal(JSON.parse(decodeURIComponent(b.dataset.loc))));
+  $('#expViol')&&($('#expViol').onclick=()=>exportViolations(viol));
+}
+
+/* Motor heurístico de insights */
+function buildInsights(all,mov,viol){
+  const out=[];
+  if(!mov.length){ return [{sev:'info',ic:'eye',badge:'sem dados',txt:'Não há registros em movimento no recorte selecionado.'}]; }
+  const velMed=mov.reduce((s,r)=>s+r.vel,0)/mov.length;
+  const pctViol=viol.length/mov.length*100;
+
+  // 1. violações por condutor recorrente
+  const byC={}; viol.forEach(r=>byC[r.motorista]=(byC[r.motorista]||0)+1);
+  const topC=Object.entries(byC).sort((a,b)=>b[1]-a[1])[0];
+  if(topC && topC[1]>=3){
+    out.push({sev:'alto',ic:'alert',badge:'recorrência',
+      txt:`O condutor <b>${esc(topC[0])}</b> concentra <b>${topC[1]}</b> registros acima do limite, indicando comportamento recorrente que demanda tratativa de gestão de consequências.`});
+  }
+  // 2. via mais crítica
+  const byV={}; viol.forEach(r=>{ const v=r.via||'via urbana'; byV[v]=(byV[v]||0)+1; });
+  const topV=Object.entries(byV).sort((a,b)=>b[1]-a[1])[0];
+  if(topV){
+    out.push({sev:'medio',ic:'map',badge:'concentração',
+      txt:`A via <b>${esc(topV[0])}</b> concentra a maior parte das violações (<b>${topV[1]}</b> ocorrências), sugerindo trecho de atenção prioritária para fiscalização.`});
+  }
+  // 3. pico de velocidade
+  const peak=mov.reduce((m,r)=>r.vel>m.vel?r:m,mov[0]);
+  if(peak.limite!=null && peak.vel>peak.limite){
+    out.push({sev:'alto',ic:'speed',badge:'pico',
+      txt:`Pico de <b>${fmt(peak.vel)} km/h</b> registrado por <b>${esc(peak.motorista)}</b> em ${fmtDateTime(peak.data)}${peak.via?` na ${esc(peak.via)}`:''}, <b>${fmt(peak.vel-peak.limite)} km/h acima</b> do limite de ${fmt(peak.limite)} km/h.`});
+  }
+  // 4. horário crítico
+  const byH=Array.from({length:24},()=>0); viol.forEach(r=>byH[r.data.getHours()]++);
+  const maxH=byH.indexOf(Math.max(...byH));
+  if(byH[maxH]>=2){
+    out.push({sev:'medio',ic:'clock',badge:'temporal',
+      txt:`Há concentração de violações no intervalo das <b>${maxH}h</b>, o que pode estar associado a picos de operação ou fadiga do condutor nesse período.`});
+  }
+  // 4b. qualidade de dados: velocidades fisicamente improváveis (possível falha de GPS)
+  const suspects=mov.filter(r=>r.vel>160);
+  if(suspects.length){
+    out.push({sev:'medio',ic:'eye',badge:'qualidade de dados',
+      txt:`Foram identificados <b>${fmt(suspects.length)}</b> registro(s) com velocidade acima de <b>160 km/h</b>, valor pouco provável para a operação. Recomenda-se validar possível falha de leitura do GPS antes de usar esses pontos como evidência.`});
+  }
+  // 4c. qualidade de dados: variação implausível de odômetro (sinaliza, não exclui)
+  const odomAnom=odometroAnomalias(all);
+  if(odomAnom.length){
+    const ex=odomAnom[0];
+    const desc = ex.delta<0
+      ? `regressão de ${fmt1(Math.abs(ex.delta))} km`
+      : `salto de ${fmt1(ex.delta)} km em ${formatDur(ex.gap)}`;
+    out.push({sev:'medio',ic:'route',badge:'qualidade de dados',
+      txt:`Foram identificados <b>${fmt(odomAnom.length)}</b> intervalo(s) com variação implausível de odômetro (ex.: <b>${esc(ex.plate)}</b>, ${desc}, em ${fmtDateTime(ex.data)}). Nenhum registro foi excluído, mas o <b>km rodado</b> (diferença entre máximo e mínimo do odômetro) pode estar inflado por esses pontos. Recomenda-se validar a leitura do equipamento antes de usar o km como evidência.`});
+  }
+  // 5. panorama geral
+  out.push({sev:pctViol>=15?'alto':pctViol>0?'medio':'info',ic:'trend',badge:'panorama',
+    txt:`No recorte atual, <b>${pctViol.toFixed(1)}%</b> dos registros em movimento estão acima do limite, com velocidade média de <b>${fmt1(velMed)} km/h</b>.`});
+  // 6. km próximo do teto (monitorados)
+  const kmMap=kmByPlate(all);
+  S.kmMonitors.forEach(m=>{
+    const k=kmMap[m.plate]; if(!k) return;
+    const pct=k.km/m.limite*100;
+    if(pct>=80) out.push({sev:pct>=100?'alto':'medio',ic:'route',badge:'quilometragem',
+      txt:`O veículo <b>${esc(m.plate)}</b> já percorreu <b>${fmt1(k.km)} km</b> (${pct.toFixed(0)}% do limite de ${fmt(m.limite)} km) no período, atenção ao teto mensal.`});
+  });
+  return out;
+}
+
+/* Anomalias de odômetro entre registros consecutivos da mesma placa:
+   regressão (delta negativo) ou velocidade implícita > 200 km/h (heurística
+   conservadora; nenhum dado é excluído, apenas sinalizado). */
+function odometroAnomalias(rows){
+  const byP={};
+  rows.forEach(r=>{ if(!isNaN(r.odom)) (byP[r.plate]=byP[r.plate]||[]).push(r); });
+  const out=[];
+  for(const p in byP){
+    const list=byP[p].slice().sort((a,b)=>a.ts-b.ts);
+    for(let i=0;i<list.length-1;i++){
+      const a=list[i], b=list[i+1];
+      const delta=b.odom-a.odom, gap=(b.ts-a.ts)/1000;
+      if(delta<-0.5) out.push({plate:p,delta,gap,data:b.data});
+      else if(gap>0 && (delta/(gap/3600))>200) out.push({plate:p,delta,gap,data:b.data});
+      else if(gap<=0 && delta>1) out.push({plate:p,delta,gap:0,data:b.data});
+    }
+  }
+  return out;
+}
+
+function openLocModal(d){
+  const gmaps = (d.lat&&d.lon)?`https://www.google.com/maps?q=${d.lat},${d.lon}`:null;
+  const html=`<div class="modal">
+    <div class="modal__head"><h3>${svg('pin')} Localização da ocorrência</h3><button class="icon-btn" data-close>${svg('x')}</button></div>
+    <div class="modal__body"><div class="loc-detail">
+      <div class="loc-row"><div class="loc-row__ic">${svg('user')}</div><div class="loc-row__txt"><div class="l">Condutor · Veículo</div><div class="v">${d.cond} · ${d.plate}</div></div></div>
+      <div class="loc-row"><div class="loc-row__ic">${svg('clock')}</div><div class="loc-row__txt"><div class="l">Data / Hora</div><div class="v">${d.dt}</div></div></div>
+      <div class="loc-row"><div class="loc-row__ic">${svg('speed')}</div><div class="loc-row__txt"><div class="l">Velocidade / Limite</div><div class="v">${fmt(d.vel)} km/h · limite ${fmt(d.lim)} km/h</div></div></div>
+      <div class="loc-row"><div class="loc-row__ic">${svg('map')}</div><div class="loc-row__txt"><div class="l">Endereço</div><div class="v">${d.end||'—'}</div></div></div>
+      <div class="loc-row"><div class="loc-row__ic">${svg('target')}</div><div class="loc-row__txt"><div class="l">Coordenadas</div><div class="v">${d.lat&&d.lon?`${d.lat.toFixed(6)}, ${d.lon.toFixed(6)}`:'—'}</div></div></div>
+    </div></div>
+    <div class="modal__foot">
+      <button class="btn btn--ghost" data-close>Fechar</button>
+      ${gmaps?`<a class="btn" href="${gmaps}" target="_blank" rel="noopener">${svg('map')} Abrir no mapa</a>`:''}
+    </div></div>`;
+  openModal(html);
+}
+
+/* ============================================================
+   VIEW: MONITOR DE KM
+   ============================================================ */
+function renderKm(c){
+  applyFilters();
+  const kmMap=kmByPlate(S.filtered);
+  // dias do período selecionado
+  const dmin=S.filtered[0]?.data, dmax=S.filtered[S.filtered.length-1]?.data;
+  const dias=(dmin&&dmax)?Math.max(1,(dmax-dmin)/86400000):1; // fração exata de dias: km/dia sem arredondar o período
+
+  const cards=S.kmMonitors.map(m=>{
+    const k=kmMap[m.plate];
+    const km=k?k.km:0, driver=k?k.driver:'—';
+    const pctReal=m.limite>0? km/m.limite*100 : 0; // percentual real (pode passar de 100%)
+    const pct=Math.min(100,pctReal);               // capado apenas p/ largura da barra
+    const rest=m.limite-km;
+    const kmDia=km/dias;
+    const diasResta = kmDia>0? rest/kmDia : Infinity;
+    const tone=pctReal>=100?'alto':pctReal>=80?'warn':'ok';
+    const barColor=pctReal>=100?'var(--risco-alto)':pctReal>=80?'var(--naranjo)':'var(--verde-sucuriu)';
+    return `<div class="km-card">
+      <div class="km-card__head">
+        <div><div class="km-card__plate">${esc(m.plate)}</div><div class="km-card__driver">${svg('user')} ${esc(driver)}</div></div>
+        <span class="tag tag--${tone==='ok'?'ok':tone==='warn'?'medio':'alto'}">${pctReal.toFixed(0)}%</span>
+      </div>
+      <div class="km-bar"><div class="km-bar__fill" style="width:${pct}%;background:${barColor}"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:600" class="muted">
+        <span>${fmt1(km)} km rodados</span><span>Limite ${fmt(m.limite)} km</span></div>
+      <div class="km-stats">
+        <div class="km-stat"><div class="n">${fmt1(km)}</div><div class="l">Rodado</div></div>
+        <div class="km-stat"><div class="n">${rest>0?fmt1(rest):'0'}</div><div class="l">Restante</div></div>
+        <div class="km-stat"><div class="n">${fmt1(kmDia)}</div><div class="l">Km/dia</div></div>
+      </div>
+      <div class="km-eta ${tone}">${svg(tone==='alto'?'alert':'clock')}
+        ${rest<=0? `Limite de ${fmt(m.limite)} km já ultrapassado no período.`
+          : isFinite(diasResta)? `No ritmo atual (${fmt1(kmDia)} km/dia), atinge ${fmt(m.limite)} km em <b>~${Math.round(diasResta)} dia(s)</b>.`
+          : 'Sem deslocamento no período, projeção indisponível.'}</div>
+    </div>`;
+  }).join('');
+
+  c.innerHTML=filterBar()+xfBar()+`
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <p class="muted" style="font-size:13px;max-width:640px">Cadastre as placas monitoradas e o limite mensal em <b>Limites &amp; Config</b>. A projeção usa a média de km/dia do período filtrado.</p>
+    <button class="btn btn--sm" id="addKmBtn">${svg('plus')} Cadastrar veículo</button>
+  </div>
+  ${S.kmMonitors.length? `<div class="km-cards">${cards}</div>`
+    : `<div class="center-empty">${svg('route')}<div>Nenhum veículo cadastrado para monitoramento de KM.</div></div>`}`;
+
+  S.exportCtx={
+    title:'Monitor de KM',
+    kpis:[],
+    charts:[],
+    tables:[{
+      title:'Monitoramento de KM mensal',
+      columns:['Placa','Condutor','Km rodado','Limite (km/mês)','Restante','Km/dia','% do limite'],
+      rows:S.kmMonitors.map(m=>{
+        const k=kmMap[m.plate]; const km=k?k.km:0; const driver=k?k.driver:'—';
+        const pctReal=m.limite>0? km/m.limite*100 : 0; const rest=m.limite-km; const kmDia=km/dias;
+        return [m.plate,driver,fmt1(km),fmt(m.limite),rest>0?fmt1(rest):'0',fmt1(kmDia),Math.round(pctReal)+'%'];
+      })
+    }]
+  };
+
+  bindFilterBar(()=>renderKm(c));
+  bindXFBar();
+  $('#fCount').textContent=fcountTxt();
+  $('#addKmBtn').onclick=()=>go('config');
+}
+
+/* ============================================================
+   VIEW: REGISTROS (tabela detalhada)
+   ============================================================ */
+function renderRegistros(c){
+  applyFilters();
+  c.innerHTML=filterBar()+xfBar()+`
+  <div class="table-wrap">
+    <div class="table-toolbar">
+      <h3>${svg('clip')} REGISTROS DE TELEMETRIA</h3>
+      <div class="search-inp">${svg('search')}<input id="tSearch" placeholder="Buscar condutor, placa, endereço..." value="${S.table.search}"></div>
+      <button class="btn btn--ghost btn--sm" id="expXlsx">${svg('download')} Excel</button>
+    </div>
+    <div class="tscroll"><table id="regTable"><thead><tr>
+      ${th('data','Data / Hora')}${th('plate','Placa')}${th('motorista','Condutor')}${th('ign','Ign.')}
+      ${th('vel','Vel.')}${th('via','Via')}${th('limite','Limite')}${th('odom','Odôm.')}
+      <th>Endereço</th><th>Local</th>
+    </tr></thead><tbody id="regBody"></tbody></table></div>
+    <div class="table-foot">
+      <span class="muted" id="regInfo"></span>
+      <div class="pager" id="regPager"></div>
+    </div>
+  </div>`;
+  bindFilterBar(()=>{ S.table.page=1; renderRegistros(c); });
+  bindXFBar();
+  $('#fCount').textContent=fcountTxt();
+  $('#tSearch').oninput=e=>{ S.table.search=e.target.value; S.table.page=1; paintTable(); };
+  $('#expXlsx').onclick=()=>exportXlsx(getTableRows());
+  $$('th[data-sort]').forEach(h=>h.onclick=()=>{
+    const k=h.dataset.sort;
+    if(S.table.sort===k) S.table.dir=S.table.dir==='asc'?'desc':'asc';
+    else{ S.table.sort=k; S.table.dir='asc'; }
+    paintTable();
+  });
+  paintTable();
+}
+function th(key,label){
+  const on=S.table.sort===key;
+  const ar=S.table.dir==='asc'?'▲':'▼';
+  return `<th data-sort="${key}" class="${on?'sorted':''}">${label}<span class="sort-ar" style="color:${on?'var(--verde-sucuriu)':'var(--line-strong)'}">${on?ar:'▼'}</span></th>`;
+}
+function getTableRows(){
+  let rows=S.filtered.slice();
+  const q=S.table.search.trim().toLowerCase();
+  if(q) rows=rows.filter(r=>(r.motorista+' '+r.plate+' '+r.endereco+' '+(r.via||'')).toLowerCase().includes(q));
+  const k=S.table.sort, dir=S.table.dir==='asc'?1:-1;
+  rows.sort((a,b)=>{
+    let x=a[k],y=b[k];
+    if(k==='data'){x=a.ts;y=b.ts;}
+    if(typeof x==='string'){x=x.toLowerCase();y=String(y).toLowerCase();}
+    if(x==null)x=-Infinity; if(y==null)y=-Infinity;
+    return x<y?-1*dir:x>y?1*dir:0;
+  });
+  return rows;
+}
+function paintTable(){
+  const rows=getTableRows();
+  S.exportCtx={
+    title:'Registros de Telemetria',
+    kpis:[{label:'Registros no recorte',value:fmt(rows.length)}],
+    charts:[],
+    tables:[{
+      title:'Registros de telemetria',
+      columns:['Data / Hora','Placa','Condutor','Ign.','Vel. (km/h)','Via','Limite','Odômetro','Endereço'],
+      rows:rows.map(r=>[fmtDateTime(r.data),r.plate,r.motorista,r.ign,
+        isNaN(r.vel)?'—':fmt(r.vel),r.via||'—',r.limite!=null?fmt(r.limite):'—',
+        isNaN(r.odom)?'—':fmt1(r.odom),r.endereco||'—'])
+    }]
+  };
+  const per=S.table.per, pages=Math.max(1,Math.ceil(rows.length/per));
+  if(S.table.page>pages)S.table.page=pages;
+  const start=(S.table.page-1)*per, slice=rows.slice(start,start+per);
+  $('#regBody').innerHTML=slice.map(r=>{
+    const over=isViol(r);
+    return `<tr>
+      <td>${fmtDateTime(r.data)}</td><td><b>${esc(r.plate)}</b></td><td>${esc(r.motorista)}</td>
+      <td>${r.ign==='ON'?'<span class="tag tag--ok">ON</span>':'<span class="tag" style="background:var(--surface-2);color:var(--ink-soft)">OFF</span>'}</td>
+      <td class="vel-cell ${over?'over':''}">${isNaN(r.vel)?'—':fmt(r.vel)}</td>
+      <td>${r.via?esc(r.via):'—'}</td><td>${r.limite!=null?fmt(r.limite):'—'}</td>
+      <td>${isNaN(r.odom)?'—':fmt1(r.odom)}</td>
+      <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.endereco)}">${r.endereco?esc(r.endereco):'—'}</td>
+      <td>${r.lat&&r.lon?`<button class="mini-link" data-loc='${encodeURIComponent(JSON.stringify({lat:r.lat,lon:r.lon,end:r.endereco,dt:fmtDateTime(r.data),vel:r.vel,lim:r.limite??'—',cond:r.motorista,plate:r.plate}))}'>${svg('pin')}</button>`:'—'}</td>
+    </tr>`;
+  }).join('')||`<tr><td colspan="10"><div class="center-empty">Nenhum registro para os filtros aplicados.</div></td></tr>`;
+  $('#regInfo').textContent=`${fmt(rows.length)} registros · página ${S.table.page} de ${pages}`;
+  // pager
+  const pg=$('#regPager'); let h='';
+  h+=`<button ${S.table.page<=1?'disabled':''} data-pg="${S.table.page-1}">‹</button>`;
+  const win=[]; for(let i=Math.max(1,S.table.page-2);i<=Math.min(pages,S.table.page+2);i++)win.push(i);
+  win.forEach(i=>h+=`<button class="${i===S.table.page?'active':''}" data-pg="${i}">${i}</button>`);
+  h+=`<button ${S.table.page>=pages?'disabled':''} data-pg="${S.table.page+1}">›</button>`;
+  pg.innerHTML=h;
+  $$('[data-pg]',pg).forEach(b=>b.onclick=()=>{ S.table.page=+b.dataset.pg; paintTable(); });
+  $$('[data-loc]').forEach(b=>b.onclick=()=>openLocModal(JSON.parse(decodeURIComponent(b.dataset.loc))));
+}
+
+/* ============================================================
+   VIEW: LIMITES & CONFIG
+   ============================================================ */
+function renderConfig(c){
+  const vias=[...new Set(S.rows.map(r=>r.via).filter(Boolean))].sort();
+  const plates=[...new Set(S.rows.map(r=>r.plate))].sort();
+  c.innerHTML=`
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel__head"><h3>${svg('target')} LIMITES DE VELOCIDADE POR VIA</h3><span class="panel__sub">km/h</span></div>
+      <div class="panel__body" style="padding:16px 18px">
+        <p class="muted" style="font-size:12.5px;margin-bottom:14px">Defina o limite de cada rodovia/via. Registros em movimento acima do limite são marcados como violação. Excessos comprovadamente mais curtos que a tolerância (o registro seguinte da mesma placa, dentro da janela em segundos, já voltou ao limite) são desconsiderados como violação.</p>
+        <div class="limit-list" id="limitList">
+          ${S.limits.map((l,i)=>`<div class="limit-row">
+            <div class="field" style="flex:1.2"><label>Via</label><input value="${l.via}" data-limvia="${i}"></div>
+            <div class="field" style="flex:.9"><label>Limite (km/h)</label><input type="number" value="${l.limite??''}" placeholder="—" data-limval="${i}"></div>
+            <div class="field" style="flex:.7"><label>Tol. (s)</label><input type="number" value="${l.tolSeg??5}" data-limtol="${i}"></div>
+            <div class="row-actions"><button class="icon-mini del" data-limdel="${i}" title="Remover">${svg('trash')}</button></div>
+          </div>`).join('')||'<span class="muted">Nenhuma via cadastrada.</span>'}
+        </div>
+        <div class="field" style="margin-top:14px;max-width:260px"><label>Limite padrão (vias sem cadastro)</label>
+          <input type="number" id="defLimit" value="${S.defaultLimit??''}" placeholder="deixe vazio p/ não avaliar"></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn--sm" id="addVia">${svg('plus')} Adicionar via</button>
+          <button class="btn btn--ghost btn--sm" id="saveLimits">${svg('check')} Salvar limites</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel__head"><h3>${svg('route')} MONITORAMENTO DE KM MENSAL</h3><span class="panel__sub">limite por veículo</span></div>
+      <div class="panel__body" style="padding:16px 18px">
+        <p class="muted" style="font-size:12.5px;margin-bottom:14px">Cadastre as placas monitoradas e o limite de km do mês (padrão 3.000 km). O acompanhamento aparece no <b>Monitor de KM</b>. Toque em editar para alterar um cadastro existente.</p>
+        <div class="limit-list" id="kmList">
+          ${S.kmMonitors.map((m,i)=>{ const ed=S.kmEdit===i; return `<div class="limit-row">
+            <div class="field" style="flex:1.2"><label>Placa</label>
+              <select data-kmplate="${i}" ${ed?'':'disabled'}>${plates.map(p=>`<option ${p===m.plate?'selected':''}>${p}</option>`).join('')}${plates.includes(m.plate)?'':`<option selected>${m.plate}</option>`}</select></div>
+            <div class="field" style="flex:1"><label>Limite (km/mês)</label><input type="number" value="${m.limite}" data-kmval="${i}" ${ed?'':'readonly'}></div>
+            <div class="row-actions">
+              <button class="icon-mini edit" data-kmedit="${i}" title="${ed?'Concluir edição':'Editar'}">${svg(ed?'check':'edit')}</button>
+              <button class="icon-mini del" data-kmdel="${i}" title="Remover">${svg('trash')}</button>
+            </div>
+          </div>`;}).join('')||'<span class="muted">Nenhum veículo monitorado.</span>'}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn--sm" id="addKm">${svg('plus')} Cadastrar veículo</button>
+          <button class="btn btn--ghost btn--sm" id="saveKm">${svg('check')} Salvar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <div class="panel__head"><h3>${svg('download')} ARQUIVOS CARREGADOS</h3><span class="panel__sub">${S.files.length} arquivo(s)</span></div>
+    <div class="panel__body" style="padding:16px 18px">
+      <div class="file-strip" style="justify-content:flex-start">
+        ${S.files.map((f,i)=>fileChip(f,i)).join('')||'<span class="muted">Nenhum arquivo.</span>'}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn btn--sm" id="cfgAddFile">${svg('plus')} Adicionar arquivos</button>
+        <button class="btn btn--ghost btn--sm" id="cfgJson">${svg('download')} Salvar backup JSON</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:10px">O backup JSON guarda registros, limites por via, limite padrão e monitoramento de KM. Para restaurar, basta subir o arquivo .json no painel como se fosse um relatório.</p>
+    </div>
+  </div>`;
+
+  S.exportCtx={
+    title:'Limites e Configuração',
+    kpis:[{label:'Limite padrão (vias sem cadastro)',value:S.defaultLimit!=null?S.defaultLimit+' km/h':'não avaliado'}],
+    charts:[],
+    tables:[
+      {title:'Limites de velocidade por via',columns:['Via','Limite (km/h)','Tolerância (s)'],
+        rows:S.limits.map(l=>[l.via,l.limite??'—',l.tolSeg??5])},
+      {title:'Monitoramento de KM mensal',columns:['Placa','Limite (km/mês)'],
+        rows:S.kmMonitors.map(m=>[m.plate,m.limite])},
+      {title:'Arquivos carregados',columns:['Arquivo','Placa'],
+        rows:S.files.map(f=>[f.name,f.plate||'—'])}
+    ]
+  };
+
+  // limites
+  $('#addVia').onclick=()=>{ S.limits.push({via:'',limite:null,tolSeg:5}); renderConfig(c); };
+  $('#saveLimits').onclick=()=>{
+    S.limits.forEach((l,i)=>{
+      l.via=($(`[data-limvia="${i}"]`)?.value||'').trim();
+      const v=$(`[data-limval="${i}"]`)?.value; l.limite=v!==''?+v:null;
+      const t=$(`[data-limtol="${i}"]`)?.value; l.tolSeg=t!==''?+t:5;
+    });
+    S.limits=S.limits.filter(l=>l.via);
+    const dl=$('#defLimit').value; S.defaultLimit=dl!==''?+dl:null;
+    rebuildDataset(); persist(); toast('Limites salvos'); renderConfig(c);
+  };
+  $$('[data-limdel]').forEach(b=>b.onclick=()=>{ S.limits.splice(+b.dataset.limdel,1); renderConfig(c); });
+
+  // km — captura valores atuais (mesmo desabilitados) antes de qualquer re-render
+  const readKm=()=>S.kmMonitors.forEach((m,i)=>{
+    const ps=$(`[data-kmplate="${i}"]`); if(ps&&ps.value) m.plate=ps.value;
+    const vi=$(`[data-kmval="${i}"]`); if(vi&&vi.value!=='') m.limite=+vi.value;
+  });
+  $('#addKm').onclick=()=>{ readKm(); S.kmMonitors.push({plate:plates[0]||'',limite:3000}); S.kmEdit=S.kmMonitors.length-1; renderConfig(c); };
+  $('#saveKm').onclick=()=>{ readKm(); S.kmEdit=null; persist(); toast('Monitoramento salvo'); renderConfig(c); };
+  $$('[data-kmedit]').forEach(b=>b.onclick=()=>{ readKm(); const i=+b.dataset.kmedit; S.kmEdit=(S.kmEdit===i)?null:i; renderConfig(c); });
+  $$('[data-kmdel]').forEach(b=>b.onclick=()=>{ readKm(); S.kmMonitors.splice(+b.dataset.kmdel,1); S.kmEdit=null; persist(); renderConfig(c); });
+  $('#cfgAddFile').onclick=()=>openUploadModal();
+  $('#cfgJson').onclick=()=>exportJson();
+  $$('[data-rmfile]').forEach(b=>b.onclick=()=>{ S.files.splice(+b.dataset.rmfile,1); rebuildDataset(); persist(); renderConfig(c); updateTopMeta(); });
+}
+
+/* ============================================================
+   EXPORTS
+   ============================================================ */
+function exportXlsx(rows){
+  const data=rows.map(r=>({
+    'Data':fmtDateTime(r.data),'Placa':r.plate,'Condutor':r.motorista,'Ign.':r.ign,
+    'Vel. (km/h)':r.vel,'Via':r.via||'','Limite':r.limite??'','Odômetro':r.odom,
+    'Latitude':r.lat,'Longitude':r.lon,'Endereço':r.endereco
+  }));
+  const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Telemetria');
+  XLSX.writeFile(wb,`Telemetria_Logon_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Excel exportado');
+}
+function exportViolations(viol){
+  if(!viol.length){ toast('Sem violações para exportar'); return; }
+  const data=viol.map(r=>({
+    'Condutor':r.motorista,'Placa':r.plate,'Data/Hora':fmtDateTime(r.data),'Via':r.via||'',
+    'Velocidade (km/h)':r.vel,'Limite (km/h)':r.limite,'Excesso (km/h)':r.vel-r.limite,
+    'Latitude':r.lat,'Longitude':r.lon,'Endereço':r.endereco,
+    'Google Maps':(r.lat&&r.lon)?`https://www.google.com/maps?q=${r.lat},${r.lon}`:''
+  }));
+  const ws=XLSX.utils.json_to_sheet(data); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Violações');
+  XLSX.writeFile(wb,`Evidencias_Violacoes_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Evidências exportadas');
+}
+
+/* ============================================================
+   BACKUP JSON — salva e restaura TODO o estado do painel
+   (registros, limites por via, limite padrão, monitoramento de KM).
+   Subir o .json de volta no painel restaura os dados para qualquer pessoa.
+   ============================================================ */
+const JSON_APP='Painel Telemetria Logon', JSON_SCHEMA=1;
+function exportJson(){
+  if(!S.files.length){ toast('Carregue dados antes de exportar'); return; }
+  const snap={
+    app:JSON_APP, schema:JSON_SCHEMA, geradoEm:new Date().toISOString(),
+    // somente campos de origem; limite/tolerância/gap são recalculados na importação
+    files:S.files.map(f=>({plate:f.plate,name:f.name,rows:f.rows.map(r=>({
+      data:r.data.toISOString(), motorista:r.motorista, ign:r.ign,
+      vel:isNaN(r.vel)?null:r.vel, odom:isNaN(r.odom)?null:r.odom,
+      lat:isNaN(r.lat)?null:r.lat, lon:isNaN(r.lon)?null:r.lon,
+      endereco:r.endereco||'', via:r.via||null
+    }))})),
+    limits:S.limits, defaultLimit:S.defaultLimit, kmMonitors:S.kmMonitors
+  };
+  const blob=new Blob([JSON.stringify(snap)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`Telemetria_Backup_${stamp()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  toast('Backup JSON exportado');
+}
+/* null (JSON) volta a NaN: os checks do painel usam isNaN(vel/odom) */
+function nn(v){ return v==null?NaN:+v; }
+function importJson(obj){
+  if(!obj || obj.app!==JSON_APP || !Array.isArray(obj.files)) throw new Error('JSON não é um backup deste painel');
+  S.files=obj.files.map(f=>({
+    plate:String(f.plate||''), name:String(f.name||f.plate||'backup'),
+    rows:(f.rows||[]).map(r=>{
+      const d=new Date(r.data);
+      return { plate:String(f.plate||''), data:d, ts:d.getTime(),
+        motorista:r.motorista||'Não informado', ign:String(r.ign||'').toUpperCase(),
+        vel:nn(r.vel), odom:nn(r.odom), lat:nn(r.lat), lon:nn(r.lon),
+        endereco:r.endereco||'', via:r.via||null };
+    }).filter(r=>!isNaN(r.ts))
+  }));
+  S.limits=Array.isArray(obj.limits)?obj.limits:[];
+  S.defaultLimit=obj.defaultLimit??null;
+  S.kmMonitors=Array.isArray(obj.kmMonitors)?obj.kmMonitors:[];
+  S.filters={ign:'ON'}; S.xf={};
+}
+
+/* ============================================================
+   EXPORTAÇÃO POR ABA — PDF / PPT / EXCEL (respeita filtros)
+   Cada view preenche S.exportCtx = {title, kpis[], charts[], tables[], insights[]}
+   ============================================================ */
+function bindExportMenu(){
+  const btn=$('#exportMenuBtn'), menu=$('#exportMenu');
+  if(!btn||!menu) return;
+  btn.onclick=e=>{ e.stopPropagation(); menu.classList.toggle('hidden'); };
+  menu.querySelectorAll('[data-export]').forEach(b=>b.onclick=e=>{
+    e.stopPropagation(); menu.classList.add('hidden'); doExport(b.dataset.export);
+  });
+}
+function currentFilterSummary(){
+  const f=S.filters; const p=[];
+  p.push('Período: '+((f._dataIni||f._dataFim)?`${f._dataIni?fmtBR(f._dataIni):'…'} até ${f._dataFim?fmtBR(f._dataFim):'…'}`:'todo o período'));
+  if(f._horaIni||f._horaFim) p.push(`Hora: ${f._horaIni||'00:00:00'} até ${f._horaFim||'23:59:59'}`);
+  const ign=f.ign===undefined?'ON':f.ign; p.push('Ignição: '+(ign==='ON'?'Ligada':ign==='OFF'?'Desligada':'Ambas'));
+  if(f.plates&&f.plates.length) p.push('Placas: '+f.plates.join(', '));
+  if(f.drivers&&f.drivers.length) p.push('Condutores: '+f.drivers.join(', '));
+  if(f.vias&&f.vias.length) p.push('Vias: '+f.vias.join(', '));
+  if(f.velMin!=null) p.push('Vel. maior ou igual a '+f.velMin+' km/h');
+  if(f.velMax!=null) p.push('Vel. menor ou igual a '+f.velMax+' km/h');
+  const xf=S.xf||{}; Object.keys(xf).filter(k=>xf[k]!=null).forEach(k=>p.push(xfLabel(k)+': '+xf[k]));
+  return p;
+}
+async function chartImages(ctx){
+  const imgs=[];
+  for(const ch of (ctx.charts||[])){
+    const inst=S.charts[ch.key];
+    if(!inst||!inst.dataURI) continue;
+    // scale:3 rende o canvas em 3x a resolução do SVG (canvas.width = svgWidth * scale),
+    // eliminando o embaçamento ao esticar o gráfico na página. Ref. verificada no
+    // source do ApexCharts 3.45.2 (Exports.js, método dataURI).
+    try{
+      const res=await inst.dataURI({scale:3});
+      if(res&&res.imgURI){
+        const sz=await imgNaturalSize(res.imgURI); // proporção real evita distorção no PDF
+        imgs.push({title:ch.title,uri:res.imgURI,ratio:(sz&&sz.w>0)?sz.h/sz.w:0.5});
+      }
+    }catch(e){ console.warn('chart img falhou',ch.key,e); }
+  }
+  return imgs;
+}
+function imgNaturalSize(uri){
+  return new Promise(res=>{ const im=new Image();
+    im.onload=()=>res({w:im.naturalWidth,h:im.naturalHeight});
+    im.onerror=()=>res(null); im.src=uri; });
+}
+function stamp(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}h${p(d.getMinutes())}`; }
+function safeName(s){ return String(s||'aba').replace(/\s+/g,'_').replace(/[^\w\-À-ÿ]/g,''); }
+
+async function doExport(type){
+  const ctx=S.exportCtx;
+  if(!S.rows.length){ toast('Carregue dados antes de exportar'); return; }
+  if(type==='all'){ await exportAll(); return; }
+  if(type==='json'){ exportJson(); return; }
+  if(!ctx){ toast('Nada para exportar nesta aba'); return; }
+  toast('Gerando '+type.toUpperCase()+'…');
+  try{
+    if(type==='xlsx') exportTabXlsx(ctx);
+    else if(type==='pdf') await exportTabPdf(ctx);
+    else if(type==='ppt') await exportTabPpt(ctx);
+  }catch(e){ console.error('Export falhou',e); toast('Falha ao gerar '+type.toUpperCase()); }
+}
+
+function exportTabXlsx(ctx){
+  const wb=XLSX.utils.book_new();
+  const resumo=[['Painel de Telemetria Logon · '+ctx.title],['Gerado em',new Date().toLocaleString('pt-BR')],[],['Filtros aplicados']];
+  currentFilterSummary().forEach(s=>resumo.push([s]));
+  if(ctx.kpis&&ctx.kpis.length){ resumo.push([],['Indicadores']); ctx.kpis.forEach(k=>resumo.push([k.label,k.value])); }
+  if(ctx.insights&&ctx.insights.length){ resumo.push([],['Leitura inteligente']); ctx.insights.forEach(t=>resumo.push([t])); }
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(resumo),'Resumo');
+  (ctx.tables||[]).forEach((t,i)=>{
+    const aoa=[t.columns, ...t.rows];
+    let name=`${i+1}. ${t.title||'Tabela'}`.replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31);
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),name);
+  });
+  XLSX.writeFile(wb,`Telemetria_${safeName(ctx.title)}_${stamp()}.xlsx`);
+  toast('Excel exportado');
+}
+
+async function exportTabPdf(ctx){
+  if(!window.jspdf){ toast('Biblioteca PDF indisponível (sem conexão?)'); return; }
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
+  const M=40; let y=M; const green=[114,128,70];
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(43,42,38); doc.text('Painel de Telemetria Logon',M,y); y+=18;
+  doc.setFontSize(12); doc.setTextColor(114,128,70); doc.text(ctx.title,M,y); doc.setFont('helvetica','normal'); y+=15;
+  doc.setFontSize(8); doc.setTextColor(120,120,110); doc.text('Gerado em '+new Date().toLocaleString('pt-BR'),M,y); y+=14;
+  doc.setFontSize(8); doc.setTextColor(90,90,80);
+  const flText=doc.splitTextToSize('Filtros: '+currentFilterSummary().join('   •   '),W-2*M);
+  doc.text(flText,M,y); y+=flText.length*10+8;
+  const imgs=await chartImages(ctx);
+  y=pdfBodyForCtx(doc,ctx,imgs,y,{W,H,M,green});
+  const pages=doc.internal.getNumberOfPages();
+  for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFontSize(7); doc.setTextColor(150,150,140);
+    doc.text(`Logon · Arauco · Projeto Sucuriú, página ${i} de ${pages}`,M,H-16); }
+  doc.save(`Telemetria_${safeName(ctx.title)}_${stamp()}.pdf`);
+  toast('PDF exportado');
+}
+
+// Corpo de uma aba dentro de um PDF ja iniciado: KPIs, insights, graficos e tabelas.
+// Retorna a nova posicao vertical. Usado tanto na exportacao de aba quanto no painel completo.
+function pdfBodyForCtx(doc,ctx,imgs,y,dims){
+  const {W,H,M,green}=dims;
+  if(ctx.kpis&&ctx.kpis.length){
+    doc.autoTable({startY:y,margin:{left:M,right:M},theme:'grid',head:[['Indicador','Valor']],
+      body:ctx.kpis.map(k=>[k.label,k.value]),headStyles:{fillColor:green,fontSize:8},bodyStyles:{fontSize:8},styles:{cellPadding:3}});
+    y=doc.lastAutoTable.finalY+14;
+  }
+  if(ctx.insights&&ctx.insights.length){
+    if(y>H-80){doc.addPage();y=M;}
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(43,42,38); doc.text('Leitura inteligente',M,y); doc.setFont('helvetica','normal'); y+=12;
+    doc.setFontSize(8); doc.setTextColor(70,70,64);
+    ctx.insights.forEach(t=>{ const lines=doc.splitTextToSize('• '+t,W-2*M); if(y+lines.length*10>H-M){doc.addPage();y=M;} doc.text(lines,M,y); y+=lines.length*10+4; });
+    y+=6;
+  }
+  for(const im of (imgs||[])){
+    let iw=W-2*M, ih=iw*(im.ratio||0.5);
+    const maxH=H-2*M-30; // gráfico alto (ex.: todos os condutores) é reduzido para caber na página
+    if(ih>maxH){ iw=iw*maxH/ih; ih=maxH; }
+    if(y+ih+34>H-M){ doc.addPage(); y=M; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(114,128,70);
+    doc.text(im.title,M,y); doc.setFont('helvetica','normal'); y+=16;
+    doc.addImage(im.uri,'PNG',M,y,iw,ih,undefined,'SLOW'); y+=ih+18;
+  }
+  (ctx.tables||[]).forEach(t=>{
+    if(!t.rows.length) return;
+    const cap=1500, body=t.rows.slice(0,cap);
+    if(y>H-120){ doc.addPage(); y=M; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(43,42,38); doc.text(t.title,M,y); doc.setFont('helvetica','normal'); y+=4;
+    doc.autoTable({startY:y+4,margin:{left:M,right:M},theme:'striped',head:[t.columns],
+      body:body.map(r=>r.map(c=>String(c))),headStyles:{fillColor:green,fontSize:7},
+      bodyStyles:{fontSize:7},styles:{cellPadding:2,overflow:'linebreak'}});
+    y=doc.lastAutoTable.finalY+12;
+    if(t.rows.length>cap){ if(y>H-M){doc.addPage();y=M;} doc.setFontSize(7); doc.setTextColor(150,150,140);
+      doc.text(`${t.rows.length-cap} linhas adicionais omitidas, use a exportação Excel para a base completa.`,M,y); y+=14; }
+  });
+  return y;
+}
+
+// Painel completo: percorre as views, captura graficos e monta um unico PDF.
+async function exportAll(){
+  if(!window.jspdf){ toast('Biblioteca PDF indisponível (sem conexão?)'); return; }
+  toast('Gerando painel completo, aguarde…');
+  const original=VIEW;
+  const plan=[
+    {id:'visao',label:'Visão Geral'},
+    {id:'veloc',label:'Análise de Velocidade'},
+    {id:'intel',label:'Leitura Inteligente'},
+    {id:'km',label:'Monitor de KM'},
+    {id:'registros',label:'Registros de Telemetria'}
+  ];
+  try{
+    const sections=[];
+    for(const p of plan){
+      go(p.id);
+      await new Promise(r=>setTimeout(r,500)); // deixa o ApexCharts concluir o render antes de capturar
+      const ctx=S.exportCtx;
+      const imgs=ctx?await chartImages(ctx):[];
+      sections.push({label:p.label,ctx,imgs});
+    }
+    go(original);
+    const {jsPDF}=window.jspdf;
+    const doc=new jsPDF({unit:'pt',format:'a4'});
+    const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
+    const M=40; const green=[114,128,70]; let y=M;
+    // capa
+    doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(43,42,38); doc.text('Painel de Telemetria Logon',M,y); y+=24;
+    doc.setFontSize(14); doc.setTextColor(114,128,70); doc.text('Relatório consolidado do painel',M,y); doc.setFont('helvetica','normal'); y+=18;
+    doc.setFontSize(9); doc.setTextColor(120,120,110); doc.text('Gerado em '+new Date().toLocaleString('pt-BR'),M,y); y+=15;
+    doc.setFontSize(9); doc.setTextColor(90,90,80);
+    const flText=doc.splitTextToSize('Filtros aplicados: '+currentFilterSummary().join('   •   '),W-2*M);
+    doc.text(flText,M,y); y+=flText.length*11+8;
+    doc.setFontSize(8); doc.setTextColor(120,120,110);
+    doc.text('Seções: '+plan.map(p=>p.label).join(' · '),M,y);
+    for(const sec of sections){
+      if(!sec.ctx) continue;
+      doc.addPage(); y=M;
+      doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(114,128,70); doc.text(sec.label,M,y); doc.setFont('helvetica','normal'); y+=8;
+      doc.setDrawColor(210); doc.line(M,y,W-M,y); y+=16;
+      y=pdfBodyForCtx(doc,sec.ctx,sec.imgs,y,{W,H,M,green});
+    }
+    const pages=doc.internal.getNumberOfPages();
+    for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFontSize(7); doc.setTextColor(150,150,140);
+      doc.text(`Logon · Arauco · Projeto Sucuriú, painel completo, página ${i} de ${pages}`,M,H-16); }
+    doc.save(`Telemetria_Painel_Completo_${stamp()}.pdf`);
+    toast('Painel completo exportado');
+  }catch(e){ console.error('exportAll falhou',e); toast('Falha ao gerar painel completo'); try{go(original);}catch(_){} }
+}
+
+async function exportTabPpt(ctx){
+  if(!window.PptxGenJS){ toast('Biblioteca PPT indisponível (sem conexão?)'); return; }
+  const pptx=new PptxGenJS(); pptx.defineLayout({name:'W',width:10,height:5.63}); pptx.layout='W';
+  const GREEN='728046', INK='2B2A26', SOFT='5E5B52';
+  let s=pptx.addSlide(); s.background={color:'F4F5F0'};
+  s.addText('Painel de Telemetria Logon',{x:0.5,y:0.6,w:9,h:0.6,fontSize:26,bold:true,color:INK});
+  s.addText(ctx.title,{x:0.5,y:1.3,w:9,h:0.5,fontSize:18,bold:true,color:GREEN});
+  s.addText('Gerado em '+new Date().toLocaleString('pt-BR'),{x:0.5,y:1.9,w:9,h:0.3,fontSize:11,color:SOFT});
+  s.addText(currentFilterSummary().map(t=>({text:t,options:{bullet:true,fontSize:11,color:INK,breakLine:true}})),{x:0.6,y:2.4,w:8.8,h:2.9,valign:'top'});
+  if(ctx.kpis&&ctx.kpis.length){
+    let k=pptx.addSlide(); k.background={color:'FFFFFF'};
+    k.addText('Indicadores',{x:0.5,y:0.3,w:9,h:0.5,fontSize:20,bold:true,color:GREEN});
+    const rows=[[{text:'Indicador',options:{bold:true,color:'FFFFFF',fill:{color:GREEN}}},{text:'Valor',options:{bold:true,color:'FFFFFF',fill:{color:GREEN}}}],
+      ...ctx.kpis.map(kp=>[{text:kp.label,options:{color:INK}},{text:String(kp.value),options:{color:INK,bold:true}}])];
+    k.addTable(rows,{x:0.5,y:1.0,w:9,fontSize:12,border:{type:'solid',color:'D4D6C8',pt:0.5}});
+  }
+  if(ctx.insights&&ctx.insights.length){
+    let i=pptx.addSlide(); i.background={color:'FFFFFF'};
+    i.addText('Leitura inteligente',{x:0.5,y:0.3,w:9,h:0.5,fontSize:20,bold:true,color:GREEN});
+    i.addText(ctx.insights.map(t=>({text:t,options:{bullet:true,fontSize:12,color:INK,breakLine:true,paraSpaceAfter:6}})),{x:0.6,y:1.0,w:8.8,h:4.3,valign:'top'});
+  }
+  const imgs=await chartImages(ctx);
+  for(const im of imgs){
+    let c=pptx.addSlide(); c.background={color:'FFFFFF'};
+    c.addText(im.title,{x:0.5,y:0.28,w:9,h:0.6,fontSize:24,bold:true,color:GREEN});
+    c.addImage({data:im.uri,x:0.6,y:1.05,w:8.8,h:4.25,sizing:{type:'contain',w:8.8,h:4.25}});
+  }
+  (ctx.tables||[]).forEach(t=>{
+    if(!t.rows.length) return;
+    const cap=60, body=t.rows.slice(0,cap);
+    let ts=pptx.addSlide(); ts.background={color:'FFFFFF'};
+    ts.addText(t.title,{x:0.5,y:0.3,w:9,h:0.5,fontSize:18,bold:true,color:GREEN});
+    const head=t.columns.map(c=>({text:String(c),options:{bold:true,color:'FFFFFF',fill:{color:GREEN}}}));
+    const trows=[head, ...body.map(r=>r.map(c=>({text:String(c),options:{color:INK}})))];
+    ts.addTable(trows,{x:0.3,y:1.0,w:9.4,fontSize:8,border:{type:'solid',color:'E4E5DC',pt:0.5},autoPage:true,autoPageRepeatHeader:true,newSlideStartY:0.6});
+    if(t.rows.length>cap) ts.addText(`${t.rows.length-cap} linhas adicionais, base completa no Excel.`,{x:0.3,y:5.25,w:9.4,h:0.3,fontSize:9,italic:true,color:SOFT});
+  });
+  pptx.writeFile({fileName:`Telemetria_${safeName(ctx.title)}_${stamp()}.pptx`});
+  toast('PowerPoint exportado');
+}
+
+/* ============================================================
+   PERSISTÊNCIA (IndexedDB)
+   ============================================================ */
+let DB=null;
+function openDB(){
+  return new Promise((res)=>{
+    const rq=indexedDB.open('telemetria_logon',1);
+    rq.onupgradeneeded=e=>{ e.target.result.createObjectStore('state'); };
+    rq.onsuccess=e=>{ DB=e.target.result; res(DB); };
+    rq.onerror=()=>res(null);
+  });
+}
+function persist(){
+  if(!DB) return;
+  try{
+    const snap={
+      files:S.files.map(f=>({plate:f.plate,name:f.name,rows:f.rows.map(r=>({...r,data:r.data.toISOString()}))})),
+      limits:S.limits, defaultLimit:S.defaultLimit, kmMonitors:S.kmMonitors, theme:S.theme
+    };
+    DB.transaction('state','readwrite').objectStore('state').put(snap,'main');
+  }catch(e){ console.warn('persist falhou',e); }
+}
+function restore(){
+  return new Promise(res=>{
+    if(!DB) return res(false);
+    const rq=DB.transaction('state','readonly').objectStore('state').get('main');
+    rq.onsuccess=()=>{
+      const s=rq.result; if(!s){ res(false); return; }
+      S.files=(s.files||[]).map(f=>({...f,rows:f.rows.map(r=>({...r,data:new Date(r.data),ts:new Date(r.data).getTime()}))}));
+      S.limits=s.limits||[]; S.defaultLimit=s.defaultLimit??null; S.kmMonitors=s.kmMonitors||[];
+      S.theme=s.theme||'light';
+      rebuildDataset(); res(S.rows.length>0);
+    };
+    rq.onerror=()=>res(false);
+  });
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+(async function init(){
+  await openDB();
+  const had=await restore();
+  document.documentElement.setAttribute('data-theme',S.theme);
+  renderShell();
+  if(had){ toast('Dados restaurados da sessão anterior'); }
+})();
+</script>
+</body>
+</html>
