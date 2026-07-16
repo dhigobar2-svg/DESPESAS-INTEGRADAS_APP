@@ -10,7 +10,7 @@
 #
 # PRÉ-REQUISITOS
 #   - Egress do ambiente liberado para os domínios do Railway
-#     (backboard.railway.app e railway.com). Sem isso o CLI recebe 403 do proxy.
+#     (backboard.railway.com e railway.com). Sem isso o CLI recebe 403 do proxy.
 #   - Um TOKEN DE API DE CONTA/WORKSPACE do Railway (não um "project token"),
 #     criado em: https://railway.com/account/tokens
 #     Exporte-o antes de rodar:

@@ -80,7 +80,7 @@ export RAILWAY_API_TOKEN="seu_token_de_conta"
 ./scripts/railway-setup.sh
 ```
 
-> ⚠️ O ambiente precisa ter **egress liberado para `backboard.railway.app` e
+> ⚠️ O ambiente precisa ter **egress liberado para `backboard.railway.com` e
 > `railway.com`**. Sem isso, o CLI recebe `403` do proxy e nada conecta.
 
 ### Manual (passo a passo)
