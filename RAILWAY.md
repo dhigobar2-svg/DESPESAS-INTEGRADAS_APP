@@ -68,19 +68,36 @@ Railway refaz build + deploy. Os dados no `/data` permanecem intactos entre depl
 
 ## Alternativa via CLI
 
+### Automatizado (script)
+
+Há um script que faz tudo (projeto → deploy → volume → variável → domínio):
+
+```bash
+# 1. Token de CONTA do Railway: https://railway.com/account/tokens
+export RAILWAY_API_TOKEN="seu_token_de_conta"
+
+# 2. Rodar (opcional: PROJECT_NAME, WORKSPACE, MOUNT_PATH, DB_FILE)
+./scripts/railway-setup.sh
+```
+
+> ⚠️ O ambiente precisa ter **egress liberado para `backboard.railway.app` e
+> `railway.com`**. Sem isso, o CLI recebe `403` do proxy e nada conecta.
+
+### Manual (passo a passo)
+
 ```bash
 # Instalar e autenticar
 npm i -g @railway/cli
-railway login
+railway login                # (interativo) — ou export RAILWAY_API_TOKEN=...
 
 # Na raiz do projeto
-railway init                 # cria/liga o projeto
-railway up                   # faz o deploy
+railway init --name despesas-integradas   # cria/liga o projeto
+railway up --ci --yes                      # faz o deploy (cria o serviço)
 
-# Variáveis e volume
-railway variables --set DATABASE_PATH=/data/expenses.db
+# Volume, variável e domínio
 railway volume add --mount-path /data
-railway domain               # gera o domínio público
+railway variable set DATABASE_PATH=/data/expenses.db
+railway domain                             # gera o domínio público
 ```
 
 ---
