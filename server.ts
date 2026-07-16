@@ -249,6 +249,9 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
+  // Lightweight health probe for Railway (and other PaaS) healthchecks.
+  app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
   // GET all data
   app.get("/api/data", (_req, res) => {
     const expenses     = db.prepare("SELECT * FROM expenses ORDER BY due_date DESC").all();
@@ -349,8 +352,10 @@ async function startServer() {
     });
   }
 
-  httpServer.listen(3000, "0.0.0.0", () => {
-    console.log("Server running on http://localhost:3000");
+  // Railway (and most PaaS) inject the port to bind on via PORT.
+  const port = Number(process.env.PORT) || 3000;
+  httpServer.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${port}`);
   });
 }
 
