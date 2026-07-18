@@ -764,7 +764,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
             <div className="flex items-center gap-2">
               <TrendingDown size={16} className="text-slate-400" />
               <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                Histórico — Últimos 12 Meses
+                HISTÓRICO DESPESAS - ÚLTIMOS 12 MESES
               </h3>
             </div>
             {annualAvg > 0 && (
@@ -794,7 +794,7 @@ export default function Dashboard({ onDrillResponsible }: Props) {
                 )}
                 <Bar dataKey="total" radius={[4, 4, 0, 0]}>
                   {annualData.map((entry, i) => (
-                    <Cell key={i} fill={entry.isCurrent ? "#10b981" : "#cbd5e1"} />
+                    <Cell key={i} fill={entry.isCurrent ? "#10b981" : "#a7f3d0"} />
                   ))}
                   <LabelList
                     dataKey="total"

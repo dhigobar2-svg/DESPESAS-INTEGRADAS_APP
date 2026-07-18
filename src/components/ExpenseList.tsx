@@ -171,8 +171,9 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
             <Share2 size={14} /> WhatsApp
           </button>
           <button onClick={openAdd}
-            className="flex items-center gap-1.5 bg-emerald-600 text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm">
-            <Plus size={14} /> Nova
+            className="bg-emerald-600 text-white p-2.5 rounded-full shadow-lg hover:bg-emerald-700 transition-transform active:scale-95"
+            title="Nova Despesa">
+            <Plus size={20} />
           </button>
         </div>
       </div>
@@ -188,25 +189,22 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
           />
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <div className="flex items-center gap-1.5 col-span-2 md:col-span-2">
-            <div className="relative flex-1">
-              <label className="absolute -top-2 left-2 bg-white px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">De</label>
-              <input
-                type="date" value={filterDateFrom}
-                onChange={e => { setFilterDateFrom(e.target.value); resetPage(); }}
-                className="input py-2 text-xs w-full"
-              />
-            </div>
-            <span className="text-slate-300 font-bold shrink-0">→</span>
-            <div className="relative flex-1">
-              <label className="absolute -top-2 left-2 bg-white px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Até</label>
-              <input
-                type="date" value={filterDateTo}
-                onChange={e => { setFilterDateTo(e.target.value); resetPage(); }}
-                className="input py-2 text-xs w-full"
-              />
-            </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="relative">
+            <label className="absolute -top-2 left-2 bg-white px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest z-10">De</label>
+            <input
+              type="date" value={filterDateFrom}
+              onChange={e => { setFilterDateFrom(e.target.value); resetPage(); }}
+              className="input py-2 text-xs w-full"
+            />
+          </div>
+          <div className="relative">
+            <label className="absolute -top-2 left-2 bg-white px-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest z-10">Até</label>
+            <input
+              type="date" value={filterDateTo}
+              onChange={e => { setFilterDateTo(e.target.value); resetPage(); }}
+              className="input py-2 text-xs w-full"
+            />
           </div>
 
           <select value={filterCat} onChange={e => { setFilterCat(e.target.value); resetPage(); }}
@@ -222,7 +220,7 @@ export default function ExpenseList({ initialResponsibleFilter = "" }: Props) {
           </select>
 
           <select value={filterPaid} onChange={e => { setFilterPaid(e.target.value); resetPage(); }}
-            className="input py-2 text-xs">
+            className="input py-2 text-xs col-span-2">
             <option value="">Todos status</option>
             <option value="1">Pago</option>
             <option value="0">Pendente</option>
