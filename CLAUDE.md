@@ -7,8 +7,17 @@ UI language is **Brazilian Portuguese (pt-BR)**.
 
 ## Architecture Overview
 
-This is a **full-stack TypeScript monorepo** with a single entry point (`server.ts`) that
-serves both the Express REST/WebSocket API and the React SPA via Vite middleware.
+This is a **full-stack TypeScript monorepo**. The same frontend runs against **two
+interchangeable backends**, and the client discovers which one it's talking to at runtime
+(`meta.realtime` in `GET /api/data`):
+
+| | Backend | Database | Live updates |
+|---|---|---|---|
+| **Production (Netlify)** | `netlify/functions/api.mts` (serverless) | Postgres (Netlify DB) | polling, 25 s |
+| **Local dev / Railway** | `server.ts` (Express + Socket.IO) | SQLite (`better-sqlite3`, WAL) | Socket.IO push |
+
+**Both must be kept in sync**: any change to an endpoint, column whitelist or error message
+belongs in *both* `server.ts` and `netlify/functions/api.mts`.
 
 ```
 /
@@ -37,10 +46,17 @@ serves both the Express REST/WebSocket API and the React SPA via Vite middleware
 │   └── lib/
 │       └── utils.ts       # cn(), generateId(), formatCurrency(), recurringDueDate(),
 │                          # isRecurringCovered(), compressImage(), …
+├── netlify/
+│   ├── functions/
+│   │   └── api.mts        # Serverless twin of the Express API, on Postgres
+│   └── database/
+│       └── schema.mjs     # Postgres schema — single source (function + build check)
+├── netlify.toml           # Build, /api routing (before the SPA fallback), headers
 ├── public/
 │   └── icons/             # PWA icons (generated — see scripts/generate-icons.mjs)
 ├── scripts/
 │   ├── generate-icons.mjs # Regenerates public/icons/*.png (`npm run icons`)
+│   ├── check-db.mjs       # Applies the schema + fails the build if Postgres is down
 │   └── railway-setup.sh   # One-shot Railway provisioning via CLI
 ├── index.html             # HTML shell + PWA meta tags (theme-color, apple-touch-icon…)
 ├── vite.config.ts         # Vite config (React, Tailwind v4, VitePWA, alias @/ → root)
@@ -158,6 +174,36 @@ app_meta          (key TEXT PK, value)               -- one-time maintenance fla
 - `dedupRecurringOccurrences()` runs on **every** start: deletes exact duplicate
   recurring occurrences (same `recurring_id`, due date, value, description,
   responsible), keeping the paid one, then the deterministic `rec_…` id, then the oldest.
+
+---
+
+## Netlify backend (production)
+
+The app is published on Netlify at **https://venerable-cucurucho-338711.netlify.app**
+(auto-deploys from `main` in this repo). Rules that keep it working:
+
+- **`/api/*` and `/health` must be routed to the function *before* the SPA fallback**
+  (`netlify.toml`). If the `/*  →  /index.html  200` rule wins, `/api/data` answers 200
+  with HTML, the client concludes there's no backend and silently drops to local-only
+  mode — the exact bug that kept every save trapped on the phone.
+- **A 200 is not enough to confirm a write.** `postSync`/`deleteItem` only treat a
+  response as success when the body is JSON from our API; an HTML 200 keeps the rows
+  queued. Never "simplify" that back to `if (res.ok)`.
+- **No Socket.IO in serverless.** `/api/data` reports `meta.realtime`; the client
+  connects the socket only when it's `true`, otherwise it polls every 25 s (and only
+  while the tab is visible). `io()` is created with `autoConnect: false` for this.
+- **The Postgres schema lives in `netlify/database/schema.mjs`** and every statement is
+  idempotent. It's applied at build time (`scripts/check-db.mjs`) *and* on each cold
+  start (`ensureSchema`).
+- **`scripts/check-db.mjs` never fails the build on purpose.** It applies the schema and
+  logs the database state during the build; the function recreates the schema on cold
+  start anyway. (An earlier version exited non-zero when the DB was unreachable — it
+  blocked a deploy and, with no access to build logs, was undiagnosable. Don't
+  reintroduce that.) Use `GET /health` to check the database in production.
+- **Local data adoption**: on first contact with an *empty* server, rows found in
+  localStorage are queued and uploaded instead of being wiped by the empty snapshot
+  (one-shot, flag `local_data_adopted`). This is what migrates a device that had been
+  running without a backend.
 
 ---
 
