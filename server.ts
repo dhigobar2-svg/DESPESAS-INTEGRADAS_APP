@@ -317,7 +317,13 @@ async function startServer() {
     const recurringIncomes = db.prepare("SELECT * FROM recurring_incomes ORDER BY description").all();
     const recurringSkips = db.prepare("SELECT * FROM recurring_skips").all();
     const notes        = db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all();
-    res.json({ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes });
+    res.json({
+      expenses, categories, responsibles, profile, budgets, recurring,
+      incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
+      // Aqui existe Socket.IO: o cliente escuta `data_updated` em vez de fazer
+      // polling (o backend serverless da Netlify responde `realtime: false`).
+      meta: { realtime: true, storage: "sqlite" },
+    });
   });
 
   // POST /api/sync — validated upsert of all client state

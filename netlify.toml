@@ -1,0 +1,51 @@
+# Publicação na Netlify: SPA estático em dist/ + API serverless com Postgres
+# (Netlify DB). O mesmo repositório continua rodando com Express + SQLite via
+# `npm run dev` / Railway — veja server.ts.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# A API tem que ser resolvida ANTES do fallback do SPA, senão /api/data cairia
+# no index.html e o app acharia que não existe servidor ("modo local").
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/api/health"
+  status = 200
+  force = true
+
+# Socket.IO não existe em serverless. Responder 404 de imediato evita que o
+# cliente fique tentando reconectar contra o HTML do SPA.
+[[redirects]]
+  from = "/socket.io/*"
+  to = "/.netlify/functions/api/socket-indisponivel"
+  status = 404
+  force = true
+
+# Fallback do SPA (precisa ser a última regra).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# O service worker e o manifest não podem ficar em cache de CDN, ou um deploy
+# novo demoraria a chegar nos aparelhos já instalados.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

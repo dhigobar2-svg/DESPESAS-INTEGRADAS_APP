@@ -32,7 +32,7 @@ interface NavState {
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, serverReachable, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes } = useData();
+  const { profile, isOnline, isConnected, realtime, serverReachable, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
@@ -231,11 +231,13 @@ function Shell() {
                 <div className="w-2 h-2 rounded-full bg-slate-300" />
               </div>
             ) : (
-              <div className="flex items-center gap-1.5" title={isConnected ? "Conectado" : "Reconectando…"}>
-                <Wifi size={14} className={cn(isConnected ? "text-emerald-500" : "text-amber-400")} />
+              // Sem Socket.IO (backend serverless) "conectado" é o estado normal:
+              // os dados vão para o banco do mesmo jeito, só sem push em tempo real.
+              <div className="flex items-center gap-1.5" title={isConnected || !realtime ? "Conectado ao servidor" : "Reconectando…"}>
+                <Wifi size={14} className={cn(isConnected || !realtime ? "text-emerald-500" : "text-amber-400")} />
                 <div className={cn(
                   "w-2 h-2 rounded-full",
-                  isConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-400 animate-pulse",
+                  isConnected || !realtime ? "bg-emerald-500 animate-pulse" : "bg-amber-400 animate-pulse",
                 )} />
               </div>
             )}

@@ -30,6 +30,7 @@ interface DataContextValue {
   notes:            Note[];
   isOnline:     boolean;
   isConnected:  boolean;
+  realtime:     boolean;
   serverReachable: boolean;
   notificationsEnabled: boolean;
   pendingCount: number;
@@ -208,6 +209,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [notes,           setNotes]           = useState<Note[]>([]);
   const [isOnline,     setIsOnline]     = useState(navigator.onLine);
   const [isConnected,  setIsConnected]  = useState(false);
+  // false = backend sem Socket.IO (serverless): atualizamos por polling, e a
+  // ausência de socket não deve aparecer como "reconectando" no cabeçalho.
+  const [realtime,     setRealtime]     = useState(true);
   // false when online but the API isn't reachable (e.g. deployed to a static
   // host with no backend) — the app then runs in local-only mode.
   const [serverReachable, setServerReachable] = useState(true);
@@ -261,7 +265,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (res.ok) return "ok";
+    if (res.ok) {
+      // Um 200 não basta: em hospedagem estática o fallback do SPA responde 200
+      // com o index.html, e tratar isso como sucesso descartava a fila de envio
+      // — o save sumia sem nunca ter chegado a um banco. Só confirmamos quando a
+      // resposta é realmente JSON da nossa API.
+      try {
+        const body = await res.json();
+        if (body && typeof body === "object" && !("error" in body)) return "ok";
+      } catch { /* HTML/vazio: não existe backend nesta URL */ }
+      return "failed";
+    }
     let serverError: string | null = null;
     try { serverError = (await res.json())?.error ?? null; } catch { /* non-JSON body */ }
     if (serverError) {
@@ -448,6 +462,72 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return generated;
   }, []);
 
+  // ── Modo de atualização: tempo real ou polling ───────────────────────────────
+  // Com Express + Socket.IO (local/Railway) o servidor avisa cada cliente por
+  // `data_updated`. Em serverless (Netlify) não há conexão persistente, então
+  // `/api/data` responde `meta.realtime: false` e passamos a buscar de tempos
+  // em tempos — sem isso o socket ficaria tentando reconectar para sempre.
+  const POLL_INTERVAL_MS = 25_000;
+  const pollTimer   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const realtimeRef = useRef<boolean | null>(null);
+
+  const configureRealtime = useCallback((realtime: boolean) => {
+    if (realtimeRef.current === realtime) return;
+    realtimeRef.current = realtime;
+    setRealtime(realtime);
+
+    if (realtime) {
+      if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; }
+      if (!socketRef.current?.connected) socketRef.current?.connect();
+      return;
+    }
+
+    socketRef.current?.disconnect();
+    setIsConnected(false);
+    if (!pollTimer.current) {
+      pollTimer.current = setInterval(() => {
+        // Só busca com a tela à vista: economiza bateria e dados do celular.
+        if (document.visibilityState === "visible" && navigator.onLine) fetchDataRef.current();
+      }, POLL_INTERVAL_MS);
+    }
+  }, []);
+
+  // ── Adoção dos dados locais ──────────────────────────────────────────────────
+  // Quem usou o app sem backend (hospedagem estática) tem tudo só no aparelho.
+  // No primeiro contato com um servidor vazio, mandamos esses dados para cima em
+  // vez de deixar o snapshot vazio do servidor apagar a tela do usuário.
+  const adoptLocalData = useCallback((data: Record<string, unknown>): boolean => {
+    if (localStorage.getItem("local_data_adopted")) return false;
+
+    const serverHasData = ["expenses", "incomes", "notes", "responsibles", "budgets", "recurring", "recurringIncomes"]
+      .some(k => Array.isArray(data[k]) && (data[k] as unknown[]).length > 0);
+    if (serverHasData) {
+      localStorage.setItem("local_data_adopted", "1"); // servidor já é a fonte da verdade
+      return false;
+    }
+
+    const local: SyncData = {
+      expenses:         lsGet<Expense[]>("expenses", []),
+      categories:       lsGet<Category[]>("categories", []),
+      responsibles:     lsGet<Responsible[]>("responsibles", []),
+      budgets:          lsGet<Budget[]>("budgets", []),
+      recurring:        lsGet<RecurringExpense[]>("recurring", []),
+      incomes:          lsGet<Income[]>("incomes", []),
+      incomeTypes:      lsGet<IncomeType[]>("incomeTypes", []),
+      recurringIncomes: lsGet<RecurringIncome[]>("recurringIncomes", []),
+      recurringSkips:   lsGet<RecurringSkip[]>("recurringSkips", []),
+      notes:            lsGet<Note[]>("notes", []),
+    };
+    const total = PAYLOAD_TABLES.reduce((s, t) => s + ((local[t] as unknown[] | undefined)?.length ?? 0), 0);
+    const localProfile = lsGet<UserProfile | null>("profile", null);
+    if (!total && !localProfile) return false;
+
+    if (localProfile) local.profile = localProfile;
+    queuePending(local);
+    localStorage.setItem("local_data_adopted", "1");
+    return true;
+  }, []);
+
   // ── Fetch ─────────────────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async (onSuccess?: () => void) => {
@@ -462,6 +542,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       setServerReachable(true);
+
+      // Este backend empurra atualizações (Socket.IO) ou precisamos de polling?
+      configureRealtime((data as { meta?: { realtime?: boolean } }).meta?.realtime !== false);
+
+      // Primeiro contato com um servidor vazio: sobe o que só existia neste
+      // aparelho, senão o snapshot vazio apagaria os dados do usuário.
+      const adopted = adoptLocalData(data);
 
       // Overlay any still-pending rows on top of the server data (flush may have
       // failed) and drop rows with a queued offline deletion — the UI must keep
@@ -575,6 +662,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       lsSet("notes",            nts);
 
       onSuccess?.();
+
+      // Envia agora o que acabou de ser adotado (a fila já está refletida na tela).
+      if (adopted) {
+        addToast("success", "Dados deste aparelho enviados para o servidor.");
+        flushPending();
+      }
     } catch (err) {
       console.error("Fetch failed, using local data", err);
       // Online but the API didn't respond → no backend here (local-only mode).
@@ -612,7 +705,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setIncomeTypes(its); lsSet("incomeTypes", its);
       }
     }
-  }, [applyRecurring, applyRecurringIncomes, syncWithServer, flushPending, flushPendingDeletes, enqueueDelete]);
+  }, [applyRecurring, applyRecurringIncomes, syncWithServer, flushPending, flushPendingDeletes,
+      enqueueDelete, configureRealtime, adoptLocalData, addToast]);
 
   // Keep a ref so syncWithServer (defined earlier) can reconcile after a failure.
   fetchDataRef.current = fetchData;
@@ -715,12 +809,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     pendingNotify = () => setPendingCount(countPendingChanges());
     pendingNotify();
 
-    fetchData(migrateLegacyNotes);
-
     // Default reconnection = infinite with backoff. A capped attempt count made
     // real-time updates stop for good after ~10 failures until a full reload.
-    const s = io();
+    // `autoConnect: false`: só conectamos depois que /api/data confirmar que
+    // este backend tem Socket.IO — em serverless a conexão nunca completaria.
+    const s = io({ autoConnect: false });
     socketRef.current = s;
+
+    fetchData(migrateLegacyNotes);
 
     s.on("connect", () => {
       setIsConnected(true);
@@ -775,6 +871,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       s.disconnect();
       if (refetchTimer) clearTimeout(refetchTimer);
       if (flushTimer.current) clearTimeout(flushTimer.current);
+      if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; }
+      realtimeRef.current = null;
       window.removeEventListener("online",  onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("storage", onStorage);
@@ -878,22 +976,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     try {
       const res = await fetch(`/api/delete/${table}/${id}`, { method: "POST" });
-      if (res.ok) {
+      // Como no envio: um 200 com HTML é o fallback do SPA, não uma exclusão.
+      let body: { error?: string } | null = null;
+      try { body = await res.json(); } catch { /* non-JSON */ }
+
+      if (res.ok && body && typeof body === "object" && !body.error) {
         setServerReachable(true);
         addToast("success", "Item excluído.");
+      } else if (body?.error) {
+        // Rejeição real da aplicação (ex.: categoria em uso) → desfaz.
+        setServerReachable(true);
+        rollback();
+        addToast("error", body.error);
       } else {
-        // Real app-level rejection (JSON {error}, e.g. category in use) → roll back.
-        // No JSON body → there's no backend here (static host): keep the local
-        // deletion and switch to local-only mode instead of failing.
-        let serverError: string | null = null;
-        try { serverError = (await res.json())?.error ?? null; } catch { /* non-JSON */ }
-        if (serverError) {
-          setServerReachable(true);
-          rollback();
-          addToast("error", serverError);
-        } else {
-          setServerReachable(false);
-        }
+        // Sem resposta útil da API → não há backend nesta URL (modo local):
+        // mantém a exclusão local em vez de falhar na cara do usuário.
+        setServerReachable(false);
       }
     } catch {
       // Network error: the request may or may not have reached the server.
@@ -1078,7 +1176,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataContextValue = {
     expenses, categories, responsibles, profile, budgets, recurring,
     incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
-    isOnline, isConnected, serverReachable, notificationsEnabled, pendingCount, toasts,
+    isOnline, isConnected, realtime, serverReachable, notificationsEnabled, pendingCount, toasts,
     saveExpense, deleteItem, togglePaid, forceSync, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
     saveIncome, saveIncomeType, saveRecurringIncome, saveNote, restoreBackup,
