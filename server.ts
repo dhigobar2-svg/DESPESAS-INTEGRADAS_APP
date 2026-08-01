@@ -8,9 +8,30 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DATABASE_PATH lets the DB live on a persistent volume in production.
-const db = new Database(process.env.DATABASE_PATH || "expenses.db");
+const DB_PATH = process.env.DATABASE_PATH || "expenses.db";
+const db = new Database(DB_PATH);
 
 db.exec("PRAGMA foreign_keys = ON;");
+// WAL: leituras não travam durante uma escrita — o app faz um GET /api/data por
+// cliente a cada data_updated, então concorrência de leitura importa. Combinado
+// com synchronous=NORMAL dá durabilidade suficiente com bem menos fsync.
+db.pragma("journal_mode = WAL");
+db.pragma("synchronous = NORMAL");
+// Se outra escrita estiver em andamento, espera em vez de estourar SQLITE_BUSY.
+db.pragma("busy_timeout = 5000");
+
+// Aviso alto no boot quando o banco NÃO está num volume persistente: no Railway
+// (e em qualquer container) o filesystem é efêmero e o .db some a cada deploy.
+const dbAbsolute = path.resolve(DB_PATH);
+const dbPersistent = dbAbsolute.startsWith("/data/");
+console.log(`[db] SQLite em ${dbAbsolute} (journal: WAL)`);
+if (process.env.NODE_ENV === "production" && !dbPersistent) {
+  console.warn(
+    "[db] ATENÇÃO: DATABASE_PATH não aponta para o volume persistente (/data). " +
+    "Os dados serão perdidos no próximo deploy. Configure o volume em /data e " +
+    "DATABASE_PATH=/data/expenses.db.",
+  );
+}
 
 // Schema
 db.exec(`
@@ -138,6 +159,20 @@ tryMigrate("SELECT recurring_income_id FROM incomes LIMIT 1", "ALTER TABLE incom
 // Key/value store for one-time maintenance flags.
 db.exec("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);");
 
+// Índices para as consultas que o app realmente faz: listagem por vencimento /
+// data, os filtros por mês e as buscas por template de recorrência (usadas na
+// materialização mensal e na deduplicação que roda a cada start).
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_expenses_due_date       ON expenses (due_date);
+  CREATE INDEX IF NOT EXISTS idx_expenses_recurring      ON expenses (recurring_id);
+  CREATE INDEX IF NOT EXISTS idx_expenses_category       ON expenses (category_id);
+  CREATE INDEX IF NOT EXISTS idx_expenses_responsible    ON expenses (responsible_id);
+  CREATE INDEX IF NOT EXISTS idx_incomes_date            ON incomes (date);
+  CREATE INDEX IF NOT EXISTS idx_incomes_recurring       ON incomes (recurring_income_id);
+  CREATE INDEX IF NOT EXISTS idx_budgets_month           ON budgets (month);
+  CREATE INDEX IF NOT EXISTS idx_recurring_skips_lookup  ON recurring_skips (recurring_id, month);
+`);
+
 // One-time cleanup of duplicate rows. A duplicate = same description + due_date +
 // value + responsible (expenses) / description + date + value + type (incomes).
 // We keep one row per group, preferring the paid one, then the earliest.
@@ -250,7 +285,23 @@ async function startServer() {
   app.use(express.json({ limit: "10mb" }));
 
   // Lightweight health probe for Railway (and other PaaS) healthchecks.
-  app.get("/health", (_req, res) => res.json({ status: "ok" }));
+  // Também informa onde o banco está e se ele é persistente — é assim que dá
+  // para conferir, sem entrar no container, se o volume foi mesmo configurado.
+  app.get("/health", (_req, res) => {
+    let expenseCount: number | null = null;
+    try {
+      expenseCount = (db.prepare("SELECT COUNT(*) AS n FROM expenses").get() as { n: number }).n;
+    } catch { /* banco indisponível — o status abaixo já denuncia */ }
+    res.json({
+      status: expenseCount === null ? "degraded" : "ok",
+      database: {
+        path: dbAbsolute,
+        persistent: dbPersistent,
+        journal_mode: String(db.pragma("journal_mode", { simple: true })),
+        expenses: expenseCount,
+      },
+    });
+  });
 
   // GET all data
   app.get("/api/data", (_req, res) => {
@@ -357,6 +408,18 @@ async function startServer() {
   httpServer.listen(port, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${port}`);
   });
+
+  // Encerramento limpo: o Railway manda SIGTERM a cada novo deploy. Fechar o
+  // banco faz o checkpoint do WAL antes de o container morrer.
+  const shutdown = (signal: string) => {
+    console.log(`[server] ${signal} recebido — fechando banco.`);
+    try { db.close(); } catch { /* já fechado */ }
+    httpServer.close(() => process.exit(0));
+    // Não deixa um socket pendurado segurar o processo indefinidamente.
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT",  () => shutdown("SIGINT"));
 }
 
 startServer();

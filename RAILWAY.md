@@ -109,6 +109,44 @@ railway domain                             # gera o domínio público
 - **App:** a raiz `/` serve o SPA React.
 - **Persistência:** crie uma despesa, faça um novo deploy e confirme que ela continua lá.
 
+### O volume está mesmo ativo? (checagem em 5 segundos)
+
+Abra `https://SEU-DOMINIO.up.railway.app/health`. A resposta mostra onde o banco está:
+
+```json
+{
+  "status": "ok",
+  "database": {
+    "path": "/data/expenses.db",
+    "persistent": true,
+    "journal_mode": "wal",
+    "expenses": 42
+  }
+}
+```
+
+- `"persistent": true` → o banco está no volume; os dados sobrevivem aos deploys. ✅
+- `"persistent": false` → **o banco está no disco efêmero e some no próximo deploy.**
+  Volte ao passo 2 (criar o volume em `/data`) e ao passo 3 (`DATABASE_PATH=/data/expenses.db`).
+  O log do serviço também mostra esse aviso no boot.
+
+---
+
+## Instalar no celular (PWA)
+
+O app é um **PWA**: dá para instalar na tela de início e ele **abre mesmo sem internet**
+(os lançamentos feitos offline entram na fila e sobem sozinhos ao reconectar).
+
+- **Android / Chrome:** abra o domínio → menu ⋮ → *Instalar app* / *Adicionar à tela inicial*.
+- **iPhone / Safari:** abra o domínio → botão *Compartilhar* → *Adicionar à Tela de Início*.
+
+Depois de instalado, a primeira abertura com internet baixa o app inteiro para o aparelho.
+A partir daí ele abre offline. Como o service worker usa `autoUpdate`, cada deploy novo
+no Railway chega ao aparelho automaticamente na próxima abertura.
+
+> O service worker só existe no build de produção (`npm run build`). Em `npm run dev` ele
+> fica desligado de propósito, para não brigar com o HMR do Vite.
+
 ---
 
 ## Backup do banco

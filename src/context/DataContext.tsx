@@ -661,7 +661,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     try {
       new Notification("Despesas Integradas", {
         body: parts.join(" · "),
-        icon: "/vite.svg",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
         tag:  "despesas-alerta",
       });
     } catch { /* ignore */ }
