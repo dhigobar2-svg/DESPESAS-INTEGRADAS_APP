@@ -47,13 +47,16 @@ belongs in *both* `server.ts` and `netlify/functions/api.mts`.
 │       └── utils.ts       # cn(), generateId(), formatCurrency(), recurringDueDate(),
 │                          # isRecurringCovered(), compressImage(), …
 ├── netlify/
-│   └── functions/
-│       └── api.mts        # Serverless twin of the Express API, on Postgres
+│   ├── functions/
+│   │   └── api.mts        # Serverless twin of the Express API, on Postgres
+│   └── database/
+│       └── schema.mjs     # Postgres schema — single source (function + build step)
 ├── netlify.toml           # Build, /api routing (before the SPA fallback), headers
 ├── public/
 │   └── icons/             # PWA icons (generated — see scripts/generate-icons.mjs)
 ├── scripts/
 │   ├── generate-icons.mjs # Regenerates public/icons/*.png (`npm run icons`)
+│   ├── check-db.mjs       # Applies the Postgres schema during the Netlify build
 │   └── railway-setup.sh   # One-shot Railway provisioning via CLI
 ├── index.html             # HTML shell + PWA meta tags (theme-color, apple-touch-icon…)
 ├── vite.config.ts         # Vite config (React, Tailwind v4, VitePWA, alias @/ → root)
@@ -189,14 +192,14 @@ The app is published on Netlify at **https://venerable-cucurucho-338711.netlify.
 - **No Socket.IO in serverless.** `/api/data` reports `meta.realtime`; the client
   connects the socket only when it's `true`, otherwise it polls every 25 s (and only
   while the tab is visible). `io()` is created with `autoConnect: false` for this.
-- **The Postgres schema (`SCHEMA` in `api.mts`) is applied on each cold start**
-  (`ensureSchema`) and every statement is idempotent — no manual migration step.
-- **Keep the deploy shape boring.** Two attempts to add build-time database checks
-  stopped publishing (`netlify/database/` is reserved by the platform for migrations,
-  and a build step importing `@netlify/database` outside the function runtime is
-  fragile). Build settings that deviate from `command = "npm run build"` need a real
-  reason — a build that doesn't publish leaves the site silently stale, and build logs
-  are not reachable from the agent sandbox. Check the database via `GET /health`.
+- **The Postgres schema lives in `netlify/database/schema.mjs`** — single source, used by
+  the function (`ensureSchema`, once per cold start) and by `scripts/check-db.mjs`
+  (build step). Every statement is idempotent; there is no manual migration step.
+- **`scripts/check-db.mjs` must never fail the build.** It applies the schema and logs
+  the database state; the function recreates the schema on cold start anyway. An earlier
+  version called `process.exit(1)` when Postgres was unreachable — that blocked a deploy,
+  and since build logs aren't reachable from the agent sandbox it was undiagnosable, so
+  the site went stale in silence. Check the database via `GET /health` instead.
 - **Local data adoption**: on first contact with an *empty* server, rows found in
   localStorage are queued and uploaded instead of being wiped by the empty snapshot
   (one-shot, flag `local_data_adopted`). This is what migrates a device that had been

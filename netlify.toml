@@ -3,7 +3,10 @@
 # `npm run dev` / Railway — veja server.ts.
 
 [build]
-  command = "npm run build"
+  # O check-db aplica o esquema e registra o estado do banco no log do build.
+  # Ele nunca derruba o build (a função cria o esquema sob demanda de qualquer
+  # forma); para conferir o banco em produção, use /health.
+  command = "npm run build && node scripts/check-db.mjs"
   publish = "dist"
 
 [functions]
