@@ -3,7 +3,10 @@
 # `npm run dev` / Railway — veja server.ts.
 
 [build]
-  command = "npm run build"
+  # O check-db aplica o esquema e derruba o build se o Postgres não responder —
+  # assim uma falha de banco aparece no painel em vez de virar "modo local" no
+  # celular do usuário. O deploy publicado anterior continua no ar nesse caso.
+  command = "npm run build && node scripts/check-db.mjs"
   publish = "dist"
 
 [functions]
