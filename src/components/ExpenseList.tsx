@@ -41,14 +41,17 @@ export default function ExpenseList({
   const [search,           setSearch]           = useState("");
   const [filterDateFrom,   setFilterDateFrom]   = useState(initialDateFrom);
   const [filterDateTo,     setFilterDateTo]     = useState(initialDateTo);
-  const [filterCat,        setFilterCat]        = useState("");
-  const [filterResp,       setFilterResp]       = useState(initialResponsibleFilter);
-  const [filterPaid,       setFilterPaid]       = useState("");
+  // Filtros de múltipla escolha: lista vazia = todos.
+  const [filterCat,        setFilterCat]        = useState<string[]>([]);
+  const [filterResp,       setFilterResp]       = useState<string[]>(
+    initialResponsibleFilter ? [initialResponsibleFilter] : [],
+  );
+  const [filterPaid,       setFilterPaid]       = useState<string[]>([]);
 
   // Sync external drill-down filter
   useEffect(() => {
     if (initialResponsibleFilter) {
-      setFilterResp(initialResponsibleFilter);
+      setFilterResp([initialResponsibleFilter]);
       setPage(1);
     }
   }, [initialResponsibleFilter]);
@@ -67,9 +70,9 @@ export default function ExpenseList({
     }
     if (filterDateFrom) list = list.filter(e => e.due_date >= filterDateFrom);
     if (filterDateTo)   list = list.filter(e => e.due_date <= filterDateTo);
-    if (filterCat)      list = list.filter(e => e.category_id === filterCat);
-    if (filterResp)     list = list.filter(e => e.responsible_id === filterResp);
-    if (filterPaid !== "") list = list.filter(e => String(e.paid) === filterPaid);
+    if (filterCat.length)  list = list.filter(e => filterCat.includes(e.category_id));
+    if (filterResp.length) list = list.filter(e => filterResp.includes(e.responsible_id));
+    if (filterPaid.length) list = list.filter(e => filterPaid.includes(String(e.paid)));
 
     return list;
   }, [expenses, search, filterDateFrom, filterDateTo, filterCat, filterResp, filterPaid, categories]);
@@ -108,7 +111,10 @@ export default function ExpenseList({
     const periodPart = filterDateFrom || filterDateTo
       ? `Período: ${filterDateFrom ? format(parseISO(filterDateFrom), "dd/MM/yyyy") : "início"} até ${filterDateTo ? format(parseISO(filterDateTo), "dd/MM/yyyy") : "hoje"}`
       : "Todas as datas";
-    const respPart = filterResp ? ` · Responsável: ${responsibles.find(r => r.id === filterResp)?.name ?? ""}` : "";
+    const respNames = responsibles.filter(r => filterResp.includes(r.id)).map(r => r.name);
+    const respPart = respNames.length
+      ? ` · ${respNames.length > 1 ? "Responsáveis" : "Responsável"}: ${respNames.join(", ")}`
+      : "";
     doc.setFontSize(9);
     doc.text(periodPart + respPart, 14, 22);
 
@@ -286,7 +292,7 @@ export default function ExpenseList({
         category={filterCat}         onCategory={v => { setFilterCat(v); resetPage(); }}
         responsible={filterResp}     onResponsible={v => { setFilterResp(v); resetPage(); }}
         status={filterPaid}          onStatus={v => { setFilterPaid(v); resetPage(); }}
-        resultSummary={(search || filterDateFrom || filterDateTo || filterCat || filterResp || filterPaid !== "")
+        resultSummary={(search || filterDateFrom || filterDateTo || filterCat.length || filterResp.length || filterPaid.length)
           ? `${filtered.length} resultado${filtered.length !== 1 ? "s" : ""} · Total: R$ ${formatCurrency(filteredTotal)}`
           : null}
       />

@@ -17,12 +17,16 @@ import IncomeModal from "./IncomeModal";
 type IncomeRow = Income & { isVirtual?: boolean };
 
 export default function Incomes() {
-  const { incomes, expenses, responsibles, incomeTypes, recurringIncomes, deleteItem } = useData();
+  const {
+    incomes, expenses, responsibles, incomeTypes, recurringIncomes,
+    deleteItem, saveRecurringIncome,
+  } = useData();
 
   const [selectedMonth,  setSelectedMonth]  = useState(new Date());
   const [showModal,      setShowModal]      = useState(false);
   const [editingIncome,  setEditingIncome]  = useState<Income | null>(null);
   const [confirmId,      setConfirmId]      = useState<string | null>(null);
+  const [virtualConfirmId, setVirtualConfirmId] = useState<string | null>(null);
 
   const activeRecurringIncomeIds = new Set(recurringIncomes.filter(r => r.active).map(r => r.id));
 
@@ -97,10 +101,35 @@ export default function Incomes() {
   const balance     = totalIncome - monthExpenses;
 
   const openAdd  = () => { setEditingIncome(null); setShowModal(true); };
-  const openEdit = (inc: Income) => { setEditingIncome(inc); setShowModal(true); };
+
+  // Editar uma ocorrência prevista não precisa esperar a virada do mês: ela é
+  // aberta com o id determinístico que o app usaria ao gerá-la, então salvar
+  // cria a linha real daquele mês (nunca duplicada) e, com "repetir todo mês"
+  // ligado, atualiza o template — o novo valor vale para os meses seguintes.
+  const openEdit = (inc: IncomeRow) => {
+    if (inc.isVirtual) {
+      const { isVirtual: _ignored, ...base } = inc;
+      setEditingIncome({
+        ...base,
+        id: `recinc_${inc.recurring_income_id}_${inc.date.slice(0, 7)}`,
+      });
+    } else {
+      setEditingIncome(inc);
+    }
+    setShowModal(true);
+  };
   const closeModal = () => { setShowModal(false); setEditingIncome(null); };
 
   const confirmLabel = incomes.find(i => i.id === confirmId)?.description ?? "";
+
+  // Excluir uma ocorrência prevista = parar a recorrência (a linha ainda não
+  // existe para ser apagada). Mesmo comportamento da tela de vencimentos.
+  const virtualToStop = virtualIncomes.find(i => i.id === virtualConfirmId);
+  const stopRecurring = () => {
+    const tpl = recurringIncomes.find(r => r.id === virtualToStop?.recurring_income_id);
+    if (tpl) saveRecurringIncome({ ...tpl, active: 0 }, true);
+    setVirtualConfirmId(null);
+  };
 
   return (
     <motion.div
@@ -231,12 +260,16 @@ export default function Incomes() {
                     <p className={cn("text-sm font-black", inc.isVirtual ? "text-violet-500" : "text-emerald-600")}>
                       R$ {formatCurrency(inc.value)}
                     </p>
-                    <div className={cn("flex items-center gap-1", inc.isVirtual && "hidden")}>
-                      <button onClick={() => openEdit(inc)} title="Editar"
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => openEdit(inc)}
+                        title={inc.isVirtual ? "Editar esta entrada futura" : "Editar"}
                         className="p-2.5 text-slate-500 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-lg transition-colors">
                         <Edit2 size={16} />
                       </button>
-                      <button onClick={() => setConfirmId(inc.id)} title="Excluir"
+                      <button
+                        onClick={() => inc.isVirtual ? setVirtualConfirmId(inc.id) : setConfirmId(inc.id)}
+                        title={inc.isVirtual ? "Parar de repetir" : "Excluir"}
                         className="p-2.5 text-slate-500 hover:text-red-600 bg-slate-50 hover:bg-red-50 rounded-lg transition-colors">
                         <Trash2 size={16} />
                       </button>
@@ -256,6 +289,7 @@ export default function Incomes() {
           <span>
             As entradas marcadas como <strong>previsto</strong> se repetem todo mês e são
             lançadas automaticamente quando o mês chega — não precisa lançar de novo.
+            Dá para editar o valor ou parar a repetição por aqui mesmo, sem esperar a virada do mês.
           </span>
         </p>
       )}
@@ -269,6 +303,13 @@ export default function Incomes() {
       </button>
 
       <IncomeModal open={showModal} editing={editingIncome} onClose={closeModal} />
+
+      <ConfirmModal
+        open={!!virtualConfirmId}
+        message={`"${virtualToStop?.description ?? ""}" deixará de ser lançada automaticamente nos próximos meses. Os lançamentos já feitos não são afetados.`}
+        onConfirm={stopRecurring}
+        onCancel={() => setVirtualConfirmId(null)}
+      />
 
       <ConfirmModal
         open={!!confirmId}

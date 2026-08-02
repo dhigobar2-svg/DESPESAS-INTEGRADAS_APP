@@ -61,8 +61,9 @@ export default function Dashboard() {
 
   const [mode,        setMode]        = useState<PeriodMode>("month");
   const [anchor,      setAnchor]      = useState(new Date());
-  const [filterCat,   setFilterCat]   = useState("");
-  const [filterResp,  setFilterResp]  = useState("");
+  // Filtros de múltipla escolha: lista vazia = todos.
+  const [filterCat,   setFilterCat]   = useState<string[]>([]);
+  const [filterResp,  setFilterResp]  = useState<string[]>([]);
   const [showModal,   setShowModal]   = useState(false);
 
   const period     = useMemo(() => getPeriod(mode, anchor), [mode, anchor]);
@@ -70,10 +71,10 @@ export default function Dashboard() {
 
   // ── Filtered sums ───────────────────────────────────────────────────────────
   const expFilter = (e: typeof expenses[number]) =>
-    (!filterCat  || e.category_id === filterCat) &&
-    (!filterResp || e.responsible_id === filterResp);
+    (!filterCat.length  || filterCat.includes(e.category_id)) &&
+    (!filterResp.length || filterResp.includes(e.responsible_id));
   const incFilter = (i: typeof incomes[number]) =>
-    (!filterResp || i.responsible_id === filterResp);
+    (!filterResp.length || filterResp.includes(i.responsible_id ?? ""));
 
   const sumExp = (r: Range) => expenses.filter(e => expFilter(e) && inRange(e.due_date, r)).reduce((s, e) => s + e.value, 0);
   const sumInc = (r: Range) => incomes.filter(i => incFilter(i)  && inRange(i.date, r)).reduce((s, i) => s + i.value, 0);
@@ -353,7 +354,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Por responsável (quando não filtrado) ───────────────────────────────── */}
-      {!filterResp && stats.byResp.length > 0 && (
+      {!filterResp.length && stats.byResp.length > 0 && (
         <div className="card p-5">
           <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-5">Gastos por responsável</h3>
           <div style={{ height: Math.max(160, stats.byResp.length * 46) }}>

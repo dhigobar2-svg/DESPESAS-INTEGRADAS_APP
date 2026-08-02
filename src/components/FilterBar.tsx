@@ -1,24 +1,31 @@
 import React from "react";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { Search } from "lucide-react";
 import { Category, Responsible } from "../types";
+import MultiSelect from "./MultiSelect";
 
 interface Props {
   categories:   Category[];
   responsibles: Responsible[];
 
-  category:      string;
-  onCategory:    (v: string) => void;
-  responsible:   string;
-  onResponsible: (v: string) => void;
+  // Filtros de múltipla escolha: lista vazia = sem filtro (todos).
+  category:      string[];
+  onCategory:    (v: string[]) => void;
+  responsible:   string[];
+  onResponsible: (v: string[]) => void;
 
   // Optional controls — only rendered when the matching handler is provided.
-  search?:     string;  onSearch?:     (v: string) => void;
-  dateFrom?:   string;  onDateFrom?:   (v: string) => void;
-  dateTo?:     string;  onDateTo?:     (v: string) => void;
-  status?:     string;  onStatus?:     (v: string) => void;  // "" | "1" | "0"
+  search?:     string;    onSearch?:     (v: string) => void;
+  dateFrom?:   string;    onDateFrom?:   (v: string) => void;
+  dateTo?:     string;    onDateTo?:     (v: string) => void;
+  status?:     string[];  onStatus?:     (v: string[]) => void;  // "1" pago | "0" pendente
 
   resultSummary?: React.ReactNode;
 }
+
+const STATUS_OPTIONS = [
+  { id: "1", name: "Pago" },
+  { id: "0", name: "Pendente" },
+];
 
 /** Reusable, standardised filter controls shared across screens. */
 export default function FilterBar({
@@ -27,11 +34,14 @@ export default function FilterBar({
   search, onSearch, dateFrom, onDateFrom, dateTo, onDateTo, status, onStatus,
   resultSummary,
 }: Props) {
-  const hasFilter = !!(search || dateFrom || dateTo || category || responsible || (status && status !== ""));
+  const hasFilter = !!(
+    search || dateFrom || dateTo ||
+    category.length || responsible.length || status?.length
+  );
 
   const clearAll = () => {
     onSearch?.(""); onDateFrom?.(""); onDateTo?.("");
-    onCategory(""); onResponsible(""); onStatus?.("");
+    onCategory([]); onResponsible([]); onStatus?.([]);
   };
 
   return (
@@ -63,27 +73,37 @@ export default function FilterBar({
           </div>
         )}
 
-        <select value={category} onChange={e => onCategory(e.target.value)} className="input py-2 text-xs">
-          <option value="">Todas categorias</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <MultiSelect
+          allLabel="Todas categorias"
+          countLabel="categorias"
+          emptyMessage="Nenhuma categoria cadastrada"
+          options={categories}
+          selected={category}
+          onChange={onCategory}
+        />
 
-        <select value={responsible} onChange={e => onResponsible(e.target.value)} className="input py-2 text-xs">
-          <option value="">Todos responsáveis</option>
-          {responsibles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
+        <MultiSelect
+          allLabel="Todos responsáveis"
+          countLabel="responsáveis"
+          emptyMessage="Nenhum responsável cadastrado"
+          options={responsibles}
+          selected={responsible}
+          onChange={onResponsible}
+        />
 
         {onStatus && (
-          <select value={status ?? ""} onChange={e => onStatus(e.target.value)} className="input py-2 text-xs">
-            <option value="">Todos status</option>
-            <option value="1">Pago</option>
-            <option value="0">Pendente</option>
-          </select>
+          <MultiSelect
+            allLabel="Todos status"
+            countLabel="status"
+            options={STATUS_OPTIONS}
+            selected={status ?? []}
+            onChange={onStatus}
+          />
         )}
       </div>
 
       {(resultSummary || hasFilter) && (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-slate-500 font-medium">{resultSummary}</span>
           {hasFilter && (
             <button onClick={clearAll} className="text-xs text-emerald-600 font-bold hover:underline shrink-0">
