@@ -19,6 +19,38 @@
     @apply w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold
            focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400
            transition-colors;
+    /* Campos de data e número têm largura mínima própria imposta pelo navegador
+       (principalmente no iOS). Dentro de um grid de duas colunas isso os fazia
+       "estourar" a célula e ficar mais largos que os demais campos — era o que
+       deixava os pares Lançamento/Vencimento e Data/Valor tortos no celular. */
+    min-width: 0;
+  }
+  /* Mesma altura e alinhamento dos campos de texto: sem isto, o iOS centraliza
+     o valor da data e usa uma altura própria, desalinhando a dupla lado a lado.
+     O respiro lateral é menor que o dos demais campos porque "31/12/2026" mais
+     o ícone do calendário não cabem em meia largura com px-4 — o ano ficava
+     cortado na tela do celular. */
+  .input[type="date"] {
+    @apply appearance-none px-3 text-[13px];
+    min-height: 2.875rem;
+  }
+  .input[type="date"]::-webkit-date-and-time-value {
+    text-align: left;
+    margin: 0;
+  }
+  .input[type="date"]::-webkit-calendar-picker-indicator {
+    margin-left: auto;
+    padding-left: 0.25rem;
+  }
+  /* As setinhas do input numérico roubam largura útil e desalinham o par. */
+  .input[type="number"] {
+    @apply appearance-none;
+    min-height: 2.875rem;
+  }
+  .input[type="number"]::-webkit-outer-spin-button,
+  .input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
   .btn-primary {
     @apply bg-emerald-600 text-white font-bold text-xs uppercase tracking-widest

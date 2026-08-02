@@ -143,8 +143,11 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
                   />
                 </div>
 
+                {/* Data e Valor — duas colunas iguais cobrindo exatamente a
+                    largura do campo Descrição. `min-w-0` impede que a largura
+                    mínima nativa dos campos de data/número estufe a célula. */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="min-w-0">
                     <label className="label">Data</label>
                     <input
                       type="date" required
@@ -153,7 +156,7 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
                       className="input"
                     />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label className="label">Valor (R$)</label>
                     <input
                       type="number" step="0.01" min="0.01" required placeholder="0,00"

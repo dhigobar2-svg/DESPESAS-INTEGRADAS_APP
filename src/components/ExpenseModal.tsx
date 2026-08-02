@@ -197,14 +197,17 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                   </select>
                 </div>
 
-                {/* Datas */}
+                {/* Datas — duas colunas iguais ocupando exatamente a largura do
+                    campo Descrição. `min-w-0` é obrigatório: sem ele a célula do
+                    grid assume a largura mínima do input de data e a dupla fica
+                    mais larga que os demais campos. */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
+                  <div className="min-w-0">
                     <label className="label">Lançamento</label>
                     <input type="date" name="date" required className="input"
                       defaultValue={defDate} />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <label className="label">Vencimento</label>
                     <input type="date" name="due_date" required className="input"
                       defaultValue={defDue} />

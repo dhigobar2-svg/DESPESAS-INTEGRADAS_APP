@@ -192,12 +192,21 @@ function Shell() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 py-4">
+      {/* O topo respeita a área segura do aparelho (barra de status/notch) e
+          ainda desce um pouco mais: encostado no topo, o botão de voltar caía
+          na faixa de gestos do sistema e ficava impossível de tocar no celular. */}
+      <header
+        className="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 pb-4"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1.5rem)" }}
+      >
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="w-10">
+          <div className="w-12">
             {activeTab !== "menu" && (
-              <button onClick={() => handleTabChange("menu")}
-                className="p-2 -ml-2 text-slate-400 hover:text-slate-900 transition-colors">
+              <button
+                onClick={() => handleTabChange("menu")}
+                aria-label="Voltar"
+                className="p-2.5 -ml-1 text-slate-400 hover:text-slate-900 active:scale-95 transition-all"
+              >
                 <ChevronLeft size={24} />
               </button>
             )}

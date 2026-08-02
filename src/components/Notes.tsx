@@ -218,13 +218,18 @@ export default function Notes() {
             transition={{ type: "spring", damping: 32, stiffness: 320 }}
             className="fixed inset-0 z-50 bg-amber-50 flex flex-col"
           >
-            {/* Toolbar */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-amber-200 bg-amber-50 shrink-0">
+            {/* Toolbar — mesmo respiro do cabeçalho principal: área segura do
+                aparelho + folga extra, senão o "Voltar" cai na faixa de gestos
+                do sistema e não dá para tocar no celular. */}
+            <div
+              className="flex items-center justify-between px-5 pb-4 border-b border-amber-200 bg-amber-50 shrink-0"
+              style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1.5rem)" }}
+            >
               {/* Voltar salva a nota (nada se perde) e fecha o editor */}
               <button
                 onClick={saveEditing}
                 title="Voltar"
-                className="flex items-center gap-0.5 -ml-2 text-sm font-bold text-amber-600 hover:text-amber-800 transition-colors min-w-[64px]"
+                className="flex items-center gap-0.5 py-1 text-sm font-bold text-amber-600 hover:text-amber-800 active:scale-95 transition-all min-w-[64px]"
               >
                 <ChevronLeft size={20} />
                 Voltar
