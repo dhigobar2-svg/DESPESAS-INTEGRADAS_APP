@@ -10,7 +10,7 @@ import {
 } from "../types";
 import {
   generateId, compressImage, isRecurringCovered, isRecurringIncomeCovered, recurringDueDate, buildSkipSet,
-  findRecurringDuplicates,
+  findRecurringDuplicates, sha256Hex,
 } from "../lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -32,6 +32,10 @@ interface DataContextValue {
   isConnected:  boolean;
   realtime:     boolean;
   serverReachable: boolean;
+  /** true quando o servidor exige senha e este aparelho ainda não entrou. */
+  needsAuth:    boolean;
+  /** true quando este aparelho tem senha guardada (permite bloquear). */
+  authEnabled:  boolean;
   notificationsEnabled: boolean;
   pendingCount: number;
   toasts:       ToastMessage[];
@@ -41,6 +45,8 @@ interface DataContextValue {
   deleteItem:       (table: string, id: string) => Promise<void>;
   togglePaid:       (id: string) => void;
   forceSync:        () => Promise<void>;
+  signIn:           (senha: string) => Promise<boolean>;
+  signOut:          () => void;
   saveProfile:      (p: UserProfile) => Promise<void>;
   saveCategory:     (cat: Category, isEdit: boolean) => void;
   saveResponsible:  (resp: Responsible, isEdit: boolean) => void;
@@ -66,6 +72,25 @@ export function useData() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// ─── Acesso por senha ─────────────────────────────────────────────────────────
+// Só entra em cena quando o servidor exige (variável APP_PASSWORD definida).
+// Sem senha configurada nada muda — é o que evita ficar trancado para fora.
+const AUTH_KEY = "app_auth_token";
+const getAuthToken = () => { try { return localStorage.getItem(AUTH_KEY) ?? ""; } catch { return ""; } };
+
+// Sinaliza para o provider que o servidor recusou o acesso (HTTP 401).
+let onUnauthorized: (() => void) | null = null;
+
+/** fetch para a API, sempre com o resumo da senha (quando houver). */
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = getAuthToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set("x-app-token", token);
+  const res = await fetch(input, { ...init, headers });
+  if (res.status === 401) onUnauthorized?.();
+  return res;
+}
 
 function lsGet<T>(key: string, fallback: T): T {
   try {
@@ -219,6 +244,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted",
   );
   const [pendingCount, setPendingCount] = useState(0);
+  const [needsAuth,    setNeedsAuth]    = useState(false);
+  const [authEnabled,  setAuthEnabled]  = useState(() => !!getAuthToken());
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
 
   const socketRef             = useRef<Socket | null>(null);
@@ -260,7 +287,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // terminal, the rows must leave the queue; "failed" = no usable backend
   // answer (proxy error, size limit, blocked method…) — keep the rows queued.
   const postSync = useCallback(async (payload: SyncData): Promise<"ok" | "rejected" | "failed"> => {
-    const res = await fetch("/api/sync", {
+    const res = await apiFetch("/api/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -370,7 +397,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const remaining: { table: string; id: string }[] = [];
     for (const item of queue) {
       try {
-        const res = await fetch(`/api/delete/${item.table}/${item.id}`, { method: "POST" });
+        const res = await apiFetch(`/api/delete/${item.table}/${item.id}`, { method: "POST" });
         // Keep retrying only on server (5xx) errors; 2xx and 4xx are terminal.
         if (res.status >= 500) remaining.push(item);
       } catch {
@@ -542,7 +569,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       await flushPendingDeletes();
       await flushPending();
 
-      const res = await fetch("/api/data");
+      const res = await apiFetch("/api/data");
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       setServerReachable(true);
@@ -809,6 +836,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // ── Socket + lifecycle ────────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Servidor recusou o acesso: pede a senha em vez de cair no modo offline.
+    onUnauthorized = () => setNeedsAuth(true);
+
     // Badge de pendências: reflete a fila de envio sem polling.
     pendingNotify = () => setPendingCount(countPendingChanges());
     pendingNotify();
@@ -817,7 +847,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // real-time updates stop for good after ~10 failures until a full reload.
     // `autoConnect: false`: só conectamos depois que /api/data confirmar que
     // este backend tem Socket.IO — em serverless a conexão nunca completaria.
-    const s = io({ autoConnect: false });
+    // O socket também leva o resumo da senha, quando houver.
+    const s = io({ autoConnect: false, auth: { token: getAuthToken() } });
     socketRef.current = s;
 
     fetchData(migrateLegacyNotes);
@@ -872,6 +903,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     return () => {
       pendingNotify = null;
+      onUnauthorized = null;
       s.disconnect();
       if (refetchTimer) clearTimeout(refetchTimer);
       if (flushTimer.current) clearTimeout(flushTimer.current);
@@ -883,6 +915,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Acesso por senha ─────────────────────────────────────────────────────────
+  // O aparelho guarda só o resumo (SHA-256) da senha; a senha em si nunca é
+  // gravada. Enquanto o servidor não exigir, nada disso aparece para o usuário.
+
+  const signIn = useCallback(async (senha: string): Promise<boolean> => {
+    const token = await sha256Hex(senha.trim());
+    const res = await fetch("/api/data", { headers: { "x-app-token": token } });
+    if (res.status === 401) {
+      addToast("error", "Senha incorreta.");
+      return false;
+    }
+    if (!res.ok) {
+      addToast("error", "Não consegui falar com o servidor. Tente de novo.");
+      return false;
+    }
+    try { localStorage.setItem(AUTH_KEY, token); } catch { /* quota */ }
+    setAuthEnabled(true);
+    setNeedsAuth(false);
+    await fetchDataRef.current();
+    addToast("success", "Bem-vindo de volta!");
+    return true;
+  }, [addToast]);
+
+  const signOut = useCallback(() => {
+    try { localStorage.removeItem(AUTH_KEY); } catch { /* ignore */ }
+    setAuthEnabled(false);
+    setNeedsAuth(true);
   }, []);
 
   // ── Photo helper ─────────────────────────────────────────────────────────────
@@ -985,7 +1046,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const res = await fetch(`/api/delete/${table}/${id}`, { method: "POST" });
+      const res = await apiFetch(`/api/delete/${table}/${id}`, { method: "POST" });
       // Como no envio: um 200 com HTML é o fallback do SPA, não uma exclusão.
       let body: { error?: string } | null = null;
       try { body = await res.json(); } catch { /* non-JSON */ }
@@ -1186,8 +1247,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataContextValue = {
     expenses, categories, responsibles, profile, budgets, recurring,
     incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
-    isOnline, isConnected, realtime, serverReachable, notificationsEnabled, pendingCount, toasts,
-    saveExpense, deleteItem, togglePaid, forceSync, saveProfile,
+    isOnline, isConnected, realtime, serverReachable, needsAuth, authEnabled,
+    notificationsEnabled, pendingCount, toasts,
+    saveExpense, deleteItem, togglePaid, forceSync, signIn, signOut, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
     saveIncome, saveIncomeType, saveRecurringIncome, saveNote, restoreBackup,
     readPhoto, requestNotificationPermission, addToast, dismissToast,

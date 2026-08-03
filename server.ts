@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createHash, timingSafeEqual } from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DATABASE_PATH lets the DB live on a persistent volume in production.
@@ -283,6 +284,35 @@ async function startServer() {
   const io = new Server(httpServer, { cors: { origin: "*" } });
 
   app.use(express.json({ limit: "10mb" }));
+
+  // ── Acesso por senha (opcional) ─────────────────────────────────────────────
+  // Ativado apenas quando APP_PASSWORD está definida. Sem ela o app funciona
+  // como sempre — é o que garante que ninguém fique trancado para fora por
+  // engano. O aparelho manda o SHA-256 da senha, nunca a senha em si.
+  const APP_PASSWORD = process.env.APP_PASSWORD?.trim();
+  const expectedToken = APP_PASSWORD
+    ? createHash("sha256").update(APP_PASSWORD).digest("hex")
+    : null;
+
+  if (expectedToken) {
+    console.log("[auth] Acesso protegido por senha (APP_PASSWORD definida).");
+    app.use("/api", (req, res, next) => {
+      const token = String(req.header("x-app-token") ?? "");
+      // timingSafeEqual exige o mesmo tamanho; o resumo tem tamanho fixo.
+      const ok = token.length === expectedToken.length &&
+        timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken));
+      if (!ok) return res.status(401).json({ error: "Senha necessária." });
+      next();
+    });
+    io.use((socket, next) => {
+      const token = String(socket.handshake.auth?.token ?? "");
+      const ok = token.length === expectedToken.length &&
+        timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken));
+      next(ok ? undefined : new Error("unauthorized"));
+    });
+  } else {
+    console.log("[auth] Sem senha configurada — acesso livre (defina APP_PASSWORD para proteger).");
+  }
 
   // Lightweight health probe for Railway (and other PaaS) healthchecks.
   // Também informa onde o banco está e se ele é persistente — é assim que dá

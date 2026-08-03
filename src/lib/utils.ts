@@ -91,6 +91,17 @@ export function recurringDueDate(year: number, month1: number, dayOfMonth: numbe
   return `${year}-${String(month1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/**
+ * SHA-256 em hexadecimal. Usado no acesso por senha: o aparelho guarda apenas
+ * este resumo, nunca a senha em si, e é ele que viaja no cabeçalho das
+ * requisições. O servidor compara com o resumo da senha configurada.
+ */
+export async function sha256Hex(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  const hash  = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }

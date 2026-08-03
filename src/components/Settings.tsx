@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import {
   User, Tag, Users, Camera, Trash2, Edit2, Check, X,
   DollarSign, Plus, TrendingUp, Bell, BellOff, Copy,
-  DatabaseBackup, Download, Upload,
+  DatabaseBackup, Download, Upload, Lock,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, cn, formatCurrency, parseCurrency } from "../lib/utils";
@@ -20,7 +20,7 @@ export default function Settings() {
     expenses, recurring, incomes, recurringIncomes, recurringSkips, notes,
     saveProfile, saveCategory, saveResponsible, saveBudget, saveIncomeType,
     deleteItem, readPhoto, addToast, restoreBackup,
-    notificationsEnabled, requestNotificationPermission,
+    notificationsEnabled, requestNotificationPermission, authEnabled, signOut,
   } = useData();
 
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
@@ -281,6 +281,23 @@ export default function Settings() {
           )}
         </div>
       </section>
+
+      {/* ── Segurança ─────────────────────────────────────────────────────────── */}
+      {/* Só aparece quando o acesso está protegido por senha. */}
+      {authEnabled && (
+        <section className="card p-6">
+          <h3 className="section-title"><Lock size={16} /> Segurança</h3>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-slate-500">
+              O acesso está protegido por senha. Bloqueie se emprestar o aparelho —
+              será preciso digitar a senha novamente.
+            </p>
+            <button onClick={signOut} className="btn-secondary py-2 px-4 flex items-center gap-1.5 shrink-0">
+              <Lock size={14} /> Bloquear
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* ── Backup ────────────────────────────────────────────────────────────── */}
       <section className="card p-6">

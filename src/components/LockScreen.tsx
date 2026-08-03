@@ -1,0 +1,68 @@
+import React, { useState } from "react";
+import { motion } from "motion/react";
+import { Lock, Loader2 } from "lucide-react";
+import { useData } from "../context/DataContext";
+
+/**
+ * Pedida apenas quando o servidor exige senha (variável APP_PASSWORD definida)
+ * e este aparelho ainda não entrou. Sem senha configurada esta tela nunca
+ * aparece — é o que garante que ninguém fique trancado para fora.
+ */
+export default function LockScreen() {
+  const { signIn } = useData();
+  const [senha,     setSenha]     = useState("");
+  const [enviando,  setEnviando]  = useState(false);
+
+  const entrar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!senha.trim() || enviando) return;
+    setEnviando(true);
+    const ok = await signIn(senha);
+    setEnviando(false);
+    if (ok) setSenha("");
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm"
+      >
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-16 h-16 rounded-3xl bg-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/25 mb-4">
+            <Lock size={28} className="text-white" />
+          </div>
+          <h1 className="text-xl font-black tracking-tighter uppercase text-center">
+            Despesas Integradas
+          </h1>
+          <p className="text-xs text-slate-500 font-medium mt-1 text-center">
+            Digite a senha da família para acessar
+          </p>
+        </div>
+
+        <form onSubmit={entrar} className="card p-6 space-y-4">
+          <div>
+            <label className="label" htmlFor="senha">Senha</label>
+            <input
+              id="senha"
+              type="password"
+              autoComplete="current-password"
+              value={senha}
+              onChange={e => setSenha(e.target.value)}
+              placeholder="••••••••"
+              autoFocus
+              className="input"
+            />
+          </div>
+          <button type="submit" disabled={enviando || !senha.trim()} className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50">
+            {enviando ? <><Loader2 size={14} className="animate-spin" /> Entrando…</> : "Entrar"}
+          </button>
+        </form>
+
+        <p className="text-[11px] text-slate-400 text-center mt-5 leading-relaxed">
+          A senha fica guardada neste aparelho — você só precisa digitar uma vez.
+        </p>
+      </motion.div>
+    </div>
+  );
+}

@@ -246,6 +246,29 @@ async function getHealth(p: DbPool) {
 // ─── Roteamento ───────────────────────────────────────────────────────────────
 
 // Exportado para poder ser exercitado contra um Postgres de teste.
+/**
+ * Acesso por senha, ativado só quando APP_PASSWORD existe nas variáveis do
+ * projeto. Sem ela nada muda. O aparelho envia o SHA-256 da senha no cabeçalho
+ * `x-app-token` — a senha em si nunca sai do dispositivo nem fica gravada nele.
+ */
+async function checkAuth(req: Request): Promise<boolean> {
+  const senha = (globalThis as { Netlify?: { env: { get(k: string): string | undefined } } })
+    .Netlify?.env.get("APP_PASSWORD")?.trim();
+  if (!senha) return true; // sem senha configurada: acesso livre
+
+  const bytes = new TextEncoder().encode(senha);
+  const hash  = await crypto.subtle.digest("SHA-256", bytes);
+  const esperado = Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, "0")).join("");
+
+  const recebido = req.headers.get("x-app-token") ?? "";
+  if (recebido.length !== esperado.length) return false;
+  // Comparação de tempo constante.
+  let diff = 0;
+  for (let i = 0; i < esperado.length; i++) diff |= recebido.charCodeAt(i) ^ esperado.charCodeAt(i);
+  return diff === 0;
+}
+
 export async function handleRequest(p: DbPool, req: Request): Promise<Response> {
   // A requisição chega redirecionada (/api/x → /.netlify/functions/api/x); os
   // dois prefixos são aceitos para a função também responder quando chamada direto.
@@ -255,6 +278,12 @@ export async function handleRequest(p: DbPool, req: Request): Promise<Response> 
     .replace(/\/$/, "") || "/";
 
   try {
+    // /health continua público (é usado como sonda de disponibilidade).
+    const publico = path === "/health" || path === "/";
+    if (!publico && !(await checkAuth(req))) {
+      return json({ error: "Senha necessária." }, 401);
+    }
+
     await ensureSchema(p);
 
     if (req.method === "GET" && path === "/data") return await getData(p);

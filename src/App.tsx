@@ -8,6 +8,7 @@ import {
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency, isRecurringCovered, recurringDueDate, buildSkipSet } from "./lib/utils";
 import Toast from "./components/Toast";
+import LockScreen from "./components/LockScreen";
 
 // Lazy-loaded tabs keep the heavy chart/PDF libraries out of the initial bundle.
 const Dashboard         = lazy(() => import("./components/Dashboard"));
@@ -32,7 +33,7 @@ interface NavState {
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, realtime, serverReachable, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes } = useData();
+  const { profile, isOnline, isConnected, realtime, serverReachable, needsAuth, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
@@ -188,6 +189,10 @@ function Shell() {
       <ChevronRight className="text-slate-300 group-hover:text-slate-600 transition-colors" />
     </button>
   );
+
+  // Servidor exige senha e este aparelho ainda não entrou: nada do app é
+  // montado até a senha ser aceita.
+  if (needsAuth) return <><LockScreen /><Toast /></>;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
