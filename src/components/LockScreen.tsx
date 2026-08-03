@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
-import { Lock, Loader2 } from "lucide-react";
+import { Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import { useData } from "../context/DataContext";
 
 /**
@@ -15,6 +15,7 @@ export default function LockScreen() {
   // A senha da casa é numérica, então o teclado abre no modo número. O botão
   // abaixo alterna para o teclado completo caso a senha vire alfanumérica.
   const [tecladoNumerico, setTecladoNumerico] = useState(true);
+  const [mostrarSenha,    setMostrarSenha]    = useState(false);
 
   const entrar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,17 +47,31 @@ export default function LockScreen() {
         <form onSubmit={entrar} className="card p-6 space-y-4">
           <div>
             <label className="label" htmlFor="senha">Senha</label>
-            <input
-              id="senha"
-              type="password"
-              autoComplete="current-password"
-              inputMode={tecladoNumerico ? "numeric" : "text"}
-              value={senha}
-              onChange={e => setSenha(e.target.value)}
-              placeholder="••••••"
-              autoFocus
-              className="input text-center tracking-[0.4em] text-lg"
-            />
+            {/* O olho é nosso, não do navegador: no computador o Chrome oferece
+                um botão nativo para revelar a senha, mas no celular não existe —
+                e sem ele não dá para conferir o que foi digitado. */}
+            <div className="relative">
+              <input
+                id="senha"
+                type={mostrarSenha ? "text" : "password"}
+                autoComplete="current-password"
+                inputMode={tecladoNumerico ? "numeric" : "text"}
+                value={senha}
+                onChange={e => setSenha(e.target.value)}
+                placeholder="••••••"
+                autoFocus
+                className="input text-center tracking-[0.4em] text-lg pr-12"
+              />
+              <button
+                type="button"
+                onClick={() => setMostrarSenha(m => !m)}
+                aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+                title={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+                className="absolute right-1 top-1/2 -translate-y-1/2 p-3 text-slate-400 hover:text-emerald-600 active:scale-95 transition-all"
+              >
+                {mostrarSenha ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setTecladoNumerico(t => !t)}
