@@ -187,6 +187,9 @@ export default function Settings() {
   // ── Backups automáticos (guardados no servidor) ──────────────────────────────
   const [backups,  setBackups]  = useState<{ chave: string; data: string }[]>([]);
   const [ocupado,  setOcupado]  = useState(false);
+  // Restaurar mexe em muitos registros de uma vez: confirma antes, igual à
+  // restauração por arquivo. Sem isso, um toque errado na lista já aplicava.
+  const [backupPendente, setBackupPendente] = useState<{ chave: string; data: string } | null>(null);
 
   const carregarBackups = useCallback(async () => {
     try {
@@ -408,7 +411,7 @@ export default function Settings() {
                   {b.data.split("-").reverse().join("/")}
                 </span>
                 <button
-                  onClick={() => restaurarBackup(b.chave)}
+                  onClick={() => setBackupPendente(b)}
                   disabled={ocupado}
                   className="text-xs font-bold text-emerald-600 hover:underline disabled:opacity-40"
                 >
@@ -654,6 +657,20 @@ export default function Settings() {
           setDeleteTarget(null);
         }}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* Confirmação da restauração de um backup do servidor */}
+      <ConfirmModal
+        open={!!backupPendente}
+        title="Restaurar backup"
+        confirmLabel="Restaurar"
+        tone="primary"
+        message={`Restaurar a cópia de ${backupPendente?.data.split("-").reverse().join("/") ?? ""}? Os dados são mesclados aos atuais — nada é apagado.`}
+        onConfirm={() => {
+          if (backupPendente) restaurarBackup(backupPendente.chave);
+          setBackupPendente(null);
+        }}
+        onCancel={() => setBackupPendente(null)}
       />
 
       {/* Confirm backup restore */}
