@@ -5,6 +5,7 @@ import { RefreshCw, AlertTriangle, X, Check } from "lucide-react";
 import { Income } from "../types";
 import { useData } from "../context/DataContext";
 import { generateId, cn } from "../lib/utils";
+import CurrencyInput from "./CurrencyInput";
 
 interface Props {
   open:    boolean;
@@ -158,11 +159,11 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
                   </div>
                   <div className="min-w-0">
                     <label className="label">Valor (R$)</label>
-                    <input
-                      type="number" step="0.01" min="0.01" required placeholder="0,00"
-                      value={form.value ?? ""}
-                      onChange={e => setForm(f => ({ ...f, value: parseFloat(e.target.value) }))}
-                      className="input font-black"
+                    <CurrencyInput
+                      required
+                      value={form.value}
+                      onChange={v => setForm(f => ({ ...f, value: v }))}
+                      className="font-black"
                     />
                   </div>
                 </div>

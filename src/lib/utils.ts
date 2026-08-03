@@ -99,6 +99,42 @@ export function formatCurrency(value: number): string {
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * Converte o que o usuário digitou em número, entendendo o jeito brasileiro.
+ *
+ * O campo antigo era `type="number"`, que só aceita ponto como separador
+ * decimal: digitar "1234,56" fazia o navegador descartar a vírgula e gravar
+ * 123456 — cem vezes o valor pretendido. Aqui a vírgula é o separador decimal
+ * esperado, o ponto é aceito como decimal ou como milhar conforme a forma:
+ *
+ *   "1234,56"    → 1234.56
+ *   "1.234,56"   → 1234.56   (ponto = milhar)
+ *   "1.234"      → 1234      (padrão de milhar)
+ *   "1.5"        → 1.5       (ponto = decimal)
+ *   "R$ 89,90"   → 89.9
+ *   ""           → undefined
+ */
+export function parseCurrency(raw: string): number | undefined {
+  if (typeof raw !== "string") return undefined;
+  let s = raw.replace(/[^\d.,-]/g, "").trim();
+  if (!s || s === "-") return undefined;
+
+  const hasComma = s.includes(",");
+  const hasDot   = s.includes(".");
+
+  if (hasComma && hasDot) {
+    s = s.replace(/\./g, "").replace(",", ".");   // 1.234,56
+  } else if (hasComma) {
+    s = s.replace(",", ".");                       // 1234,56
+  } else if (hasDot && /^-?\d{1,3}(\.\d{3})+$/.test(s)) {
+    s = s.replace(/\./g, "");                      // 1.234 / 1.234.567
+  }
+
+  const n = Number(s);
+  if (!Number.isFinite(n)) return undefined;
+  return Math.round(n * 100) / 100;
+}
+
 /** Compresses an image data URL to reduce storage size. */
 export function compressImage(dataUrl: string, maxDim = 300, quality = 0.75): Promise<string> {
   return new Promise((resolve) => {

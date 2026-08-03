@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Expense } from "../types";
 import { useData } from "../context/DataContext";
+import CurrencyInput from "./CurrencyInput";
 import { generateId } from "../lib/utils";
 
 interface Props {
@@ -26,10 +27,15 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
 
   const [isRecurring,     setIsRecurring]     = useState(false);
   const [pendingExpense,  setPendingExpense]   = useState<Expense | null>(null);
+  // O valor é controlado porque o campo de moeda interpreta o texto digitado.
+  const [valorForm,       setValorForm]       = useState<number | undefined>(undefined);
 
   // Reflect the entry's current recurrence state whenever the modal (re)opens.
   useEffect(() => {
-    if (open) setIsRecurring(!!(linkedTemplate && linkedTemplate.active));
+    if (open) {
+      setIsRecurring(!!(linkedTemplate && linkedTemplate.active));
+      setValorForm(editing?.value ?? defaultValues?.value);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id]);
 
@@ -94,6 +100,13 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
     const fd      = new FormData(e.currentTarget);
     const dueDate = fd.get("due_date") as string;
 
+    // Valor inválido (campo vazio ou texto sem número) não vira lançamento zerado.
+    const valor = Number(fd.get("value"));
+    if (!Number.isFinite(valor) || valor <= 0) {
+      addToast("error", "Informe um valor maior que zero.");
+      return;
+    }
+
     const expense: Expense = {
       id:             editing?.id ?? generateId(),
       category_id:    fd.get("category")    as string,
@@ -102,7 +115,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       description:    (fd.get("description") as string).trim(),
       date:           fd.get("date")        as string,
       due_date:       dueDate,
-      value:          parseFloat(fd.get("value") as string),
+      value:          valor,
       responsible_id: fd.get("responsible") as string,
       paid:           fd.get("paid") === "on" ? 1 : 0,
       notes:          (fd.get("notes") as string) || undefined,
@@ -217,8 +230,8 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                 {/* Valor */}
                 <div>
                   <label className="label">Valor (R$)</label>
-                  <input type="number" step="0.01" min="0.01" name="value"
-                    defaultValue={defVal} placeholder="0,00" required className="input font-black" />
+                  <CurrencyInput name="value" value={valorForm} onChange={setValorForm}
+                    required className="font-black" />
                 </div>
 
                 {/* Responsável */}

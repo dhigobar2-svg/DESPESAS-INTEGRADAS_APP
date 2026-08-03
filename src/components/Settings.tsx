@@ -8,7 +8,7 @@ import {
   DatabaseBackup, Download, Upload,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { generateId, cn } from "../lib/utils";
+import { generateId, cn, formatCurrency, parseCurrency } from "../lib/utils";
 import { Category, Responsible, Budget, IncomeType } from "../types";
 import ConfirmModal from "./ConfirmModal";
 
@@ -420,11 +420,19 @@ export default function Settings() {
                 <span className="text-sm font-bold w-32 truncate">{cat.name}</span>
                 <div className="flex-1 relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 font-bold">R$</span>
+                  {/* Texto + parseCurrency pelo mesmo motivo dos demais campos
+                      de dinheiro: o type="number" descartava a vírgula. */}
                   <input
-                    type="number" step="0.01" min="0.01" placeholder="Sem limite"
-                    defaultValue={existing?.limit_value ?? ""}
+                    type="text" inputMode="decimal" placeholder="Sem limite"
+                    defaultValue={existing ? formatCurrency(existing.limit_value) : ""}
                     key={`${cat.id}-${budgetMonth}-${existing?.limit_value ?? ""}`}
-                    onBlur={e => { if (e.target.value) handleBudgetChange(cat.id, e.target.value); }}
+                    onBlur={e => {
+                      const v = parseCurrency(e.target.value);
+                      if (v !== undefined && v > 0) {
+                        e.target.value = formatCurrency(v);
+                        handleBudgetChange(cat.id, String(v));
+                      }
+                    }}
                     className="input pl-9 py-2 text-sm"
                   />
                 </div>
