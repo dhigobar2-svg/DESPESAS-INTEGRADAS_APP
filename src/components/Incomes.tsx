@@ -4,12 +4,13 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Edit2,
-  TrendingUp, StickyNote, RefreshCw, UserCheck,
+  TrendingUp, StickyNote, RefreshCw, UserCheck, Search,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { formatCurrency, cn, recurringDueDate, isRecurringIncomeCovered, buildSkipSet } from "../lib/utils";
 import { Income } from "../types";
 import ConfirmModal from "./ConfirmModal";
+import MultiSelect from "./MultiSelect";
 import IncomeModal from "./IncomeModal";
 
 // Uma ocorrência ainda não criada de uma entrada que se repete. Existe só para
@@ -27,6 +28,10 @@ export default function Incomes() {
   const [editingIncome,  setEditingIncome]  = useState<Income | null>(null);
   const [confirmId,      setConfirmId]      = useState<string | null>(null);
   const [virtualConfirmId, setVirtualConfirmId] = useState<string | null>(null);
+  // Filtros da tela — a busca e os multi-seleção seguem o padrão de Minhas Despesas.
+  const [busca,      setBusca]      = useState("");
+  const [filtroTipo, setFiltroTipo] = useState<string[]>([]);
+  const [filtroResp, setFiltroResp] = useState<string[]>([]);
 
   const activeRecurringIncomeIds = new Set(recurringIncomes.filter(r => r.active).map(r => r.id));
 
@@ -81,11 +86,26 @@ export default function Incomes() {
       .filter((i): i is IncomeRow => i !== null);
   }, [selectedMonth, recurringIncomes, incomes, recurringSkips]);
 
-  // Lista exibida = lançamentos reais do mês + previstos das recorrências.
-  const displayedIncomes = useMemo<IncomeRow[]>(
-    () => [...monthIncomes, ...virtualIncomes].sort((a, b) => b.date.localeCompare(a.date)),
-    [monthIncomes, virtualIncomes],
-  );
+  // Lista exibida = lançamentos reais do mês + previstos das recorrências,
+  // já passados pelos filtros da tela.
+  const displayedIncomes = useMemo<IncomeRow[]>(() => {
+    const q = busca.trim().toLowerCase();
+    return [...monthIncomes, ...virtualIncomes]
+      .filter(i => {
+        if (filtroTipo.length && !filtroTipo.includes(i.type)) return false;
+        if (filtroResp.length && !filtroResp.includes(i.responsible_id ?? "")) return false;
+        if (!q) return true;
+        const tipoNome = incomeTypes.find(t => t.id === i.type)?.name ?? i.type;
+        return i.description.toLowerCase().includes(q)
+          || (i.notes ?? "").toLowerCase().includes(q)
+          || tipoNome.toLowerCase().includes(q)
+          || (i.created_by ?? "").toLowerCase().includes(q);
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [monthIncomes, virtualIncomes, busca, filtroTipo, filtroResp, incomeTypes]);
+
+  const temFiltro = !!(busca || filtroTipo.length || filtroResp.length);
+  const limparFiltros = () => { setBusca(""); setFiltroTipo([]); setFiltroResp([]); };
 
   // Expenses total of selected month (for balance)
   const monthExpenses = useMemo(() => {
@@ -188,12 +208,52 @@ export default function Incomes() {
         </div>
       </div>
 
+      {/* Filtros — mesmo padrão de Minhas Despesas */}
+      <div className="card p-4 space-y-3">
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text" placeholder="Buscar por descrição, tipo, notas ou quem lançou…"
+            value={busca} onChange={e => setBusca(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <MultiSelect
+            allLabel="Todos os tipos" countLabel="tipos"
+            emptyMessage="Nenhum tipo cadastrado"
+            options={incomeTypes} selected={filtroTipo} onChange={setFiltroTipo}
+          />
+          <MultiSelect
+            allLabel="Todos responsáveis" countLabel="responsáveis"
+            emptyMessage="Nenhum responsável cadastrado"
+            options={responsibles} selected={filtroResp} onChange={setFiltroResp}
+          />
+        </div>
+        {temFiltro && (
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-500 font-medium">
+              {displayedIncomes.length} entrada{displayedIncomes.length === 1 ? "" : "s"} · R$ {formatCurrency(totalIncome)}
+            </span>
+            <button onClick={limparFiltros} className="text-xs text-emerald-600 font-bold hover:underline shrink-0">
+              Limpar filtros
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Empty state / list */}
       {displayedIncomes.length === 0 ? (
         <div className="card p-12 text-center">
           <TrendingUp size={44} className="text-emerald-300 mx-auto mb-3" />
-          <p className="text-slate-500 font-bold text-sm">Nenhuma entrada em {format(selectedMonth, "MMMM yyyy", { locale: ptBR })}</p>
-          <p className="text-slate-400 text-xs mt-1">Toque no botão + para adicionar uma receita.</p>
+          <p className="text-slate-500 font-bold text-sm">
+            {temFiltro
+              ? "Nenhuma entrada encontrada com esses filtros"
+              : `Nenhuma entrada em ${format(selectedMonth, "MMMM yyyy", { locale: ptBR })}`}
+          </p>
+          <p className="text-slate-400 text-xs mt-1">
+            {temFiltro ? "Ajuste ou limpe os filtros para ver os lançamentos." : "Toque no botão + para adicionar uma receita."}
+          </p>
         </div>
       ) : (
         <div className="card overflow-hidden">
