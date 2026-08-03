@@ -7,6 +7,8 @@
 // aberta), então `/api/data` responde `meta.realtime: false` e o cliente passa
 // a atualizar por polling em vez de escutar `data_updated`.
 import { getDatabase } from "@netlify/database";
+import { getStore } from "@netlify/blobs";
+import { STORE_BACKUPS, montarBackup } from "./backup-diario.mts";
 import { SCHEMA } from "../database/schema.mjs";
 
 // Interface mínima de `pg` que usamos. Declarada aqui (em vez de importar os
@@ -243,6 +245,36 @@ async function getHealth(p: DbPool) {
   }
 }
 
+// ─── Backups ──────────────────────────────────────────────────────────────────
+// Lista/baixa os backups automáticos. Restaurar é feito pelo app, reusando o
+// mesmo caminho do backup manual (mescla por id, nunca apaga).
+
+async function listarBackups() {
+  const store = getStore(STORE_BACKUPS);
+  const { blobs } = await store.list();
+  const itens = blobs
+    .filter(b => b.key.startsWith("backup-"))
+    .map(b => ({ chave: b.key, data: b.key.replace("backup-", "").replace(".json", "") }))
+    .sort((a, b) => b.chave.localeCompare(a.chave));
+  return json({ backups: itens });
+}
+
+async function baixarBackup(chave: string) {
+  const store = getStore(STORE_BACKUPS);
+  const dados = await store.get(chave, { type: "json" });
+  if (!dados) return json({ error: "Backup não encontrado." }, 404);
+  return json(dados);
+}
+
+/** Gera um backup na hora (botão "fazer agora" nas Configurações). */
+async function backupAgora(p: DbPool) {
+  const backup = await montarBackup(p as unknown as { query(t: string): Promise<{ rows: Record<string, unknown>[] }> });
+  const store = getStore(STORE_BACKUPS);
+  const chave = `backup-${new Date().toISOString().slice(0, 10)}.json`;
+  await store.setJSON(chave, backup);
+  return json({ success: true, chave });
+}
+
 // ─── Roteamento ───────────────────────────────────────────────────────────────
 
 // Exportado para poder ser exercitado contra um Postgres de teste.
@@ -332,6 +364,11 @@ export async function handleRequest(p: DbPool, req: Request): Promise<Response> 
     if (req.method === "GET" && path === "/data") return await getData(p);
     if (req.method === "GET" && (path === "/health" || path === "/")) return await getHealth(p);
     if (req.method === "POST" && path === "/sync") return await postSync(p, req);
+    if (req.method === "GET"  && path === "/backups") return await listarBackups();
+    if (req.method === "POST" && path === "/backups") return await backupAgora(p);
+
+    const bkp = path.match(/^\/backups\/(.+)$/);
+    if (req.method === "GET" && bkp) return await baixarBackup(decodeURIComponent(bkp[1]));
 
     // POST /delete/:tabela/:id (usado pelo frontend) e DELETE /:tabela/:id.
     const del = path.match(/^\/delete\/([^/]+)\/(.+)$/);

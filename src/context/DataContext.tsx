@@ -86,7 +86,7 @@ const getAuthToken = () => { try { return localStorage.getItem(AUTH_KEY) ?? ""; 
 let onUnauthorized: (() => void) | null = null;
 
 /** fetch para a API, sempre com o resumo da senha (quando houver). */
-async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+export async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const token = getAuthToken();
   const headers = new Headers(init.headers);
   if (token) headers.set("x-app-token", token);

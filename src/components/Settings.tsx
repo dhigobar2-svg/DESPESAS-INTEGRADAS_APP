@@ -1,13 +1,13 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
 import {
   User, Tag, Users, Camera, Trash2, Edit2, Check, X,
   DollarSign, Plus, TrendingUp, Bell, BellOff, Copy,
-  DatabaseBackup, Download, Upload, Lock, UserCheck,
+  DatabaseBackup, Download, Upload, Lock, UserCheck, History,
 } from "lucide-react";
-import { useData } from "../context/DataContext";
+import { useData, apiFetch } from "../context/DataContext";
 import { generateId, cn, formatCurrency, parseCurrency } from "../lib/utils";
 import { Category, Responsible, Budget, IncomeType } from "../types";
 import ConfirmModal from "./ConfirmModal";
@@ -174,6 +174,44 @@ export default function Settings() {
 
   // ── Backup ────────────────────────────────────────────────────────────────────
   const [importPending, setImportPending] = useState<{ data: unknown; count: number } | null>(null);
+
+  // ── Backups automáticos (guardados no servidor) ──────────────────────────────
+  const [backups,  setBackups]  = useState<{ chave: string; data: string }[]>([]);
+  const [ocupado,  setOcupado]  = useState(false);
+
+  const carregarBackups = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/backups");
+      if (!res.ok) return;
+      const body = await res.json();
+      setBackups(Array.isArray(body.backups) ? body.backups : []);
+    } catch { /* sem servidor: a seção simplesmente não aparece */ }
+  }, []);
+
+  useEffect(() => { carregarBackups(); }, [carregarBackups]);
+
+  const gerarBackupAgora = async () => {
+    setOcupado(true);
+    try {
+      const res = await apiFetch("/api/backups", { method: "POST" });
+      if (res.ok) { addToast("success", "Backup gerado!"); await carregarBackups(); }
+      else addToast("error", "Não consegui gerar o backup agora.");
+    } catch { addToast("error", "Sem conexão com o servidor."); }
+    setOcupado(false);
+  };
+
+  const restaurarBackup = async (chave: string) => {
+    setOcupado(true);
+    try {
+      const res = await apiFetch(`/api/backups/${encodeURIComponent(chave)}`);
+      if (!res.ok) { addToast("error", "Não consegui baixar esse backup."); setOcupado(false); return; }
+      // Mesma restauração do arquivo manual: mescla por id, nunca apaga.
+      const n = restoreBackup(await res.json());
+      addToast(n > 0 ? "success" : "info",
+        n > 0 ? `${n} registro(s) restaurados do backup.` : "O backup não tinha registros novos.");
+    } catch { addToast("error", "Sem conexão com o servidor."); }
+    setOcupado(false);
+  };
 
   const exportBackup = () => {
     const backup = {
@@ -343,6 +381,38 @@ export default function Settings() {
           </label>
         </div>
       </section>
+
+      {/* ── Backups automáticos ───────────────────────────────────────────────── */}
+      {/* Só aparece quando há servidor (em modo local não existem backups). */}
+      {backups.length > 0 && (
+        <section className="card p-6">
+          <h3 className="section-title"><History size={16} /> Backups automáticos</h3>
+          <p className="text-sm text-slate-500 mb-4">
+            O servidor guarda uma cópia por dia dos últimos 30 dias. Restaurar mescla
+            com o que já existe — nada é apagado.
+          </p>
+          <div className="space-y-2 mb-4 max-h-56 overflow-y-auto">
+            {backups.map(b => (
+              <div key={b.chave} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className="text-sm font-bold text-slate-700">
+                  {b.data.split("-").reverse().join("/")}
+                </span>
+                <button
+                  onClick={() => restaurarBackup(b.chave)}
+                  disabled={ocupado}
+                  className="text-xs font-bold text-emerald-600 hover:underline disabled:opacity-40"
+                >
+                  Restaurar
+                </button>
+              </div>
+            ))}
+          </div>
+          <button onClick={gerarBackupAgora} disabled={ocupado}
+            className="btn-secondary w-full py-2.5 flex items-center justify-center gap-1.5 disabled:opacity-50">
+            <DatabaseBackup size={14} /> Fazer backup agora
+          </button>
+        </section>
+      )}
 
       {/* ── Categories ────────────────────────────────────────────────────────── */}
       <section className="card p-6">

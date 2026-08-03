@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createHash, timingSafeEqual } from "crypto";
+import { mkdirSync, writeFileSync, readdirSync, readFileSync, unlinkSync } from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DATABASE_PATH lets the DB live on a persistent volume in production.
@@ -231,6 +232,53 @@ function dedupRecurringOccurrences() {
 dedupRecurringOccurrences();
 
 
+// ── Backup automático ────────────────────────────────────────────────────────
+// Mesmo formato do "Exportar backup" das Configurações, para a restauração usar
+// o caminho já testado do app. Fica ao lado do banco (no volume persistente,
+// em produção) e mantém os últimos 30.
+const BACKUP_DIR   = path.join(path.dirname(dbAbsolute), "backups");
+const BACKUP_MANTER = 30;
+
+function montarBackup() {
+  const get = (sql: string) => db.prepare(sql).all();
+  return {
+    app: "despesas-integradas", version: 1,
+    exported_at: new Date().toISOString(), origem: "backup-automatico",
+    profile: db.prepare("SELECT * FROM user_profile WHERE id = 'default'").get()
+             ?? { id: "default", name: "Usuário" },
+    expenses:         get("SELECT * FROM expenses"),
+    categories:       get("SELECT * FROM categories"),
+    responsibles:     get("SELECT * FROM responsibles"),
+    budgets:          get("SELECT * FROM budgets"),
+    recurring:        get("SELECT * FROM recurring_expenses"),
+    incomes:          get("SELECT * FROM incomes"),
+    incomeTypes:      get("SELECT * FROM income_types"),
+    recurringIncomes: get("SELECT * FROM recurring_incomes"),
+    recurringSkips:   get("SELECT * FROM recurring_skips"),
+    notes:            get("SELECT * FROM notes"),
+  };
+}
+
+function gravarBackup(): string {
+  mkdirSync(BACKUP_DIR, { recursive: true });
+  const chave = `backup-${new Date().toISOString().slice(0, 10)}.json`;
+  writeFileSync(path.join(BACKUP_DIR, chave), JSON.stringify(montarBackup()));
+
+  const antigos = readdirSync(BACKUP_DIR)
+    .filter(f => f.startsWith("backup-") && f.endsWith(".json"))
+    .sort()
+    .slice(0, -BACKUP_MANTER);
+  for (const f of antigos) { try { unlinkSync(path.join(BACKUP_DIR, f)); } catch { /* ignore */ } }
+  return chave;
+}
+
+// Um ao subir e um por dia enquanto o processo viver.
+try { console.log(`[backup] ${gravarBackup()} gravado em ${BACKUP_DIR}`); }
+catch (err) { console.warn("[backup] não consegui gravar:", err); }
+setInterval(() => {
+  try { gravarBackup(); } catch (err) { console.warn("[backup] falhou:", err); }
+}, 24 * 60 * 60_000).unref();
+
 // Whitelist of allowed columns per table — prevents SQL injection via sync
 const ALLOWED_COLUMNS: Record<string, string[]> = {
   expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id"],
@@ -446,6 +494,31 @@ async function startServer() {
       }
     }
   }
+
+  // Backups automáticos: listar, baixar e gerar na hora.
+  app.get("/api/backups", (_req, res) => {
+    try {
+      mkdirSync(BACKUP_DIR, { recursive: true });
+      const itens = readdirSync(BACKUP_DIR)
+        .filter(f => f.startsWith("backup-") && f.endsWith(".json"))
+        .sort().reverse()
+        .map(f => ({ chave: f, data: f.replace("backup-", "").replace(".json", "") }));
+      res.json({ backups: itens });
+    } catch { res.json({ backups: [] }); }
+  });
+
+  app.post("/api/backups", (_req, res) => {
+    try { res.json({ success: true, chave: gravarBackup() }); }
+    catch { res.status(500).json({ error: "Não consegui gerar o backup." }); }
+  });
+
+  app.get("/api/backups/:chave", (req, res) => {
+    // Só o nome do arquivo — impede subir diretórios com "../".
+    const chave = path.basename(req.params.chave);
+    try {
+      res.type("application/json").send(readFileSync(path.join(BACKUP_DIR, chave), "utf-8"));
+    } catch { res.status(404).json({ error: "Backup não encontrado." }); }
+  });
 
   // DELETE /api/:table/:id
   app.delete("/api/:table/:id", (req, res) => handleDelete(req.params.table, req.params.id, res));
