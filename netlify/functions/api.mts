@@ -251,6 +251,36 @@ async function getHealth(p: DbPool) {
  * projeto. Sem ela nada muda. O aparelho envia o SHA-256 da senha no cabeçalho
  * `x-app-token` — a senha em si nunca sai do dispositivo nem fica gravada nele.
  */
+const MAX_TENTATIVAS   = 5;
+const BLOQUEIO_MINUTOS = 15;
+
+/** Quem já errou demais fica de castigo — um PIN de 6 dígitos não sobrevive a
+ *  força bruta sem isso. Registrado no banco porque cada requisição serverless
+ *  pode cair numa instância diferente. */
+async function bloqueado(p: DbPool, ip: string): Promise<boolean> {
+  const { rows } = await p.query(
+    "SELECT blocked_until FROM auth_attempts WHERE ip = $1 AND blocked_until > NOW()", [ip],
+  );
+  return rows.length > 0;
+}
+
+async function registrarFalha(p: DbPool, ip: string): Promise<void> {
+  await p.query(
+    `INSERT INTO auth_attempts (ip, tries, updated_at) VALUES ($1, 1, NOW())
+     ON CONFLICT (ip) DO UPDATE SET
+       tries = CASE WHEN auth_attempts.updated_at < NOW() - INTERVAL '${BLOQUEIO_MINUTOS} minutes'
+                    THEN 1 ELSE auth_attempts.tries + 1 END,
+       blocked_until = CASE WHEN auth_attempts.tries + 1 >= ${MAX_TENTATIVAS}
+                    THEN NOW() + INTERVAL '${BLOQUEIO_MINUTOS} minutes' ELSE NULL END,
+       updated_at = NOW()`,
+    [ip],
+  );
+}
+
+async function limparFalhas(p: DbPool, ip: string): Promise<void> {
+  await p.query("DELETE FROM auth_attempts WHERE ip = $1", [ip]);
+}
+
 async function checkAuth(req: Request): Promise<boolean> {
   const senha = (globalThis as { Netlify?: { env: { get(k: string): string | undefined } } })
     .Netlify?.env.get("APP_PASSWORD")?.trim();
@@ -278,13 +308,26 @@ export async function handleRequest(p: DbPool, req: Request): Promise<Response> 
     .replace(/\/$/, "") || "/";
 
   try {
+    await ensureSchema(p);
+
     // /health continua público (é usado como sonda de disponibilidade).
     const publico = path === "/health" || path === "/";
-    if (!publico && !(await checkAuth(req))) {
-      return json({ error: "Senha necessária." }, 401);
-    }
+    if (!publico) {
+      const ip = req.headers.get("x-nf-client-connection-ip")
+        ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+        ?? "desconhecido";
 
-    await ensureSchema(p);
+      if (await bloqueado(p, ip)) {
+        return json({ error: `Muitas tentativas. Tente de novo em ${BLOQUEIO_MINUTOS} minutos.` }, 429);
+      }
+      if (!(await checkAuth(req))) {
+        // Só penaliza quem apresentou um token ERRADO. Requisição sem token
+        // nenhum é o app perguntando se existe senha — não é tentativa.
+        if (req.headers.get("x-app-token")) await registrarFalha(p, ip);
+        return json({ error: "Senha necessária." }, 401);
+      }
+      await limparFalhas(p, ip);
+    }
 
     if (req.method === "GET" && path === "/data") return await getData(p);
     if (req.method === "GET" && (path === "/health" || path === "/")) return await getHealth(p);

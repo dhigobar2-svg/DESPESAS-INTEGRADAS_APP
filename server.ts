@@ -296,12 +296,39 @@ async function startServer() {
 
   if (expectedToken) {
     console.log("[auth] Acesso protegido por senha (APP_PASSWORD definida).");
+
+    // Bloqueio contra força bruta: uma senha curta (um PIN, por exemplo) seria
+    // testável por completo em minutos sem isto.
+    const MAX_TENTATIVAS = 5;
+    const BLOQUEIO_MS    = 15 * 60_000;
+    const tentativas = new Map<string, { erros: number; ate: number }>();
+
     app.use("/api", (req, res, next) => {
+      const ip = req.ip ?? "desconhecido";
+      const reg = tentativas.get(ip);
+      const agora = Date.now();
+
+      if (reg && reg.ate > agora) {
+        return res.status(429).json({ error: "Muitas tentativas. Tente de novo em 15 minutos." });
+      }
+
       const token = String(req.header("x-app-token") ?? "");
       // timingSafeEqual exige o mesmo tamanho; o resumo tem tamanho fixo.
       const ok = token.length === expectedToken.length &&
         timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken));
-      if (!ok) return res.status(401).json({ error: "Senha necessária." });
+
+      if (!ok) {
+        // Requisição SEM token é só "ainda não entrou" — é o que o app faz ao
+        // abrir, para descobrir que existe senha. Contar isso como tentativa
+        // bloquearia o usuário depois de algumas aberturas do app.
+        if (token) {
+          const erros = (reg && reg.ate > agora - BLOQUEIO_MS ? reg.erros : 0) + 1;
+          tentativas.set(ip, { erros, ate: erros >= MAX_TENTATIVAS ? agora + BLOQUEIO_MS : agora });
+        }
+        return res.status(401).json({ error: "Senha necessária." });
+      }
+
+      tentativas.delete(ip);
       next();
     });
     io.use((socket, next) => {

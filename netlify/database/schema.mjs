@@ -76,6 +76,13 @@ export const SCHEMA = [
      content TEXT NOT NULL DEFAULT '',
      updated_at TEXT NOT NULL)`,
 
+  // Tentativas de senha por origem — sustenta o bloqueio contra força bruta.
+  `CREATE TABLE IF NOT EXISTS auth_attempts (
+     ip TEXT PRIMARY KEY,
+     tries INTEGER NOT NULL DEFAULT 0,
+     blocked_until TIMESTAMPTZ,
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
+
   // Índices das consultas que o app realmente faz.
   `CREATE INDEX IF NOT EXISTS idx_expenses_due_date      ON expenses (due_date)`,
   `CREATE INDEX IF NOT EXISTS idx_expenses_recurring     ON expenses (recurring_id)`,

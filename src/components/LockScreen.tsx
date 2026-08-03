@@ -12,6 +12,9 @@ export default function LockScreen() {
   const { signIn } = useData();
   const [senha,     setSenha]     = useState("");
   const [enviando,  setEnviando]  = useState(false);
+  // A senha da casa é numérica, então o teclado abre no modo número. O botão
+  // abaixo alterna para o teclado completo caso a senha vire alfanumérica.
+  const [tecladoNumerico, setTecladoNumerico] = useState(true);
 
   const entrar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,12 +50,20 @@ export default function LockScreen() {
               id="senha"
               type="password"
               autoComplete="current-password"
+              inputMode={tecladoNumerico ? "numeric" : "text"}
               value={senha}
               onChange={e => setSenha(e.target.value)}
-              placeholder="••••••••"
+              placeholder="••••••"
               autoFocus
-              className="input"
+              className="input text-center tracking-[0.4em] text-lg"
             />
+            <button
+              type="button"
+              onClick={() => setTecladoNumerico(t => !t)}
+              className="mt-2 text-[11px] font-bold text-slate-400 hover:text-emerald-600 transition-colors"
+            >
+              {tecladoNumerico ? "Usar teclado completo (letras)" : "Usar teclado numérico"}
+            </button>
           </div>
           <button type="submit" disabled={enviando || !senha.trim()} className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50">
             {enviando ? <><Loader2 size={14} className="animate-spin" /> Entrando…</> : "Entrar"}
