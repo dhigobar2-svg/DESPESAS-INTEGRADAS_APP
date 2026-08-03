@@ -88,6 +88,43 @@ export default function Settings() {
     setPreviaFoto(await readPhoto(file));
   };
 
+  // Editar um responsável já cadastrado (nome e/ou foto), sem precisar excluir
+  // e recadastrar — o que apagaria o vínculo com as despesas dele.
+  const [editandoRespId, setEditandoRespId] = useState<string | null>(null);
+  const [editRespNome,   setEditRespNome]   = useState("");
+  const [editRespFoto,   setEditRespFoto]   = useState<string | undefined>(undefined);
+
+  const iniciarEdicaoResp = (resp: Responsible) => {
+    setEditandoRespId(resp.id);
+    setEditRespNome(resp.name);
+    setEditRespFoto(resp.photo);
+  };
+
+  const trocarFotoResp = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditRespFoto(await readPhoto(file));
+  };
+
+  const salvarEdicaoResp = () => {
+    if (!editandoRespId) return;
+    const nome = editRespNome.trim();
+    if (!nome) return;
+    const dup = responsibles.find(
+      r => r.id !== editandoRespId && r.name.trim().toLowerCase() === nome.toLowerCase(),
+    );
+    if (dup) {
+      addToast("error", `Já existe um responsável chamado "${dup.name}".`);
+      return;
+    }
+    const anterior = responsibles.find(r => r.id === editandoRespId);
+    saveResponsible({ id: editandoRespId, name: nome, photo: editRespFoto }, true);
+    // "Quem usa este aparelho" guarda o NOME escolhido; renomear sem atualizar
+    // aqui deixaria a escolha apontando para um nome que não existe mais.
+    if (anterior && deviceUser === anterior.name) setDeviceUser(nome);
+    setEditandoRespId(null);
+  };
+
   const handleAddResp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd   = new FormData(e.currentTarget);
@@ -483,19 +520,54 @@ export default function Settings() {
         <h3 className="section-title"><Users size={16} /> Responsáveis</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-5">
           {responsibles.map(resp => (
-            <div key={resp.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
-                  {resp.photo
-                    ? <img src={resp.photo} className="w-full h-full object-cover" alt={resp.name} />
-                    : <User size={16} className="text-slate-400" />}
+            <div key={resp.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100">
+              {editandoRespId === resp.id ? (
+                // Editar troca nome e foto no mesmo lugar: mudar a foto não deve
+                // obrigar a excluir e recadastrar o responsável.
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <label className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0 cursor-pointer ring-2 ring-emerald-400"
+                    title="Trocar a foto">
+                    {editRespFoto
+                      ? <img src={editRespFoto} className="w-full h-full object-cover" alt="Foto do responsável" />
+                      : <Camera size={14} className="text-slate-500" />}
+                    <input type="file" accept="image/*" className="hidden"
+                      aria-label="Trocar a foto do responsável" onChange={trocarFotoResp} />
+                  </label>
+                  <input type="text" value={editRespNome} onChange={e => setEditRespNome(e.target.value)}
+                    aria-label="Nome do responsável em edição"
+                    className="input flex-1 py-1.5 text-sm min-w-0" autoFocus />
+                  <button onClick={salvarEdicaoResp} title="Salvar"
+                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg shrink-0">
+                    <Check size={16} />
+                  </button>
+                  <button onClick={() => setEditandoRespId(null)} title="Cancelar"
+                    className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg shrink-0">
+                    <X size={16} />
+                  </button>
                 </div>
-                <span className="text-sm font-bold">{resp.name}</span>
-              </div>
-              <button onClick={() => setDeleteTarget({ table: "responsibles", id: resp.id, label: resp.name })}
-                className="p-1.5 text-slate-400 hover:text-red-600 transition-colors">
-                <Trash2 size={14} />
-              </button>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                      {resp.photo
+                        ? <img src={resp.photo} className="w-full h-full object-cover" alt={resp.name} />
+                        : <User size={16} className="text-slate-400" />}
+                    </div>
+                    <span className="text-sm font-bold truncate">{resp.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => iniciarEdicaoResp(resp)} title="Editar nome e foto"
+                      className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors">
+                      <Edit2 size={14} />
+                    </button>
+                    <button onClick={() => setDeleteTarget({ table: "responsibles", id: resp.id, label: resp.name })}
+                      title="Excluir"
+                      className="p-1.5 text-slate-400 hover:text-red-600 transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
