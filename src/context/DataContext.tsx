@@ -45,7 +45,9 @@ interface DataContextValue {
 
   // Handlers
   saveExpense:      (expense: Expense, isEdit: boolean, toastMsg?: string) => void;
-  deleteItem:       (table: string, id: string) => Promise<void>;
+  deleteItem:       (table: string, id: string) => Promise<unknown>;
+  /** Exclui várias despesas com um aviso único e um "Desfazer" do lote todo. */
+  excluirVarias:    (ids: string[]) => Promise<void>;
   togglePaid:       (id: string) => void;
   /** Marca várias despesas como pagas de uma vez (seleção em lote). */
   marcarPagas:      (ids: string[], mensagem: string) => void;
@@ -142,6 +144,13 @@ const TABLE_FOR_PAYLOAD: Record<PayloadTable, string> = {
 const PAYLOAD_FOR_TABLE = Object.fromEntries(
   Object.entries(TABLE_FOR_PAYLOAD).map(([k, v]) => [v, k]),
 ) as Record<string, PayloadTable>;
+
+/**
+ * Como terminou uma exclusão. Interessa para o "Desfazer": só faz sentido
+ * oferecer a volta quando a linha realmente saiu (`ok`/`local`) — com a
+ * exclusão ainda na fila, regravá-la agora seria apagada de novo no flush.
+ */
+type ResultadoExclusao = "ok" | "local" | "fila" | "erro";
 
 interface PendingStore {
   rows: Partial<Record<PayloadTable, Record<string, unknown>>>;
@@ -1036,7 +1045,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const saveExpenseRef = useRef<(e: Expense, isEdit: boolean, msg?: string) => void>(() => {});
   const saveIncomeRef  = useRef<(i: Income, isEdit: boolean) => void>(() => {});
 
-  const deleteItem = useCallback(async (table: string, id: string) => {
+  const deleteItem = useCallback(async (
+    table: string, id: string, opts: { silencioso?: boolean } = {},
+  ): Promise<ResultadoExclusao> => {
     const snap = {
       expenses:     expenses,
       categories:   categories,
@@ -1108,8 +1119,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     if (!navigator.onLine) {
       enqueueDelete(table, id);
-      addToast("info", "Exclusão salva localmente. Será sincronizada ao reconectar.");
-      return;
+      if (!opts.silencioso) addToast("info", "Exclusão salva localmente. Será sincronizada ao reconectar.");
+      return "fila";
     }
 
     try {
@@ -1120,27 +1131,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       if (res.ok && body && typeof body === "object" && !body.error) {
         setServerReachable(true);
-        const desfazer = despesaApagada
-          ? { label: "Desfazer", run: () => saveExpenseRef.current(despesaApagada, false, "Exclusão desfeita.") }
-          : entradaApagada
-          ? { label: "Desfazer", run: () => saveIncomeRef.current(entradaApagada, false) }
-          : undefined;
-        addToast("success", "Item excluído.", desfazer);
-      } else if (body?.error) {
+        if (!opts.silencioso) {
+          const desfazer = despesaApagada
+            ? { label: "Desfazer", run: () => saveExpenseRef.current(despesaApagada, false, "Exclusão desfeita.") }
+            : entradaApagada
+            ? { label: "Desfazer", run: () => saveIncomeRef.current(entradaApagada, false) }
+            : undefined;
+          addToast("success", "Item excluído.", desfazer);
+        }
+        return "ok";
+      }
+      if (body?.error) {
         // Rejeição real da aplicação (ex.: categoria em uso) → desfaz.
         setServerReachable(true);
         rollback();
         addToast("error", body.error);
-      } else {
-        // Sem resposta útil da API → não há backend nesta URL (modo local):
-        // mantém a exclusão local em vez de falhar na cara do usuário.
-        setServerReachable(false);
+        return "erro";
       }
+      // Sem resposta útil da API → não há backend nesta URL (modo local):
+      // mantém a exclusão local em vez de falhar na cara do usuário.
+      setServerReachable(false);
+      return "local";
     } catch {
       // Network error: the request may or may not have reached the server.
       // Queue it for retry on reconnect (re-deleting is idempotent) and keep the
       // optimistic removal so the UI stays consistent with the user's intent.
       enqueueDelete(table, id);
+      return "fila";
     }
   }, [expenses, categories, responsibles, budgets, recurring, incomes, incomeTypes, recurringIncomes, notes, enqueueDelete, addRecurringSkip, addToast]);
 
@@ -1158,6 +1175,47 @@ export function DataProvider({ children }: { children: ReactNode }) {
     syncWithServer({ expenses: [changed] });
     addToast("success", changed.paid ? "Pagamento registrado!" : "Despesa marcada como pendente.");
   }, [expenses, syncWithServer, addToast]);
+
+  // Devolve ao app despesas que tinham sido excluídas. Regravar com o MESMO id
+  // basta: o sync é upsert por chave primária, então a linha volta no lugar de
+  // onde saiu, sem duplicar. Vai tudo num envio só.
+  const restaurarDespesas = useCallback((linhas: Expense[]) => {
+    if (!linhas.length) return;
+    const porId = new Map(linhas.map(l => [l.id, l]));
+    setExpenses(prev => {
+      // `filter` antes de concatenar: se alguma já tiver voltado (outro
+      // aparelho, refetch no meio), não entra duas vezes.
+      const updated = [...prev.filter(e => !porId.has(e.id)), ...linhas];
+      lsSet("expenses", updated);
+      return updated;
+    });
+    syncWithServer({ expenses: linhas });
+    addToast("success", linhas.length === 1
+      ? "Exclusão desfeita."
+      : `${linhas.length} despesas restauradas.`);
+  }, [syncWithServer, addToast]);
+
+  // Exclusão em lote: um aviso só, com um "Desfazer" para o conjunto inteiro —
+  // em vez de N avisos empilhados, cada um desfazendo a sua linha.
+  const excluirVarias = useCallback(async (ids: string[]) => {
+    const apagadas = expenses.filter(e => ids.includes(e.id));
+    if (!apagadas.length) return;
+
+    const resultados: ResultadoExclusao[] = [];
+    for (const id of ids) resultados.push(await deleteItem("expenses", id, { silencioso: true }));
+
+    const removidas = resultados.filter(r => r !== "erro").length;
+    if (!removidas) return; // todas recusadas: o próprio deleteItem já avisou
+
+    // Só oferece desfazer quando nenhuma exclusão ficou pendente na fila:
+    // regravar agora uma linha cuja exclusão ainda vai sair a apagaria de novo.
+    const podeDesfazer = resultados.every(r => r === "ok" || r === "local");
+    const voltar = apagadas.filter((_, i) => resultados[i] !== "erro");
+
+    addToast("success",
+      removidas === 1 ? "Despesa excluída." : `${removidas} despesas excluídas.`,
+      podeDesfazer ? { label: "Desfazer", run: () => restaurarDespesas(voltar) } : undefined);
+  }, [expenses, deleteItem, addToast, restaurarDespesas]);
 
   // Marcar várias de uma vez manda um único envio, em vez de um POST por linha
   // (a fila continua sendo por linha, mas o flush sai junto).
@@ -1343,7 +1401,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     isOnline, isConnected, realtime, serverReachable, needsAuth, authEnabled,
     deviceUser, setDeviceUser,
     notificationsEnabled, pendingCount, toasts,
-    saveExpense, deleteItem, togglePaid, marcarPagas, forceSync, signIn, signOut, saveProfile,
+    saveExpense, deleteItem, excluirVarias, togglePaid, marcarPagas, forceSync, signIn, signOut, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
     saveIncome, saveIncomeType, saveRecurringIncome, saveNote, restoreBackup,
     readPhoto, requestNotificationPermission, addToast, dismissToast,

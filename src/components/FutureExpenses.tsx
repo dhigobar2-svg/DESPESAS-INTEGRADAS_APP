@@ -437,7 +437,7 @@ export default function FutureExpenses({ filter }: Props) {
 
       <ConfirmModal
         open={!!confirmId}
-        message={`Excluir "${confirmLabel}"? Esta ação não pode ser desfeita.`}
+        message={`Excluir "${confirmLabel}"? Logo depois aparece um aviso com a opção de desfazer.`}
         onConfirm={() => {
           if (confirmId) deleteItem("expenses", confirmId);
           setConfirmId(null);

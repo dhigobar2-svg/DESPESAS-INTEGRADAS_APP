@@ -315,11 +315,16 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
   for the entry's month with what's already booked (excluding the row being
   edited) and warns while the value is typed. It never blocks the save.
 - **Bulk actions** in `ExpenseList`: checkbox column + a bar with "marcar pagas"
-  (via `marcarPagas`, one batch) and "excluir selecionadas".
+  (via `marcarPagas`, one batch) and "excluir selecionadas" (via `excluirVarias`,
+  which deletes silently row by row and then shows a *single* toast whose undo
+  restores the whole batch in one sync).
 - **Undo delete**: `addToast(type, message, { label, run })` renders an action
   button in the toast; `deleteItem` captures the removed expense/income and the
   undo re-saves it with the same id (sync is an upsert, so it lands back where it
-  was). Toasts with an action live 9 s instead of 4.5 s.
+  was). Toasts with an action live 9 s instead of 4.5 s. `deleteItem` returns a
+  `ResultadoExclusao` (`ok` | `local` | `fila` | `erro`) and takes
+  `{ silencioso }`; **undo is only offered for `ok`/`local`** — re-saving a row
+  whose delete is still queued would just be deleted again on the next flush.
 - **"Quem usa este aparelho"** is asked once, right after the lock screen
   (`QuemUsa.tsx`, gated by `device_user_asked` in localStorage) — answering is
   optional. The name lives in localStorage (`device_user`) and is **never

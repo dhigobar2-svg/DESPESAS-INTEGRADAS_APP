@@ -34,7 +34,7 @@ export default function ExpenseList({
 }: Props) {
   const {
     expenses, categories, responsibles, incomes, incomeTypes, recurring,
-    togglePaid, marcarPagas, deleteItem,
+    togglePaid, marcarPagas, deleteItem, excluirVarias,
   } = useData();
   const activeRecurringIds = new Set(recurring.filter(r => r.active).map(r => r.id));
 
@@ -502,7 +502,7 @@ export default function ExpenseList({
 
       <ConfirmModal
         open={!!confirmId}
-        message="Esta ação não pode ser desfeita."
+        message="Logo depois aparece um aviso com a opção de desfazer."
         onConfirm={() => { if (confirmId) deleteItem("expenses", confirmId); setConfirmId(null); }}
         onCancel={() => setConfirmId(null)}
       />
@@ -510,9 +510,9 @@ export default function ExpenseList({
       <ConfirmModal
         open={confirmLote}
         title="Excluir selecionadas"
-        message={`Excluir ${selecionados.length} despesa(s)? Esta ação não pode ser desfeita.`}
+        message={`Excluir ${selecionados.length} despesa(s)? Logo depois aparece um aviso com a opção de desfazer todas de uma vez.`}
         onConfirm={() => {
-          for (const id of selecionados) deleteItem("expenses", id);
+          excluirVarias(selecionados);
           setSelecionados([]);
           setConfirmLote(false);
         }}
