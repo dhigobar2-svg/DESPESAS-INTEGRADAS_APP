@@ -90,13 +90,25 @@ export const SCHEMA = [
   `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_total INTEGER`,
   `CREATE INDEX IF NOT EXISTS idx_expenses_installment ON expenses (installment_id)`,
 
+  // Cartões de crédito e a ligação da despesa com a fatura.
+  `CREATE TABLE IF NOT EXISTS cards (
+     id TEXT PRIMARY KEY,
+     name TEXT NOT NULL,
+     color TEXT NOT NULL DEFAULT '#6366f1',
+     closing_day INTEGER NOT NULL DEFAULT 1,
+     due_day INTEGER NOT NULL DEFAULT 10,
+     limit_value DOUBLE PRECISION,
+     active INTEGER DEFAULT 1)`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS card_id TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_expenses_card ON expenses (card_id)`,
+
   // Coluna adicionada depois: quem lançou a entrada.
   `ALTER TABLE incomes ADD COLUMN IF NOT EXISTS created_by TEXT`,
 
   // Controle de edição simultânea: carimbo ISO (UTC) da última edição, gravado
   // pelo cliente. O sync recusa escrita mais antiga que a versão guardada.
   ...["expenses", "categories", "responsibles", "budgets", "recurring_expenses",
-      "incomes", "income_types", "recurring_incomes", "user_profile"]
+      "incomes", "income_types", "recurring_incomes", "user_profile", "cards"]
     .map((t) => `ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS updated_at TEXT`),
 
   // Tentativas de senha por origem — sustenta o bloqueio contra força bruta.

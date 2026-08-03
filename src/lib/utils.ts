@@ -202,6 +202,37 @@ export function recurringDueDate(year: number, month1: number, dayOfMonth: numbe
 }
 
 /**
+ * Em qual fatura uma compra cai, no formato `yyyy-MM`.
+ *
+ * A fatura fecha no dia `closing_day`: a compra feita NO dia do fechamento ou
+ * depois já entra na fatura seguinte — é assim que os cartões funcionam e é o
+ * que o usuário confere no extrato. `mesFatura` é o mês em que a fatura vence.
+ */
+export function faturaDaCompra(dataISO: string, closingDay: number): string {
+  const [ano, mes, dia] = dataISO.split("-").map(Number);
+  if (!ano || !mes || !dia) return dataISO.slice(0, 7);
+  const fecha = Math.min(Math.max(closingDay || 1, 1), 31);
+  // Compra antes do fechamento → fatura do próprio mês; a partir dele → a próxima.
+  const deslocamento = dia >= fecha ? 1 : 0;
+  const d = new Date(ano, mes - 1 + deslocamento, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Data de vencimento (yyyy-MM-dd) da fatura `yyyy-MM`, ancorada em `due_day`. */
+export function vencimentoDaFatura(mesFatura: string, dueDay: number): string {
+  const [ano, mes] = mesFatura.split("-").map(Number);
+  if (!ano || !mes) return mesFatura;
+  return recurringDueDate(ano, mes, dueDay);
+}
+
+/** Rótulo curto de um mês `yyyy-MM` — "ago/2026". */
+export function rotuloMes(mes: string): string {
+  const NOMES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  const [ano, m] = mes.split("-").map(Number);
+  return ano && m ? `${NOMES[m - 1]}/${ano}` : mes;
+}
+
+/**
  * SHA-256 em hexadecimal. Usado no acesso por senha: o aparelho guarda apenas
  * este resumo, nunca a senha em si, e é ele que viaja no cabeçalho das
  * requisições. O servidor compara com o resumo da senha configurada.

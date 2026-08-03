@@ -5,7 +5,10 @@ import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Expense } from "../types";
 import { useData } from "../context/DataContext";
 import CurrencyInput from "./CurrencyInput";
-import { generateId, dividirParcelas, somarMeses, formatCurrency, cn } from "../lib/utils";
+import {
+  generateId, dividirParcelas, somarMeses, formatCurrency, cn,
+  faturaDaCompra, vencimentoDaFatura, rotuloMes,
+} from "../lib/utils";
 
 // Frequências oferecidas na interface. Cada uma vira um par
 // (frequency, interval_n) — o usuário escolhe uma coisa só.
@@ -33,7 +36,7 @@ interface Props {
 
 export default function ExpenseModal({ open, editing, defaultValues, onClose }: Props) {
   const {
-    categories, responsibles, expenses, recurring,
+    categories, responsibles, expenses, recurring, cards,
     saveExpense, saveRecurring, addToast, deviceUser,
   } = useData();
 
@@ -51,6 +54,10 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
   // Parcelamento (só para lançamentos novos).
   const [parcelas,        setParcelas]        = useState(1);
   const [valorEhTotal,    setValorEhTotal]    = useState(true);
+  // Cartão de crédito: a compra entra na fatura dele e o vencimento passa a ser
+  // o da fatura, calculado a partir da data da compra e do dia de fechamento.
+  const [cartaoId,        setCartaoId]        = useState("");
+  const [dataCompra,      setDataCompra]      = useState("");
 
   // Reflect the entry's current recurrence state whenever the modal (re)opens.
   useEffect(() => {
@@ -62,6 +69,8 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       setValorForm(editing?.value ?? defaultValues?.value);
       setParcelas(1);
       setValorEhTotal(true);
+      setCartaoId(editing?.card_id ?? defaultValues?.card_id ?? "");
+      setDataCompra(editing?.date ?? defaultValues?.date ?? format(new Date(), "yyyy-MM-dd"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id]);
@@ -181,6 +190,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       // Quem lançou: preservado na edição, carimbado na criação.
       created_by:     editing?.created_by ?? (deviceUser || undefined),
       recurring_id:   editing?.recurring_id ?? defaultValues?.recurring_id,
+      card_id:        cartaoId || undefined,
     };
 
     // For new expenses: check if an identical one already exists
@@ -224,6 +234,12 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
   const defResp  = editing?.responsible_id ?? defaultValues?.responsible_id ?? responsibles[0]?.id ?? "";
   const defPaid  = editing?.paid === 1;
   const defNotes = editing?.notes          ?? defaultValues?.notes          ?? "";
+
+  // Cartão escolhido → a fatura (e o vencimento dela) saem da data da compra.
+  const cartoesAtivos = cards.filter(c => c.active || c.id === cartaoId);
+  const cartao     = cards.find(c => c.id === cartaoId);
+  const mesFatura  = cartao ? faturaDaCompra(dataCompra || defDate, cartao.closing_day) : "";
+  const vencFatura = cartao ? vencimentoDaFatura(mesFatura, cartao.due_day) : "";
 
   return (
     <AnimatePresence>
@@ -279,12 +295,23 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                   <div className="min-w-0">
                     <label className="label">Lançamento</label>
                     <input type="date" name="date" required className="input"
-                      defaultValue={defDate} />
+                      value={dataCompra} onChange={e => setDataCompra(e.target.value)} />
                   </div>
                   <div className="min-w-0">
                     <label className="label">Vencimento</label>
-                    <input type="date" name="due_date" required className="input"
-                      defaultValue={defDue} />
+                    {/* Com cartão o vencimento é o da fatura: mostrado travado
+                        (e enviado num campo oculto, já que input desabilitado
+                        não entra no FormData) para não haver duas verdades. */}
+                    {cartao ? (
+                      <>
+                        <input type="date" value={vencFatura} disabled readOnly
+                          className="input bg-slate-100 text-slate-500" />
+                        <input type="hidden" name="due_date" value={vencFatura} />
+                      </>
+                    ) : (
+                      <input type="date" name="due_date" required className="input"
+                        defaultValue={defDue} />
+                    )}
                   </div>
                 </div>
 
@@ -303,6 +330,28 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                     {responsibles.length === 0 && <option value="">Nenhum cadastrado</option>}
                   </select>
                 </div>
+
+                {/* Cartão de crédito — opcional. Só aparece se houver cartão
+                    cadastrado (em Configurações), para não poluir quem não usa. */}
+                {cartoesAtivos.length > 0 && (
+                  <div>
+                    <label className="label">Cartão de crédito</label>
+                    <select
+                      value={cartaoId}
+                      onChange={e => setCartaoId(e.target.value)}
+                      className="input"
+                    >
+                      <option value="">Não é no cartão (dinheiro, débito, Pix…)</option>
+                      {cartoesAtivos.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    {cartao && (
+                      <p className="text-[11px] font-bold text-indigo-500 mt-1.5">
+                        Entra na fatura de {rotuloMes(mesFatura)} — vence em{" "}
+                        {vencFatura.split("-").reverse().join("/")}.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Observações */}
                 <div>

@@ -3,7 +3,7 @@ import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Plus, FileText, Share2, Trash2, Edit2,
-  ChevronLeft, ChevronRight, CheckCircle2, Download, StickyNote, RefreshCw, UserCheck,
+  ChevronLeft, ChevronRight, CheckCircle2, Download, StickyNote, RefreshCw, UserCheck, CreditCard,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
@@ -30,7 +30,7 @@ export default function ExpenseList({
   initialResponsibleFilter = "", initialView = "list", initialFutureFilter,
   initialDateFrom = "", initialDateTo = "",
 }: Props) {
-  const { expenses, categories, responsibles, incomes, incomeTypes, recurring, togglePaid, deleteItem } = useData();
+  const { expenses, categories, responsibles, incomes, incomeTypes, recurring, cards, togglePaid, deleteItem } = useData();
   const activeRecurringIds = new Set(recurring.filter(r => r.active).map(r => r.id));
 
   const [view,             setView]             = useState<"list" | "futures">(initialView);
@@ -336,6 +336,16 @@ export default function ExpenseList({
                             <RefreshCw size={8} /> Mês
                           </span>
                         )}
+                        {(() => {
+                          const cartao = expense.card_id ? cards.find(c => c.id === expense.card_id) : undefined;
+                          return cartao ? (
+                            <span title={`Compra no cartão ${cartao.name}`}
+                              className="shrink-0 flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-widest text-white"
+                              style={{ backgroundColor: cartao.color }}>
+                              <CreditCard size={8} /> {cartao.name}
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat?.color ?? "#cbd5e1" }} />

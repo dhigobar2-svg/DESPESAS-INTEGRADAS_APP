@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import {
   Category, Responsible, Expense, UserProfile,
   Budget, RecurringExpense, Income, IncomeType, RecurringIncome, RecurringSkip, ToastMessage, Note,
+  Card,
 } from "../types";
 import {
   generateId, compressImage, isRecurringCovered, isRecurringIncomeCovered, recurringDueDate, buildSkipSet,
@@ -28,6 +29,7 @@ interface DataContextValue {
   recurringIncomes: RecurringIncome[];
   recurringSkips:   RecurringSkip[];
   notes:            Note[];
+  cards:            Card[];
   isOnline:     boolean;
   isConnected:  boolean;
   realtime:     boolean;
@@ -47,6 +49,8 @@ interface DataContextValue {
   saveExpense:      (expense: Expense, isEdit: boolean, toastMsg?: string) => void;
   deleteItem:       (table: string, id: string) => Promise<void>;
   togglePaid:       (id: string) => void;
+  /** Marca várias despesas como pagas de uma vez (fatura do cartão). */
+  marcarPagas:      (ids: string[], mensagem: string) => void;
   forceSync:        () => Promise<void>;
   signIn:           (senha: string) => Promise<boolean>;
   signOut:          () => void;
@@ -59,6 +63,7 @@ interface DataContextValue {
   saveIncomeType:   (it: IncomeType, isEdit: boolean) => void;
   saveRecurringIncome: (rec: RecurringIncome, isEdit: boolean) => void;
   saveNote:         (note: Note) => void;
+  saveCard:         (card: Card, isEdit: boolean) => void;
   restoreBackup:    (raw: unknown) => number;
   readPhoto:        (file: File) => Promise<string>;
   requestNotificationPermission: () => Promise<boolean>;
@@ -119,6 +124,7 @@ interface SyncData {
   recurring?:        RecurringExpense[];
   incomes?:          Income[];
   incomeTypes?:      IncomeType[];
+  cards?:            Card[];
   recurringIncomes?: RecurringIncome[];
   recurringSkips?:   RecurringSkip[];
   notes?:            Note[];
@@ -126,7 +132,7 @@ interface SyncData {
 
 const PAYLOAD_TABLES = [
   "expenses", "categories", "responsibles", "budgets", "recurring",
-  "incomes", "incomeTypes", "recurringIncomes", "recurringSkips", "notes",
+  "incomes", "incomeTypes", "recurringIncomes", "recurringSkips", "notes", "cards",
 ] as const;
 type PayloadTable = typeof PAYLOAD_TABLES[number];
 
@@ -135,7 +141,7 @@ const TABLE_FOR_PAYLOAD: Record<PayloadTable, string> = {
   expenses: "expenses", categories: "categories", responsibles: "responsibles",
   budgets: "budgets", recurring: "recurring_expenses", incomes: "incomes",
   incomeTypes: "income_types", recurringIncomes: "recurring_incomes",
-  recurringSkips: "recurring_skips", notes: "notes",
+  recurringSkips: "recurring_skips", notes: "notes", cards: "cards",
 };
 const PAYLOAD_FOR_TABLE = Object.fromEntries(
   Object.entries(TABLE_FOR_PAYLOAD).map(([k, v]) => [v, k]),
@@ -240,6 +246,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [recurring,    setRecurring]    = useState<RecurringExpense[]>([]);
   const [incomes,         setIncomes]         = useState<Income[]>([]);
   const [incomeTypes,     setIncomeTypes]     = useState<IncomeType[]>([]);
+  const [cards,           setCards]           = useState<Card[]>([]);
   const [recurringIncomes, setRecurringIncomes] = useState<RecurringIncome[]>([]);
   const [recurringSkips,  setRecurringSkips]  = useState<RecurringSkip[]>([]);
   const [notes,           setNotes]           = useState<Note[]>([]);
@@ -588,6 +595,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       recurring:        lsGet<RecurringExpense[]>("recurring", []),
       incomes:          lsGet<Income[]>("incomes", []),
       incomeTypes:      lsGet<IncomeType[]>("incomeTypes", []),
+      cards:            lsGet<Card[]>("cards", []),
       recurringIncomes: lsGet<RecurringIncome[]>("recurringIncomes", []),
       recurringSkips:   lsGet<RecurringSkip[]>("recurringSkips", []),
       notes:            lsGet<Note[]>("notes", []),
@@ -648,6 +656,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const buds     = overlay("budgets",      (data.budgets ?? []) as Budget[]);
       const recs     = overlay("recurring",    (data.recurring ?? []) as RecurringExpense[]);
       const incTypes = overlay("incomeTypes",  (data.incomeTypes ?? []) as IncomeType[]);
+      const crds     = overlay("cards",        (data.cards ?? []) as Card[]);
       const nts      = overlay("notes",        (data.notes ?? []) as Note[]);
       const prof: UserProfile | undefined = pendingStore.profile ?? data.profile;
       const skipSet = buildSkipSet(recSkips);
@@ -718,6 +727,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecurring(recs);
       setIncomes(incs);
       setIncomeTypes(incTypes);
+      setCards(crds);
       setRecurringIncomes(recIncomes);
       setRecurringSkips(recSkips);
       setNotes(nts);
@@ -731,6 +741,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       lsSet("recurring",        recs);
       lsSet("incomes",          incs);
       lsSet("incomeTypes",      incTypes);
+      lsSet("cards",            crds);
       lsSet("recurringIncomes", recIncomes);
       lsSet("recurringSkips",   recSkips);
       lsSet("notes",            nts);
@@ -755,6 +766,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecurring(lsGet("recurring", []));
       setIncomes(  lsGet("incomes",  []));
       setIncomeTypes(lsGet("incomeTypes", []));
+      setCards(lsGet("cards", []));
       setRecurringIncomes(lsGet("recurringIncomes", []));
       setRecurringSkips(lsGet("recurringSkips", []));
       setNotes(    lsGet("notes",    []));
@@ -1035,6 +1047,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       recurring:    recurring,
       incomes:      incomes,
       incomeTypes:  incomeTypes,
+      cards:        cards,
       recurringIncomes: recurringIncomes,
       notes:        notes,
     };
@@ -1046,6 +1059,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecurring(snap.recurring);
       setIncomes(snap.incomes);
       setIncomeTypes(snap.incomeTypes);
+      setCards(snap.cards);
       setRecurringIncomes(snap.recurringIncomes);
       setNotes(snap.notes);
     };
@@ -1085,6 +1099,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setIncomes(p => { const u = p.filter(i => i.id !== id); lsSet("incomes", u); return u; });
     } else if (table === "income_types") {
       setIncomeTypes(p => { const u = p.filter(it => it.id !== id); lsSet("incomeTypes", u); return u; });
+    } else if (table === "cards") {
+      setCards(p => { const u = p.filter(c => c.id !== id); lsSet("cards", u); return u; });
     } else if (table === "recurring_incomes") {
       setRecurringIncomes(p => { const u = p.filter(r => r.id !== id); lsSet("recurringIncomes", u); return u; });
     } else if (table === "notes") {
@@ -1137,6 +1153,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
     syncWithServer({ expenses: [changed] });
     addToast("success", changed.paid ? "Pagamento registrado!" : "Despesa marcada como pendente.");
+  }, [expenses, syncWithServer, addToast]);
+
+  // Pagar a fatura marca dezenas de compras de uma vez: um único envio, em vez
+  // de um POST por linha (a fila é por linha, mas o flush sai junto).
+  const marcarPagas = useCallback((ids: string[], mensagem: string) => {
+    const alvo = new Set(ids);
+    const alterados = expenses.filter(e => alvo.has(e.id) && e.paid !== 1)
+      .map(e => ({ ...e, paid: 1 }));
+    if (!alterados.length) return;
+    const porId = new Map(alterados.map(e => [e.id, e]));
+    setExpenses(prev => {
+      const updated = prev.map(e => porId.get(e.id) ?? e);
+      lsSet("expenses", updated);
+      return updated;
+    });
+    syncWithServer({ expenses: alterados });
+    if (mensagem) addToast("success", mensagem);
   }, [expenses, syncWithServer, addToast]);
 
   const saveProfile = useCallback(async (p: UserProfile) => {
@@ -1217,6 +1250,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addToast("success", isEdit ? "Tipo atualizado!" : "Tipo adicionado!");
   }, [syncWithServer, addToast]);
 
+  const saveCard = useCallback((card: Card, isEdit: boolean) => {
+    setCards(prev => {
+      const updated = isEdit
+        ? prev.map(c => c.id === card.id ? card : c)
+        : [...prev, card];
+      lsSet("cards", updated);
+      return updated;
+    });
+    syncWithServer({ cards: [card] });
+    addToast("success", isEdit ? "Cartão atualizado!" : "Cartão adicionado!");
+  }, [syncWithServer, addToast]);
+
   const saveRecurringIncome = useCallback((rec: RecurringIncome, isEdit: boolean) => {
     setRecurringIncomes(prev => {
       const updated = isEdit
@@ -1249,6 +1294,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       recurring:        cleanList<RecurringExpense>(data.recurring),
       incomes:          cleanList<Income>(data.incomes),
       incomeTypes:      cleanList<IncomeType>(data.incomeTypes),
+      cards:            cleanList<Card>(data.cards),
       recurringIncomes: cleanList<RecurringIncome>(data.recurringIncomes),
       recurringSkips:   cleanList<RecurringSkip>(data.recurringSkips),
       notes:            cleanList<Note>(data.notes),
@@ -1273,6 +1319,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setRecurring(p =>        { const u = merge(p, payload.recurring!);        lsSet("recurring", u);        return u; });
     setIncomes(p =>          { const u = merge(p, payload.incomes!);          lsSet("incomes", u);          return u; });
     setIncomeTypes(p =>      { const u = merge(p, payload.incomeTypes!);      lsSet("incomeTypes", u);      return u; });
+    setCards(p =>            { const u = merge(p, payload.cards!);            lsSet("cards", u);            return u; });
     setRecurringIncomes(p => { const u = merge(p, payload.recurringIncomes!); lsSet("recurringIncomes", u); return u; });
     setRecurringSkips(p =>   { const u = merge(p, payload.recurringSkips!);   lsSet("recurringSkips", u);   return u; });
     setNotes(p =>            { const u = merge(p, payload.notes!);            lsSet("notes", u);            return u; });
@@ -1298,13 +1345,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const value: DataContextValue = {
     expenses, categories, responsibles, profile, budgets, recurring,
-    incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
+    incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards,
     isOnline, isConnected, realtime, serverReachable, needsAuth, authEnabled,
     deviceUser, setDeviceUser,
     notificationsEnabled, pendingCount, toasts,
-    saveExpense, deleteItem, togglePaid, forceSync, signIn, signOut, saveProfile,
+    saveExpense, deleteItem, togglePaid, marcarPagas, forceSync, signIn, signOut, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
-    saveIncome, saveIncomeType, saveRecurringIncome, saveNote, restoreBackup,
+    saveIncome, saveIncomeType, saveRecurringIncome, saveNote, saveCard, restoreBackup,
     readPhoto, requestNotificationPermission, addToast, dismissToast,
   };
 

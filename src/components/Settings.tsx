@@ -5,20 +5,20 @@ import { motion } from "motion/react";
 import {
   User, Tag, Users, Camera, Trash2, Edit2, Check, X,
   DollarSign, Plus, TrendingUp, Bell, BellOff, Copy,
-  DatabaseBackup, Download, Upload, Lock, UserCheck, History,
+  DatabaseBackup, Download, Upload, Lock, UserCheck, History, CreditCard,
 } from "lucide-react";
 import { useData, apiFetch } from "../context/DataContext";
 import { generateId, cn, formatCurrency, parseCurrency } from "../lib/utils";
-import { Category, Responsible, Budget, IncomeType } from "../types";
+import { Category, Responsible, Budget, IncomeType, Card } from "../types";
 import ConfirmModal from "./ConfirmModal";
 
 type DeleteTarget = { table: string; id: string; label: string } | null;
 
 export default function Settings() {
   const {
-    categories, responsibles, profile, budgets, incomeTypes,
+    categories, responsibles, profile, budgets, incomeTypes, cards,
     expenses, recurring, incomes, recurringIncomes, recurringSkips, notes,
-    saveProfile, saveCategory, saveResponsible, saveBudget, saveIncomeType,
+    saveProfile, saveCategory, saveResponsible, saveBudget, saveIncomeType, saveCard,
     deleteItem, readPhoto, addToast, restoreBackup,
     notificationsEnabled, requestNotificationPermission, authEnabled, signOut,
     deviceUser, setDeviceUser,
@@ -172,6 +172,37 @@ export default function Settings() {
     e.currentTarget.reset();
   };
 
+  // ── Cartões de crédito ────────────────────────────────────────────────────────
+  const [editandoCartao, setEditandoCartao] = useState<Card | null>(null);
+
+  const salvarCartao = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd    = new FormData(e.currentTarget);
+    const nome  = (fd.get("name") as string).trim();
+    const fecha = Number(fd.get("closing_day"));
+    const vence = Number(fd.get("due_day"));
+    if (!nome) return;
+    const dup = cards.find(
+      c => c.id !== editandoCartao?.id && c.name.trim().toLowerCase() === nome.toLowerCase(),
+    );
+    if (dup) {
+      addToast("error", `Já existe um cartão chamado "${dup.name}".`);
+      return;
+    }
+    const limite = parseCurrency((fd.get("limit_value") as string) ?? "");
+    saveCard({
+      id:          editandoCartao?.id ?? generateId(),
+      name:        nome,
+      color:       (fd.get("color") as string) || "#6366f1",
+      closing_day: Math.min(Math.max(fecha || 1, 1), 31),
+      due_day:     Math.min(Math.max(vence || 10, 1), 31),
+      limit_value: Number.isFinite(limite) && limite > 0 ? limite : undefined,
+      active:      editandoCartao ? editandoCartao.active : 1,
+    }, !!editandoCartao);
+    setEditandoCartao(null);
+    e.currentTarget.reset();
+  };
+
   // ── Backup ────────────────────────────────────────────────────────────────────
   const [importPending, setImportPending] = useState<{ data: unknown; count: number } | null>(null);
 
@@ -217,7 +248,7 @@ export default function Settings() {
     const backup = {
       app: "despesas-integradas", version: 1, exported_at: new Date().toISOString(),
       profile, expenses, categories, responsibles, budgets, recurring,
-      incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
+      incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards,
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url  = URL.createObjectURL(blob);
@@ -238,6 +269,7 @@ export default function Settings() {
       const lists: unknown[] = [
         data?.expenses, data?.categories, data?.responsibles, data?.budgets, data?.recurring,
         data?.incomes, data?.incomeTypes, data?.recurringIncomes, data?.recurringSkips, data?.notes,
+        data?.cards,
       ];
       const count = lists.reduce<number>((s, l) => s + (Array.isArray(l) ? l.length : 0), 0);
       if (!count) { addToast("error", "Arquivo de backup inválido ou vazio."); return; }
@@ -609,6 +641,99 @@ export default function Settings() {
           <button type="submit" className="btn-primary py-2 px-3 flex items-center gap-1">
             <Plus size={14} /> Add
           </button>
+        </form>
+      </section>
+
+      {/* ── Cartões de crédito ───────────────────────────────────────────────── */}
+      <section className="card p-6">
+        <h3 className="section-title"><CreditCard size={16} /> Cartões de crédito</h3>
+        <p className="text-[11px] text-slate-400 mb-4 -mt-2">
+          O dia de fechamento decide em qual fatura cada compra cai; o de vencimento
+          vira a data de pagamento da despesa.
+        </p>
+
+        <div className="space-y-2 mb-5">
+          {cards.map(c => (
+            <div key={c.id}
+              className={cn("flex items-center justify-between p-3 rounded-xl border",
+                c.active ? "bg-slate-50 border-slate-100" : "bg-white border-dashed border-slate-200 opacity-60")}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                <div className="min-w-0">
+                  <p className="text-sm font-bold truncate">
+                    {c.name}
+                    {!c.active && <span className="text-[10px] font-black uppercase text-slate-400"> · inativo</span>}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Fecha dia {c.closing_day} · vence dia {c.due_day}
+                    {c.limit_value ? ` · limite R$ ${formatCurrency(c.limit_value)}` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => saveCard({ ...c, active: c.active ? 0 : 1 }, true)}
+                  title={c.active ? "Desativar cartão" : "Reativar cartão"}
+                  className="p-1.5 text-slate-400 hover:text-amber-600 transition-colors">
+                  {c.active ? <X size={14} /> : <Check size={14} />}
+                </button>
+                <button onClick={() => setEditandoCartao(c)}
+                  className="p-1.5 text-slate-400 hover:text-blue-600 transition-colors">
+                  <Edit2 size={14} />
+                </button>
+                <button onClick={() => setDeleteTarget({ table: "cards", id: c.id, label: c.name })}
+                  className="p-1.5 text-slate-400 hover:text-red-600 transition-colors">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+          {cards.length === 0 && (
+            <p className="text-sm text-slate-400 text-center py-3">Nenhum cartão cadastrado.</p>
+          )}
+        </div>
+
+        {/* O `key` remonta o formulário ao trocar de cartão em edição, para os
+            defaultValue passarem a valer (sem isso os campos ficavam no cartão anterior). */}
+        <form key={editandoCartao?.id ?? "novo"} onSubmit={salvarCartao} className="space-y-3">
+          <div className="flex gap-2">
+            <input name="name" placeholder="Nome do cartão (ex: Nubank)" required
+              defaultValue={editandoCartao?.name ?? ""}
+              className="input flex-1 py-2 text-sm" />
+            <input name="color" type="color" defaultValue={editandoCartao?.color ?? "#6366f1"}
+              className="w-10 h-10 p-1 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="min-w-0">
+              <label className="label">Fecha dia</label>
+              <input name="closing_day" type="number" min={1} max={31} required
+                defaultValue={editandoCartao?.closing_day ?? 1}
+                className="input py-2 text-sm" />
+            </div>
+            <div className="min-w-0">
+              <label className="label">Vence dia</label>
+              <input name="due_day" type="number" min={1} max={31} required
+                defaultValue={editandoCartao?.due_day ?? 10}
+                className="input py-2 text-sm" />
+            </div>
+            <div className="min-w-0">
+              <label className="label">Limite (opc.)</label>
+              <input name="limit_value" type="text" inputMode="decimal" placeholder="0,00"
+                defaultValue={editandoCartao?.limit_value ? formatCurrency(editandoCartao.limit_value) : ""}
+                className="input py-2 text-sm" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" className="btn-primary py-2 px-3 flex items-center gap-1 flex-1 justify-center">
+              <Plus size={14} /> {editandoCartao ? "Salvar cartão" : "Adicionar cartão"}
+            </button>
+            {editandoCartao && (
+              <button type="button" onClick={() => setEditandoCartao(null)}
+                className="py-2 px-3 rounded-xl border border-slate-200 text-slate-500 text-sm font-bold">
+                Cancelar
+              </button>
+            )}
+          </div>
         </form>
       </section>
 

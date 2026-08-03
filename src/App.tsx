@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, HardDrive,
-  TrendingUp, NotebookPen, Loader2, UploadCloud,
+  TrendingUp, NotebookPen, Loader2, UploadCloud, CreditCard,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency, isRecurringCovered, buildSkipSet, ocorrenciasNoMes } from "./lib/utils";
@@ -16,8 +16,9 @@ const ExpenseList       = lazy(() => import("./components/ExpenseList"));
 const Incomes           = lazy(() => import("./components/Incomes"));
 const Notes             = lazy(() => import("./components/Notes"));
 const Settings          = lazy(() => import("./components/Settings"));
+const Cards             = lazy(() => import("./components/Cards"));
 
-type Tab = "menu" | "overview" | "expenses" | "incomes" | "notes" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "incomes" | "cards" | "notes" | "settings";
 type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 
 // State stored in browser history entries so the system/browser back button
@@ -33,7 +34,7 @@ interface NavState {
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, realtime, serverReachable, needsAuth, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes } = useData();
+  const { profile, isOnline, isConnected, realtime, serverReachable, needsAuth, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes, cards } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
@@ -368,6 +369,10 @@ function Shell() {
               />
               <MenuButton icon={TrendingUp}    title="Entradas / Receitas" subtitle="Salário e rendas"
                 onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
+              {cards.some(c => c.active) && (
+                <MenuButton icon={CreditCard} title="Cartões e Faturas" subtitle="Compras e fatura do mês"
+                  onClick={() => handleTabChange("cards")}   colorClass="bg-indigo-500" />
+              )}
               <MenuButton icon={NotebookPen}   title="Bloco de Notas"    subtitle="Anotações e lembretes"
                 onClick={() => handleTabChange("notes")}     colorClass="bg-amber-500" />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
@@ -391,6 +396,7 @@ function Shell() {
               />
             )}
             {activeTab === "incomes"   && <Incomes />}
+            {activeTab === "cards"     && <Cards />}
             {activeTab === "notes"     && <Notes />}
             {activeTab === "settings"  && <Settings />}
           </Suspense>

@@ -36,6 +36,7 @@ belongs in *both* `server.ts` and `netlify/functions/api.mts`.
 │   │   ├── ExpenseModal.tsx   # Add/edit expense + recurrence toggle + duplicate warning
 │   │   ├── FutureExpenses.tsx # Overdue + upcoming view, virtual recurring occurrences
 │   │   ├── Incomes.tsx        # Incomes list ("Entradas / Receitas")
+│   │   ├── Cards.tsx          # "Cartões e Faturas": fatura por cartão/mês
 │   │   ├── IncomeModal.tsx    # Add/edit income + recurrence toggle + duplicate warning
 │   │   ├── Notes.tsx          # Synced notepad ("Bloco de Notas")
 │   │   ├── Settings.tsx       # Profile, categories, responsibles, budgets, income types,
@@ -122,7 +123,7 @@ npm run icons     # Regenerate the PWA icons in public/icons/
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/data` | Returns all data: `{ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes }` |
+| `GET` | `/api/data` | Returns all data: `{ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards }` |
 | `POST` | `/api/sync` | Upserts (`REPLACE INTO`) any subset of tables; columns are whitelisted per table AND resolved **per item** (items in one batch may have different key sets). Emits `data_updated`. |
 | `DELETE` | `/api/:table/:id` | Deletes a row (tables whitelisted; categories/responsibles in use by an expense are rejected with HTTP 400 + pt-BR message) |
 | `POST` | `/api/delete/:table/:id` | Same as DELETE — fallback for environments that block the DELETE method (this is what the frontend uses) |
@@ -144,7 +145,7 @@ categories        (id TEXT PK, name, color)
 responsibles      (id TEXT PK, name, photo)          -- photo = base64 data URL (compressed client-side)
 expenses          (id TEXT PK, category_id FK→SET NULL, description, date, due_date,
                    value REAL, responsible_id FK→SET NULL, paid INTEGER 0/1,
-                   notes, created_by, recurring_id, created_at)
+                   notes, created_by, recurring_id, card_id, created_at)
 user_profile      (id TEXT PK = 'default', name, photo)
 budgets           (id TEXT PK, category_id FK→CASCADE, month 'yyyy-MM', limit_value,
                    UNIQUE(category_id, month))
@@ -155,6 +156,8 @@ recurring_expenses(id TEXT PK, category_id, description, value, responsible_id,
 incomes           (id TEXT PK, description, value, date, type, responsible_id,
                    notes, recurring INTEGER (legacy), recurring_income_id)
 income_types      (id TEXT PK, name, color)
+cards             (id TEXT PK, name, color, closing_day, due_day,
+                   limit_value REAL, active INTEGER 0/1)   -- cartão de crédito
 recurring_incomes (id TEXT PK, description, value, type, responsible_id,
                    day_of_month, active INTEGER 0/1,
                    frequency, interval_n, start_date)      -- idem
@@ -304,6 +307,23 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
 - Exact duplicate occurrences (same template/due date/value/description/responsible)
   are self-healed: the server dedups on every start (`dedupRecurringOccurrences`) and
   `fetchData` drops client-side copies via `findRecurringDuplicates()` + queued deletes.
+
+### Cartões de crédito e faturas
+
+- **A fatura não é uma tabela.** It is derived: the invoice of card *C* for month
+  *M* is every expense with `card_id = C` whose purchase date maps to *M* via
+  `faturaDaCompra(date, closing_day)` (a purchase **on or after** the closing day
+  belongs to the next invoice). Deriving it means the invoice can never drift out
+  of sync with the expense list.
+- When a card is picked in `ExpenseModal`, `due_date` becomes the invoice's due
+  date (`vencimentoDaFatura(mes, due_day)`) and the field is shown locked, with a
+  hidden input carrying the value — a disabled input is not submitted with the form.
+- "Marcar fatura como paga" flips `paid` on that invoice's expenses through
+  `marcarPagas(ids, msg)` — one queued batch, not one request per row. No new
+  expense is created: the invoice *is* those rows.
+- A card still referenced by an expense cannot be deleted (HTTP 400, pt-BR
+  message) — deactivate it instead (`active: 0`), which hides it from the pickers
+  while keeping its history.
 
 ### Other conventions in the data layer
 
