@@ -18,14 +18,117 @@ export function isRecurringCovered(
   dueDate: string,
   opts: { unpaidOnly?: boolean; skips?: Set<string> } = {},
 ): boolean {
-  const month = dueDate.slice(0, 7);
+  // Semanal tem várias ocorrências no mesmo mês, então a comparação precisa ser
+  // pela data exata. Mensal e anual seguem comparando por mês — é o que faz os
+  // lançamentos antigos (e os editados à mão pelo usuário) continuarem valendo.
+  const chave = chaveOcorrencia(rec, dueDate);
+  const porData = (rec.frequency ?? "monthly") === "weekly";
+
   // A user-deleted occurrence is treated as covered so it isn't regenerated.
-  if (opts.skips?.has(`${rec.id}_${month}`)) return true;
+  if (opts.skips?.has(`${rec.id}_${chave}`)) return true;
   return expenses.some(e => {
     if (opts.unpaidOnly && e.paid) return false;
-    if (e.recurring_id && e.recurring_id === rec.id && e.due_date?.slice(0, 7) === month) return true;
+    if (e.recurring_id && e.recurring_id === rec.id) {
+      if (porData ? e.due_date === dueDate : e.due_date?.slice(0, 7) === chave) return true;
+    }
     return e.description === rec.description && e.due_date === dueDate && e.value === rec.value;
   });
+}
+
+// ─── Motor de recorrência ─────────────────────────────────────────────────────
+// Até aqui só existia "todo mês no dia X". Agora a regra pode ser semanal,
+// mensal ou anual, a cada N períodos — o que cobre feira semanal, conta
+// bimestral e IPVA/IPTU/seguro anuais.
+
+/** Regra de repetição — o que os templates de despesa e de entrada têm em comum. */
+export interface RegraRecorrencia {
+  id: string;
+  day_of_month: number;
+  frequency?: "weekly" | "monthly" | "yearly";
+  interval_n?: number;
+  start_date?: string;
+}
+
+const emDias = (d: Date, dias: number) =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate() + dias);
+
+const paraISO = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+const doISO = (iso: string) => {
+  const [a, m, d] = iso.split("-").map(Number);
+  return new Date(a, m - 1, d);
+};
+
+/**
+ * Todas as datas em que a regra cai dentro de um mês.
+ *
+ * Mensal e anual dão no máximo uma data; semanal pode dar quatro ou cinco.
+ * Sem `frequency` o comportamento é o de sempre (mensal, todo mês), para os
+ * cadastros antigos continuarem funcionando exatamente igual.
+ */
+export function ocorrenciasNoMes(rec: RegraRecorrencia, ano: number, mes1: number): string[] {
+  const freq = rec.frequency ?? "monthly";
+  const n    = Math.max(1, rec.interval_n ?? 1);
+
+  if (freq === "weekly") {
+    if (!rec.start_date) return [];
+    const passo    = 7 * n;
+    const inicio   = new Date(ano, mes1 - 1, 1);
+    const fim      = new Date(ano, mes1, 0);
+    let d          = doISO(rec.start_date);
+    // Salta direto para perto do mês em vez de somar semana a semana.
+    const faltam = Math.floor((inicio.getTime() - d.getTime()) / 86_400_000);
+    if (faltam > 0) d = emDias(d, Math.floor(faltam / passo) * passo);
+    while (d < inicio) d = emDias(d, passo);
+
+    const datas: string[] = [];
+    while (d <= fim) { datas.push(paraISO(d)); d = emDias(d, passo); }
+    return datas;
+  }
+
+  if (freq === "yearly") {
+    const mesAlvo = rec.start_date ? Number(rec.start_date.slice(5, 7)) : mes1;
+    if (mesAlvo !== mes1) return [];
+    if (rec.start_date) {
+      const anoInicio = Number(rec.start_date.slice(0, 4));
+      if (ano < anoInicio || (ano - anoInicio) % n !== 0) return [];
+    }
+    return [recurringDueDate(ano, mes1, rec.day_of_month)];
+  }
+
+  // Mensal: com intervalo > 1 (bimestral, trimestral…) só nos meses do ciclo.
+  if (n > 1 && rec.start_date) {
+    const anoInicio = Number(rec.start_date.slice(0, 4));
+    const mesInicio = Number(rec.start_date.slice(5, 7));
+    const passados  = (ano - anoInicio) * 12 + (mes1 - mesInicio);
+    if (passados < 0 || passados % n !== 0) return [];
+  }
+  return [recurringDueDate(ano, mes1, rec.day_of_month)];
+}
+
+/**
+ * Chave que identifica UMA ocorrência (usada no id gerado, nos "pulos" e na
+ * checagem de cobertura). Semanal precisa da data inteira porque há várias no
+ * mesmo mês; nos demais casos continua sendo o mês — assim os lançamentos já
+ * existentes seguem sendo reconhecidos.
+ */
+export function chaveOcorrencia(rec: RegraRecorrencia, dataISO: string): string {
+  return (rec.frequency ?? "monthly") === "weekly" ? dataISO : dataISO.slice(0, 7);
+}
+
+/** Rótulo curto da frequência, para a interface. */
+export function rotuloFrequencia(rec: RegraRecorrencia): string {
+  const n = Math.max(1, rec.interval_n ?? 1);
+  switch (rec.frequency ?? "monthly") {
+    case "weekly": return n === 1 ? "Semanal" : n === 2 ? "Quinzenal" : `A cada ${n} semanas`;
+    case "yearly": return n === 1 ? "Anual" : `A cada ${n} anos`;
+    default:       return n === 1 ? "Mensal"
+                        : n === 2 ? "Bimestral"
+                        : n === 3 ? "Trimestral"
+                        : n === 6 ? "Semestral"
+                        : `A cada ${n} meses`;
+  }
 }
 
 /** Set of skipped "recurring_id_month" keys, for fast lookup. */
@@ -66,9 +169,16 @@ export function isRecurringIncomeCovered(
   rec: RecurringIncome,
   date: string,
 ): boolean {
-  const month = date.slice(0, 7);
+  const porData = (rec.frequency ?? "monthly") === "weekly";
+  const month   = date.slice(0, 7);
   return incomes.some(i => {
-    if (i.recurring_income_id && i.recurring_income_id === rec.id && i.date?.slice(0, 7) === month) return true;
+    if (i.recurring_income_id && i.recurring_income_id === rec.id) {
+      if (porData ? i.date === date : i.date?.slice(0, 7) === month) return true;
+    }
+    // Semanal não usa o atalho por descrição: várias entradas iguais no mesmo
+    // mês são o comportamento esperado, não duplicata.
+    if (porData) return i.date === date &&
+      i.description.toLowerCase() === rec.description.toLowerCase() && i.type === rec.type;
     return i.date?.slice(0, 7) === month &&
       i.description.toLowerCase() === rec.description.toLowerCase() &&
       i.type === rec.type;

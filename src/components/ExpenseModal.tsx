@@ -7,6 +7,23 @@ import { useData } from "../context/DataContext";
 import CurrencyInput from "./CurrencyInput";
 import { generateId, dividirParcelas, somarMeses, formatCurrency, cn } from "../lib/utils";
 
+// Frequências oferecidas na interface. Cada uma vira um par
+// (frequency, interval_n) — o usuário escolhe uma coisa só.
+const FREQUENCIAS = [
+  { valor: "weekly-1",  rotulo: "Toda semana" },
+  { valor: "weekly-2",  rotulo: "A cada 15 dias" },
+  { valor: "monthly-1", rotulo: "Todo mês" },
+  { valor: "monthly-2", rotulo: "A cada 2 meses" },
+  { valor: "monthly-3", rotulo: "A cada 3 meses" },
+  { valor: "monthly-6", rotulo: "A cada 6 meses" },
+  { valor: "yearly-1",  rotulo: "Todo ano" },
+] as const;
+
+const partesFrequencia = (v: string) => {
+  const [freq, n] = v.split("-");
+  return { frequency: freq as "weekly" | "monthly" | "yearly", interval_n: Number(n) };
+};
+
 interface Props {
   open:          boolean;
   editing:       Expense | null;
@@ -26,6 +43,8 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
     : undefined;
 
   const [isRecurring,     setIsRecurring]     = useState(false);
+  const [freqEscolhida,   setFreqEscolhida]   = useState("monthly-1");
+  const rotuloEscolhido = FREQUENCIAS.find(f => f.valor === freqEscolhida)?.rotulo ?? "todo mês";
   const [pendingExpense,  setPendingExpense]   = useState<Expense | null>(null);
   // O valor é controlado porque o campo de moeda interpreta o texto digitado.
   const [valorForm,       setValorForm]       = useState<number | undefined>(undefined);
@@ -37,6 +56,9 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
   useEffect(() => {
     if (open) {
       setIsRecurring(!!(linkedTemplate && linkedTemplate.active));
+      setFreqEscolhida(linkedTemplate
+        ? `${linkedTemplate.frequency ?? "monthly"}-${linkedTemplate.interval_n ?? 1}`
+        : "monthly-1");
       setValorForm(editing?.value ?? defaultValues?.value);
       setParcelas(1);
       setValorEhTotal(true);
@@ -62,6 +84,8 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
           responsible_id: expense.responsible_id,
           day_of_month:   dayOfMonth,
           active:         1,
+          ...partesFrequencia(freqEscolhida),
+          start_date:     linked.start_date ?? expense.due_date,
         }, true);
       } else {
         // Becoming recurring: reuse a matching active template or create one.
@@ -84,6 +108,9 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
             responsible_id: expense.responsible_id,
             day_of_month:   dayOfMonth,
             active:         1,
+            ...partesFrequencia(freqEscolhida),
+            // Âncora do ciclo: a partir daqui o app conta as semanas/meses/anos.
+            start_date:     expense.due_date,
           }, false);
         }
       }
@@ -302,7 +329,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                       <select
                         value={parcelas}
                         onChange={e => setParcelas(Number(e.target.value))}
-                        className="input py-2 w-24 shrink-0 text-sm"
+                        className="input py-2 w-28 shrink-0 text-sm"
                         aria-label="Número de parcelas"
                       >
                         <option value={1}>À vista</option>
@@ -362,14 +389,14 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                   <RefreshCw size={18} className={isRecurring ? "text-orange-500" : "text-slate-400"} />
                   <div className="flex-1">
                     <p className={`text-sm font-bold ${isRecurring ? "text-orange-700" : "text-slate-600"}`}>
-                      Repetir todo mês
+                      Repetir automaticamente
                     </p>
                     <p className={`text-[11px] mt-0.5 ${isRecurring ? "text-orange-500" : "text-slate-400"}`}>
                       {isRecurring
-                        ? "Lançada automaticamente todo mês no mesmo dia do vencimento. Desligue para parar."
+                        ? `Lançada automaticamente ${rotuloEscolhido.toLowerCase()}, no mesmo dia do vencimento. Desligue para parar.`
                         : editing && linkedTemplate
-                        ? "Religue para voltar a lançar todo mês."
-                        : "Marque para que ela se repita automaticamente todo mês."}
+                        ? "Religue para voltar a lançar automaticamente."
+                        : "Marque para que ela se repita automaticamente."}
                     </p>
                   </div>
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${
@@ -378,6 +405,23 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                     {isRecurring && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                   </div>
                 </div>
+
+                {/* Frequência — só aparece com a repetição ligada. Uma escolha
+                    só, em vez de expor "tipo" e "a cada N" separadamente. */}
+                {isRecurring && (
+                  <div className="rounded-2xl border-2 border-orange-200 bg-orange-50/50 py-3 px-4">
+                    <label className="label">Com que frequência?</label>
+                    <select
+                      value={freqEscolhida}
+                      onChange={e => setFreqEscolhida(e.target.value)}
+                      className="input py-2 text-sm"
+                    >
+                      {FREQUENCIAS.map(f => (
+                        <option key={f.valor} value={f.valor}>{f.rotulo}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* ── Aviso de despesa duplicada ───────────────────────────────── */}
                 <AnimatePresence>

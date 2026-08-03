@@ -7,6 +7,23 @@ import { useData } from "../context/DataContext";
 import { generateId, cn } from "../lib/utils";
 import CurrencyInput from "./CurrencyInput";
 
+// Frequências oferecidas na interface. Cada uma vira um par
+// (frequency, interval_n) — o usuário escolhe uma coisa só.
+const FREQUENCIAS = [
+  { valor: "weekly-1",  rotulo: "Toda semana" },
+  { valor: "weekly-2",  rotulo: "A cada 15 dias" },
+  { valor: "monthly-1", rotulo: "Todo mês" },
+  { valor: "monthly-2", rotulo: "A cada 2 meses" },
+  { valor: "monthly-3", rotulo: "A cada 3 meses" },
+  { valor: "monthly-6", rotulo: "A cada 6 meses" },
+  { valor: "yearly-1",  rotulo: "Todo ano" },
+] as const;
+
+const partesFrequencia = (v: string) => {
+  const [freq, n] = v.split("-");
+  return { frequency: freq as "weekly" | "monthly" | "yearly", interval_n: Number(n) };
+};
+
 interface Props {
   open:    boolean;
   editing: Income | null;
@@ -31,6 +48,8 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
 
   const [form,          setForm]          = useState<Partial<Income>>(emptyForm());
   const [pendingIncome, setPendingIncome] = useState<Income | null>(null);
+  const [freqEscolhida, setFreqEscolhida] = useState("monthly-1");
+  const rotuloEscolhido = FREQUENCIAS.find(f => f.valor === freqEscolhida)?.rotulo ?? "todo mês";
 
   // Initialise form whenever the modal (re)opens.
   useEffect(() => {
@@ -40,8 +59,10 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
         ? recurringIncomes.find(r => r.id === editing.recurring_income_id)
         : undefined;
       setForm({ ...editing, recurring: tpl && tpl.active ? 1 : 0 });
+      setFreqEscolhida(tpl ? `${tpl.frequency ?? "monthly"}-${tpl.interval_n ?? 1}` : "monthly-1");
     } else {
       setForm({ ...emptyForm(), type: incomeTypes[0]?.id ?? "salario" });
+      setFreqEscolhida("monthly-1");
     }
     setPendingIncome(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,6 +83,8 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
           ...linked,
           description: income.description, value: income.value, type: income.type,
           responsible_id: income.responsible_id, day_of_month: day, active: 1,
+          ...partesFrequencia(freqEscolhida),
+          start_date: linked.start_date ?? income.date,
         }, true);
       } else {
         const tplId = generateId();
@@ -69,6 +92,8 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
         saveRecurringIncome({
           id: tplId, description: income.description, value: income.value, type: income.type,
           responsible_id: income.responsible_id, day_of_month: day, active: 1,
+          ...partesFrequencia(freqEscolhida),
+          start_date: income.date,
         }, false);
       }
     } else {
@@ -214,12 +239,12 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
                   <RefreshCw size={18} className={form.recurring ? "text-teal-500" : "text-slate-400"} />
                   <div className="flex-1">
                     <p className={cn("text-sm font-bold", form.recurring ? "text-teal-700" : "text-slate-600")}>
-                      Repetir todo mês
+                      Repetir automaticamente
                     </p>
                     <p className={cn("text-[11px] mt-0.5", form.recurring ? "text-teal-500" : "text-slate-400")}>
                       {form.recurring
-                        ? "Lançada automaticamente todo mês no mesmo dia. Desligue para parar."
-                        : "Marque para que esta entrada se repita automaticamente todo mês."}
+                        ? `Lançada automaticamente ${rotuloEscolhido.toLowerCase()}, no mesmo dia. Desligue para parar.`
+                        : "Marque para que esta entrada se repita automaticamente."}
                     </p>
                   </div>
                   <div className={cn(
@@ -233,6 +258,22 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
                     )}
                   </div>
                 </div>
+
+                {/* Frequência — só aparece com a repetição ligada. */}
+                {!!form.recurring && (
+                  <div className="rounded-2xl border-2 border-teal-200 bg-teal-50/50 py-3 px-4">
+                    <label className="label">Com que frequência?</label>
+                    <select
+                      value={freqEscolhida}
+                      onChange={e => setFreqEscolhida(e.target.value)}
+                      className="input py-2 text-sm"
+                    >
+                      {FREQUENCIAS.map(f => (
+                        <option key={f.valor} value={f.valor}>{f.rotulo}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Aviso de entrada duplicada */}
                 <AnimatePresence>

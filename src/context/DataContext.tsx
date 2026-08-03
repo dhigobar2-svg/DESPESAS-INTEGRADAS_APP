@@ -10,7 +10,7 @@ import {
 } from "../types";
 import {
   generateId, compressImage, isRecurringCovered, isRecurringIncomeCovered, recurringDueDate, buildSkipSet,
-  findRecurringDuplicates, sha256Hex,
+  findRecurringDuplicates, sha256Hex, ocorrenciasNoMes, chaveOcorrencia,
 } from "../lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -441,12 +441,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     for (const rec of currentRecurring) {
       if (!rec.active) continue;
-      const dueDate = recurringDueDate(year, month1, rec.day_of_month);
-      if (!isRecurringCovered(currentExpenses, rec, dueDate, { skips: skipSet })) {
+      // Semanal pode cair várias vezes no mesmo mês; mensal/anual, no máximo uma.
+      for (const dueDate of ocorrenciasNoMes(rec, year, month1)) {
+        if (isRecurringCovered(currentExpenses, rec, dueDate, { skips: skipSet })) continue;
         generated.push({
-          // Deterministic id (template + month) so two devices generating the
-          // same month produce the same primary key instead of duplicating.
-          id:             `rec_${rec.id}_${monthKey}`,
+          // Id determinístico (template + ocorrência) para dois aparelhos
+          // gerarem a mesma chave em vez de duplicar. A chave é o mês nas
+          // recorrências mensais/anuais — mantendo os ids já existentes — e a
+          // data inteira nas semanais.
+          id:             `rec_${rec.id}_${chaveOcorrencia(rec, dueDate)}`,
           category_id:    rec.category_id,
           description:    rec.description,
           date:           format(now, "yyyy-MM-dd"),
@@ -478,23 +481,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     for (const tpl of currentTemplates) {
       if (!tpl.active) continue;
-      // Ocorrência que o usuário apagou não pode voltar na próxima abertura —
-      // é o mesmo registro de "pulo" que as despesas recorrentes já usavam.
-      if (skipSet.has(`${tpl.id}_${monthKey}`)) continue;
-      const date = recurringDueDate(year, month1, tpl.day_of_month);
-      if (isRecurringIncomeCovered(currentIncomes, tpl, date)) continue;
-      if (generated.some(i => i.recurring_income_id === tpl.id)) continue;
+      for (const date of ocorrenciasNoMes(tpl, year, month1)) {
+        const chave = chaveOcorrencia(tpl, date);
+        // Ocorrência que o usuário apagou não pode voltar na próxima abertura —
+        // é o mesmo registro de "pulo" que as despesas recorrentes já usavam.
+        if (skipSet.has(`${tpl.id}_${chave}`)) continue;
+        if (isRecurringIncomeCovered(currentIncomes, tpl, date)) continue;
+        if (generated.some(i => i.recurring_income_id === tpl.id && i.date === date)) continue;
 
-      generated.push({
-        id:                  `recinc_${tpl.id}_${monthKey}`,
-        description:         tpl.description,
-        value:               tpl.value,
-        date,
-        type:                tpl.type,
-        responsible_id:      tpl.responsible_id,
-        recurring:           0,
-        recurring_income_id: tpl.id,
-      });
+        generated.push({
+          id:                  `recinc_${tpl.id}_${chave}`,
+          description:         tpl.description,
+          value:               tpl.value,
+          date,
+          type:                tpl.type,
+          responsible_id:      tpl.responsible_id,
+          recurring:           0,
+          recurring_income_id: tpl.id,
+        });
+      }
     }
     return generated;
   }, []);
@@ -1023,7 +1028,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // If this is a recurrence occurrence, record a skip so it isn't regenerated.
       const target = expenses.find(e => e.id === id);
       if (target?.recurring_id && target.due_date) {
-        addRecurringSkip(target.recurring_id, target.due_date.slice(0, 7));
+        const tpl = recurring.find(r => r.id === target.recurring_id);
+        addRecurringSkip(target.recurring_id,
+          tpl ? chaveOcorrencia(tpl, target.due_date) : target.due_date.slice(0, 7));
       }
       setExpenses(p => { const u = p.filter(e => e.id !== id); lsSet("expenses", u); return u; });
     } else if (table === "categories") {
@@ -1039,7 +1046,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // do mês, senão ela seria gerada de novo na próxima abertura do app.
       const alvo = incomes.find(i => i.id === id);
       if (alvo?.recurring_income_id && alvo.date) {
-        addRecurringSkip(alvo.recurring_income_id, alvo.date.slice(0, 7));
+        const tpl = recurringIncomes.find(r => r.id === alvo.recurring_income_id);
+        addRecurringSkip(alvo.recurring_income_id,
+          tpl ? chaveOcorrencia(tpl, alvo.date) : alvo.date.slice(0, 7));
       }
       setIncomes(p => { const u = p.filter(i => i.id !== id); lsSet("incomes", u); return u; });
     } else if (table === "income_types") {

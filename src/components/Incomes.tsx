@@ -7,7 +7,7 @@ import {
   TrendingUp, StickyNote, RefreshCw, UserCheck, Search,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, recurringDueDate, isRecurringIncomeCovered, buildSkipSet } from "../lib/utils";
+import { formatCurrency, cn, isRecurringIncomeCovered, buildSkipSet, ocorrenciasNoMes, chaveOcorrencia } from "../lib/utils";
 import { Income } from "../types";
 import ConfirmModal from "./ConfirmModal";
 import MultiSelect from "./MultiSelect";
@@ -66,24 +66,25 @@ export default function Incomes() {
     // Ocorrência apagada pelo usuário não volta como prevista.
     const skips = buildSkipSet(recurringSkips);
 
+    // Semanal pode prever várias entradas no mesmo mês.
     return recurringIncomes
-      .filter(tpl => tpl.active && !skips.has(`${tpl.id}_${monthKey}`))
-      .map(tpl => {
-        const date = recurringDueDate(year, month1, tpl.day_of_month);
-        if (isRecurringIncomeCovered(incomes, tpl, date)) return null;
-        return {
-          id:                  `virtual-inc-${tpl.id}-${date}`,
-          description:         tpl.description,
-          value:               tpl.value,
-          date,
-          type:                tpl.type,
-          responsible_id:      tpl.responsible_id,
-          recurring:           0,
-          recurring_income_id: tpl.id,
-          isVirtual:           true,
-        } as IncomeRow;
-      })
-      .filter((i): i is IncomeRow => i !== null);
+      .filter(tpl => tpl.active)
+      .flatMap(tpl =>
+        ocorrenciasNoMes(tpl, year, month1)
+          .filter(date => !skips.has(`${tpl.id}_${chaveOcorrencia(tpl, date)}`))
+          .filter(date => !isRecurringIncomeCovered(incomes, tpl, date))
+          .map(date => ({
+            id:                  `virtual-inc-${tpl.id}-${date}`,
+            description:         tpl.description,
+            value:               tpl.value,
+            date,
+            type:                tpl.type,
+            responsible_id:      tpl.responsible_id,
+            recurring:           0,
+            recurring_income_id: tpl.id,
+            isVirtual:           true,
+          } as IncomeRow)),
+      );
   }, [selectedMonth, recurringIncomes, incomes, recurringSkips]);
 
   // Lista exibida = lançamentos reais do mês + previstos das recorrências,
@@ -133,7 +134,10 @@ export default function Incomes() {
       const { isVirtual: _ignored, ...base } = inc;
       setEditingIncome({
         ...base,
-        id: `recinc_${inc.recurring_income_id}_${inc.date.slice(0, 7)}`,
+        id: (() => {
+          const tpl = recurringIncomes.find(r => r.id === inc.recurring_income_id);
+          return `recinc_${inc.recurring_income_id}_${tpl ? chaveOcorrencia(tpl, inc.date) : inc.date.slice(0, 7)}`;
+        })(),
       });
     } else {
       setEditingIncome(inc);

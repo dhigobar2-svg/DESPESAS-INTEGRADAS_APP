@@ -149,13 +149,17 @@ user_profile      (id TEXT PK = 'default', name, photo)
 budgets           (id TEXT PK, category_id FK→CASCADE, month 'yyyy-MM', limit_value,
                    UNIQUE(category_id, month))
 recurring_expenses(id TEXT PK, category_id, description, value, responsible_id,
-                   day_of_month, active INTEGER 0/1)
+                   day_of_month, active INTEGER 0/1,
+                   frequency 'weekly'|'monthly'|'yearly', interval_n INTEGER,
+                   start_date 'yyyy-MM-dd')
 incomes           (id TEXT PK, description, value, date, type, responsible_id,
                    notes, recurring INTEGER (legacy), recurring_income_id)
 income_types      (id TEXT PK, name, color)
 recurring_incomes (id TEXT PK, description, value, type, responsible_id,
-                   day_of_month, active INTEGER 0/1)
-recurring_skips   (id TEXT PK = '<recurring_id>_<yyyy-MM>', recurring_id, month)
+                   day_of_month, active INTEGER 0/1,
+                   frequency, interval_n, start_date)      -- idem
+recurring_skips   (id TEXT PK = '<recurring_id>_<chave>', recurring_id, month)
+                   -- chave = 'yyyy-MM' (mensal/anual) ou 'yyyy-MM-dd' (semanal)
 notes             (id TEXT PK, title, content, updated_at)
 app_meta          (key TEXT PK, value)               -- one-time maintenance flags (e.g. dedup_v1)
 ```
@@ -264,9 +268,17 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
 ### Recurring expenses/incomes
 
 - Templates live in `recurring_expenses` / `recurring_incomes`; each month `fetchData`
-  materialises one real row per active template with a **deterministic id**
-  (`rec_<templateId>_<yyyy-MM>` / `recinc_<templateId>_<yyyy-MM>`) so two devices
-  generating the same month can't duplicate.
+  materialises one real row **per occurrence** of every active template, with a
+  **deterministic id** (`rec_<templateId>_<chave>` / `recinc_<templateId>_<chave>`)
+  so two devices generating the same month can't duplicate.
+- **Frequency** (`frequency` + `interval_n` + `start_date`, all optional): a template
+  with no `frequency` is monthly — legacy rows keep behaving exactly as before.
+  `ocorrenciasNoMes(rec, ano, mes1)` in `src/lib/utils.ts` is the single source of
+  truth for *which dates* a template produces in a given month (weekly/every N weeks
+  step from `start_date`; every N months and yearly only fire on cycle months).
+  `chaveOcorrencia(rec, dataISO)` gives the id/skip key: `yyyy-MM-dd` for weekly,
+  `yyyy-MM` for everything else — never inline these rules at a call site.
+  `isRecurringCovered` / `isRecurringIncomeCovered` match on the same key.
 - Deleting a generated occurrence records a `recurring_skips` row so it isn't regenerated.
 - `FutureExpenses` also renders **virtual** (not yet materialised) occurrences with
   ids `virtual-<recId>-<date>` — these are display-only. Marking a virtual occurrence

@@ -42,6 +42,9 @@ export interface Budget {
   limit_value: number;
 }
 
+/** Como a recorrência se repete. Ausente = mensal (dados antigos). */
+export type Frequencia = "weekly" | "monthly" | "yearly";
+
 export interface RecurringExpense {
   id: string;
   category_id: string;
@@ -50,6 +53,9 @@ export interface RecurringExpense {
   responsible_id: string;
   day_of_month: number;
   active: number; // 0 | 1
+  frequency?: Frequencia;
+  interval_n?: number;    // a cada N semanas/meses/anos (padrão 1)
+  start_date?: string;    // yyyy-MM-dd — âncora do ciclo
 }
 
 export interface IncomeType {
@@ -79,6 +85,9 @@ export interface RecurringIncome {
   responsible_id?: string;
   day_of_month: number;
   active: number; // 0 | 1
+  frequency?: Frequencia;
+  interval_n?: number;
+  start_date?: string;
 }
 
 // A deleted occurrence of a recurrence — keeps it from being regenerated.

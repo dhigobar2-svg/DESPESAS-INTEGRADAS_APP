@@ -7,7 +7,7 @@ import {
   AlertTriangle, SlidersHorizontal,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, isRecurringCovered, recurringDueDate, buildSkipSet } from "../lib/utils";
+import { formatCurrency, cn, isRecurringCovered, recurringDueDate, buildSkipSet, ocorrenciasNoMes } from "../lib/utils";
 import { Expense } from "../types";
 import ExpenseModal from "./ExpenseModal";
 import ConfirmModal from "./ConfirmModal";
@@ -49,7 +49,8 @@ export default function FutureExpenses({ filter }: Props) {
     for (const rec of recurring.filter(r => r.active)) {
       for (let monthOffset = -3; monthOffset <= 0; monthOffset++) {
         const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
-        const dueDate = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
+        // Uma regra semanal cai várias vezes no mesmo mês; mensal/anual, uma só.
+        for (const dueDate of ocorrenciasNoMes(rec, base.getFullYear(), base.getMonth() + 1)) {
         if (dueDate >= todayStr) continue; // not overdue yet
         // Skip if a real expense already covers this slot, or it was deleted
         if (isRecurringCovered(expenses, rec, dueDate, { skips: skipSet })) continue;
@@ -65,6 +66,7 @@ export default function FutureExpenses({ filter }: Props) {
           recurring_id:   rec.id,
           isVirtual:      true,
         } as FutureEntry);
+        }
       }
     }
 
@@ -93,7 +95,7 @@ export default function FutureExpenses({ filter }: Props) {
     for (const rec of recurring.filter(r => r.active)) {
       for (let monthOffset = 0; monthOffset <= 1; monthOffset++) {
         const base = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
-        const dueDate = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
+        for (const dueDate of ocorrenciasNoMes(rec, base.getFullYear(), base.getMonth() + 1)) {
         if (dueDate < todayStr) continue;
         // Skip if a real expense (paid OR unpaid) already covers this month, or
         // it was deleted. A paid occurrence must count as covered — otherwise
@@ -111,6 +113,7 @@ export default function FutureExpenses({ filter }: Props) {
             recurring_id:   rec.id,
             isVirtual:      true,
           } as FutureEntry);
+        }
         }
       }
     }

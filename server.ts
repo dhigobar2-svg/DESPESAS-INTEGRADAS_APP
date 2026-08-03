@@ -161,6 +161,12 @@ tryMigrate("SELECT created_by FROM incomes LIMIT 1",          "ALTER TABLE incom
 tryMigrate("SELECT installment_id FROM expenses LIMIT 1",     "ALTER TABLE expenses ADD COLUMN installment_id TEXT");
 tryMigrate("SELECT installment_no FROM expenses LIMIT 1",     "ALTER TABLE expenses ADD COLUMN installment_no INTEGER");
 tryMigrate("SELECT installment_total FROM expenses LIMIT 1",  "ALTER TABLE expenses ADD COLUMN installment_total INTEGER");
+// Recorrência além do mensal (semanal, anual, a cada N períodos).
+for (const t of ["recurring_expenses", "recurring_incomes"]) {
+  tryMigrate(`SELECT frequency FROM ${t} LIMIT 1`,  `ALTER TABLE ${t} ADD COLUMN frequency TEXT`);
+  tryMigrate(`SELECT interval_n FROM ${t} LIMIT 1`, `ALTER TABLE ${t} ADD COLUMN interval_n INTEGER`);
+  tryMigrate(`SELECT start_date FROM ${t} LIMIT 1`, `ALTER TABLE ${t} ADD COLUMN start_date TEXT`);
+}
 
 // Key/value store for one-time maintenance flags.
 db.exec("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);");
@@ -289,10 +295,10 @@ const ALLOWED_COLUMNS: Record<string, string[]> = {
   categories:          ["id", "name", "color"],
   responsibles:        ["id", "name", "photo"],
   budgets:             ["id", "category_id", "month", "limit_value"],
-  recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active"],
+  recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date"],
   incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by"],
   income_types:        ["id", "name", "color"],
-  recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active"],
+  recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date"],
   recurring_skips:     ["id", "recurring_id", "month"],
   notes:               ["id", "title", "content", "updated_at"],
 };

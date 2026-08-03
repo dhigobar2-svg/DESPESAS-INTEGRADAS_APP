@@ -6,7 +6,7 @@ import {
   TrendingUp, NotebookPen, Loader2, UploadCloud,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
-import { cn, formatCurrency, isRecurringCovered, recurringDueDate, buildSkipSet } from "./lib/utils";
+import { cn, formatCurrency, isRecurringCovered, buildSkipSet, ocorrenciasNoMes } from "./lib/utils";
 import Toast from "./components/Toast";
 import LockScreen from "./components/LockScreen";
 
@@ -66,10 +66,12 @@ function Shell() {
   for (const rec of recurring.filter(r => r.active)) {
     for (let mo = 0; mo <= 2; mo++) {
       const base = new Date(now.getFullYear(), now.getMonth() + mo, 1);
-      const dateStr = recurringDueDate(base.getFullYear(), base.getMonth() + 1, rec.day_of_month);
-      if (dateStr <= today) continue;
-      if (!isRecurringCovered(expenses, rec, dateStr, { skips: skipSet })) {
-        virtualRecurringFutureDates.push(dateStr);
+      // Semanal rende várias datas no mesmo mês.
+      for (const dateStr of ocorrenciasNoMes(rec, base.getFullYear(), base.getMonth() + 1)) {
+        if (dateStr <= today) continue;
+        if (!isRecurringCovered(expenses, rec, dateStr, { skips: skipSet })) {
+          virtualRecurringFutureDates.push(dateStr);
+        }
       }
     }
   }

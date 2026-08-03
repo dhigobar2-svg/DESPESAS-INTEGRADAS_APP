@@ -76,6 +76,14 @@ export const SCHEMA = [
      content TEXT NOT NULL DEFAULT '',
      updated_at TEXT NOT NULL)`,
 
+  // Recorrência além do mensal (colunas adicionadas depois).
+  `ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS frequency TEXT`,
+  `ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS interval_n INTEGER`,
+  `ALTER TABLE recurring_expenses ADD COLUMN IF NOT EXISTS start_date TEXT`,
+  `ALTER TABLE recurring_incomes  ADD COLUMN IF NOT EXISTS frequency TEXT`,
+  `ALTER TABLE recurring_incomes  ADD COLUMN IF NOT EXISTS interval_n INTEGER`,
+  `ALTER TABLE recurring_incomes  ADD COLUMN IF NOT EXISTS start_date TEXT`,
+
   // Compras parceladas (colunas adicionadas depois).
   `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_id TEXT`,
   `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_no INTEGER`,

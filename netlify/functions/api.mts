@@ -35,10 +35,10 @@ const ALLOWED_COLUMNS: Record<string, string[]> = {
   categories:         ["id", "name", "color"],
   responsibles:       ["id", "name", "photo"],
   budgets:            ["id", "category_id", "month", "limit_value"],
-  recurring_expenses: ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active"],
+  recurring_expenses: ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date"],
   incomes:            ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by"],
   income_types:       ["id", "name", "color"],
-  recurring_incomes:  ["id", "description", "value", "type", "responsible_id", "day_of_month", "active"],
+  recurring_incomes:  ["id", "description", "value", "type", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date"],
   recurring_skips:    ["id", "recurring_id", "month"],
   notes:              ["id", "title", "content", "updated_at"],
 };
