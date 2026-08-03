@@ -102,6 +102,29 @@ export async function sha256Hex(text: string): Promise<string> {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Divide um total em N parcelas sem perder centavos.
+ *
+ * R$ 100,00 em 3× não dá 33,33 três vezes (daria 99,99). As parcelas ficam
+ * iguais e a diferença vai para a ÚLTIMA: 33,33 + 33,33 + 33,34.
+ */
+export function dividirParcelas(total: number, n: number): number[] {
+  const centavos = Math.round(total * 100);
+  const base     = Math.floor(centavos / n);
+  const sobra    = centavos - base * n;
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? base + sobra : base) / 100);
+}
+
+/**
+ * Mesma data em meses seguintes, respeitando meses curtos: uma compra no dia 31
+ * cai no dia 28/30 nos meses que não têm dia 31, em vez de virar o mês seguinte.
+ */
+export function somarMeses(dataISO: string, meses: number): string {
+  const [ano, mes, dia] = dataISO.split("-").map(Number);
+  const alvo = new Date(ano, mes - 1 + meses, 1);
+  return recurringDueDate(alvo.getFullYear(), alvo.getMonth() + 1, dia);
+}
+
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 }

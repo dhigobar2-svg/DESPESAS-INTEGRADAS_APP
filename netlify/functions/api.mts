@@ -31,7 +31,7 @@ export interface DbPool {
 // Colunas permitidas por tabela — a mesma whitelist do server.ts, e a única
 // coisa que impede injeção de SQL via nomes de coluna vindos do cliente.
 const ALLOWED_COLUMNS: Record<string, string[]> = {
-  expenses:           ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id"],
+  expenses:           ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total"],
   categories:         ["id", "name", "color"],
   responsibles:       ["id", "name", "photo"],
   budgets:            ["id", "category_id", "month", "limit_value"],

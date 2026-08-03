@@ -325,6 +325,12 @@ export default function ExpenseList({
                     <td className="px-5 py-4 max-w-[200px]">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-bold text-slate-900 truncate">{expense.description || "—"}</p>
+                        {!!expense.installment_total && expense.installment_total > 1 && (
+                          <span title={`Parcela ${expense.installment_no} de ${expense.installment_total}`}
+                            className="shrink-0 text-[8px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                            {expense.installment_no}/{expense.installment_total}
+                          </span>
+                        )}
                         {expense.recurring_id && activeRecurringIds.has(expense.recurring_id) && (
                           <span title="Repete todo mês" className="shrink-0 flex items-center gap-0.5 text-[8px] font-bold text-orange-500 bg-orange-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
                             <RefreshCw size={8} /> Mês

@@ -5,7 +5,7 @@ import { RefreshCw, AlertTriangle } from "lucide-react";
 import { Expense } from "../types";
 import { useData } from "../context/DataContext";
 import CurrencyInput from "./CurrencyInput";
-import { generateId } from "../lib/utils";
+import { generateId, dividirParcelas, somarMeses, formatCurrency, cn } from "../lib/utils";
 
 interface Props {
   open:          boolean;
@@ -29,12 +29,17 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
   const [pendingExpense,  setPendingExpense]   = useState<Expense | null>(null);
   // O valor é controlado porque o campo de moeda interpreta o texto digitado.
   const [valorForm,       setValorForm]       = useState<number | undefined>(undefined);
+  // Parcelamento (só para lançamentos novos).
+  const [parcelas,        setParcelas]        = useState(1);
+  const [valorEhTotal,    setValorEhTotal]    = useState(true);
 
   // Reflect the entry's current recurrence state whenever the modal (re)opens.
   useEffect(() => {
     if (open) {
       setIsRecurring(!!(linkedTemplate && linkedTemplate.active));
       setValorForm(editing?.value ?? defaultValues?.value);
+      setParcelas(1);
+      setValorEhTotal(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id]);
@@ -95,6 +100,33 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
     onClose();
   };
 
+  // Compra parcelada: uma despesa por mês, todas ligadas pelo mesmo
+  // installment_id. O valor digitado pode ser o total ou o de cada parcela.
+  const salvarParcelado = (base: Expense, n: number) => {
+    const total = valorEhTotal ? base.value : base.value * n;
+    const valores = dividirParcelas(total, n);
+    const grupo = generateId();
+
+    valores.forEach((valor, i) => {
+      saveExpense({
+        ...base,
+        id:                i === 0 ? base.id : generateId(),
+        description:       base.description,
+        due_date:          somarMeses(base.due_date, i),
+        value:             valor,
+        // Só a primeira pode já estar paga; as seguintes nascem em aberto.
+        paid:              i === 0 ? base.paid : 0,
+        installment_id:    grupo,
+        installment_no:    i + 1,
+        installment_total: n,
+      }, i === 0 && !!editing);
+    });
+
+    addToast("success", `${n} parcelas de R$ ${formatCurrency(valores[0])} lançadas!`);
+    setPendingExpense(null);
+    onClose();
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd      = new FormData(e.currentTarget);
@@ -138,6 +170,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       }
     }
 
+    if (!editing && parcelas > 1) { salvarParcelado(expense, parcelas); return; }
     doSave(expense);
   };
 
@@ -255,6 +288,59 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                     className="input resize-none"
                   />
                 </div>
+
+                {/* Parcelamento — só faz sentido em lançamento novo */}
+                {!editing && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-slate-700">Compra parcelada</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Gera uma despesa por mês, já com a numeração das parcelas.
+                        </p>
+                      </div>
+                      <select
+                        value={parcelas}
+                        onChange={e => setParcelas(Number(e.target.value))}
+                        className="input py-2 w-24 shrink-0 text-sm"
+                        aria-label="Número de parcelas"
+                      >
+                        <option value={1}>À vista</option>
+                        {Array.from({ length: 59 }, (_, i) => i + 2).map(n => (
+                          <option key={n} value={n}>{n}×</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {parcelas > 1 && (
+                      <>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => setValorEhTotal(true)}
+                            className={cn("flex-1 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-colors",
+                              valorEhTotal ? "bg-emerald-600 text-white" : "bg-white text-slate-500 border border-slate-200")}>
+                            Valor total
+                          </button>
+                          <button type="button" onClick={() => setValorEhTotal(false)}
+                            className={cn("flex-1 py-2 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-colors",
+                              !valorEhTotal ? "bg-emerald-600 text-white" : "bg-white text-slate-500 border border-slate-200")}>
+                            Valor da parcela
+                          </button>
+                        </div>
+                        {!!valorForm && (
+                          <p className="text-xs font-bold text-emerald-700 text-center">
+                            {parcelas}× de R$ {formatCurrency(
+                              dividirParcelas(valorEhTotal ? valorForm : valorForm * parcelas, parcelas)[0],
+                            )}
+                            <span className="text-slate-400 font-medium">
+                              {"  ·  total R$ "}
+                              {formatCurrency(valorEhTotal ? valorForm : valorForm * parcelas)}
+                            </span>
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* Pago */}
                 <div className="flex items-center gap-3 py-1">

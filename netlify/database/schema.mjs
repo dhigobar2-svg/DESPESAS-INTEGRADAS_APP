@@ -76,6 +76,12 @@ export const SCHEMA = [
      content TEXT NOT NULL DEFAULT '',
      updated_at TEXT NOT NULL)`,
 
+  // Compras parceladas (colunas adicionadas depois).
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_id TEXT`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_no INTEGER`,
+  `ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_total INTEGER`,
+  `CREATE INDEX IF NOT EXISTS idx_expenses_installment ON expenses (installment_id)`,
+
   // Coluna adicionada depois: quem lançou a entrada.
   `ALTER TABLE incomes ADD COLUMN IF NOT EXISTS created_by TEXT`,
 

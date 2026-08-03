@@ -22,6 +22,10 @@ export interface Expense {
   notes?: string;
   created_by?: string;
   recurring_id?: string;  // links an auto-generated expense back to its recurring template
+  // Compra parcelada: todas as parcelas compartilham o mesmo installment_id.
+  installment_id?: string;
+  installment_no?: number;     // 1, 2, 3…
+  installment_total?: number;  // total de parcelas
   created_at?: string;    // set by the server (DATETIME DEFAULT CURRENT_TIMESTAMP)
 }
 

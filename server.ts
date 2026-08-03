@@ -158,6 +158,9 @@ tryMigrate("SELECT created_by FROM expenses LIMIT 1",    "ALTER TABLE expenses A
 tryMigrate("SELECT recurring_id FROM expenses LIMIT 1",  "ALTER TABLE expenses ADD COLUMN recurring_id TEXT");
 tryMigrate("SELECT recurring_income_id FROM incomes LIMIT 1", "ALTER TABLE incomes ADD COLUMN recurring_income_id TEXT");
 tryMigrate("SELECT created_by FROM incomes LIMIT 1",          "ALTER TABLE incomes ADD COLUMN created_by TEXT");
+tryMigrate("SELECT installment_id FROM expenses LIMIT 1",     "ALTER TABLE expenses ADD COLUMN installment_id TEXT");
+tryMigrate("SELECT installment_no FROM expenses LIMIT 1",     "ALTER TABLE expenses ADD COLUMN installment_no INTEGER");
+tryMigrate("SELECT installment_total FROM expenses LIMIT 1",  "ALTER TABLE expenses ADD COLUMN installment_total INTEGER");
 
 // Key/value store for one-time maintenance flags.
 db.exec("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);");
@@ -168,6 +171,7 @@ db.exec("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_expenses_due_date       ON expenses (due_date);
   CREATE INDEX IF NOT EXISTS idx_expenses_recurring      ON expenses (recurring_id);
+  CREATE INDEX IF NOT EXISTS idx_expenses_installment    ON expenses (installment_id);
   CREATE INDEX IF NOT EXISTS idx_expenses_category       ON expenses (category_id);
   CREATE INDEX IF NOT EXISTS idx_expenses_responsible    ON expenses (responsible_id);
   CREATE INDEX IF NOT EXISTS idx_incomes_date            ON incomes (date);
@@ -281,7 +285,7 @@ setInterval(() => {
 
 // Whitelist of allowed columns per table — prevents SQL injection via sync
 const ALLOWED_COLUMNS: Record<string, string[]> = {
-  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id"],
+  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total"],
   categories:          ["id", "name", "color"],
   responsibles:        ["id", "name", "photo"],
   budgets:             ["id", "category_id", "month", "limit_value"],
