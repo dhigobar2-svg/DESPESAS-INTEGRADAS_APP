@@ -17,7 +17,7 @@ interface Props {
 export default function ExpenseModal({ open, editing, defaultValues, onClose }: Props) {
   const {
     categories, responsibles, expenses, recurring,
-    saveExpense, saveRecurring, addToast,
+    saveExpense, saveRecurring, addToast, deviceUser,
   } = useData();
 
   // The template this expense is currently linked to (if any).
@@ -119,7 +119,8 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       responsible_id: fd.get("responsible") as string,
       paid:           fd.get("paid") === "on" ? 1 : 0,
       notes:          (fd.get("notes") as string) || undefined,
-      created_by:     editing?.created_by,
+      // Quem lançou: preservado na edição, carimbado na criação.
+      created_by:     editing?.created_by ?? (deviceUser || undefined),
       recurring_id:   editing?.recurring_id ?? defaultValues?.recurring_id,
     };
 

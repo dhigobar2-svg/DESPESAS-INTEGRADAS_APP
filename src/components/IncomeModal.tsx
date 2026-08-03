@@ -26,7 +26,7 @@ const emptyForm = (): Partial<Income> => ({
 export default function IncomeModal({ open, editing, onClose }: Props) {
   const {
     incomes, responsibles, incomeTypes, recurringIncomes,
-    saveIncome, saveRecurringIncome,
+    saveIncome, saveRecurringIncome, deviceUser,
   } = useData();
 
   const [form,          setForm]          = useState<Partial<Income>>(emptyForm());
@@ -93,6 +93,7 @@ export default function IncomeModal({ open, editing, onClose }: Props) {
       notes:               form.notes?.trim() || undefined,
       recurring:           form.recurring ?? 0,
       recurring_income_id: form.recurring_income_id,
+      created_by:          editing?.created_by ?? (deviceUser || undefined),
     };
 
     if (!editing) {

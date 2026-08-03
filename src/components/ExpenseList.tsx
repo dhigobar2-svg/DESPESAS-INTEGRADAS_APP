@@ -3,7 +3,7 @@ import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Plus, FileText, Share2, Trash2, Edit2,
-  ChevronLeft, ChevronRight, CheckCircle2, Download, StickyNote, RefreshCw,
+  ChevronLeft, ChevronRight, CheckCircle2, Download, StickyNote, RefreshCw, UserCheck,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
@@ -339,6 +339,12 @@ export default function ExpenseList({
                         <p className="text-[10px] text-slate-400 italic mt-0.5 flex items-center gap-1 truncate">
                           <StickyNote size={9} className="shrink-0" />
                           {expense.notes}
+                        </p>
+                      )}
+                      {expense.created_by && (
+                        <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
+                          <UserCheck size={9} className="shrink-0" />
+                          lançado por {expense.created_by}
                         </p>
                       )}
                     </td>

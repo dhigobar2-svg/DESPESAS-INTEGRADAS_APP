@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import {
   User, Tag, Users, Camera, Trash2, Edit2, Check, X,
   DollarSign, Plus, TrendingUp, Bell, BellOff, Copy,
-  DatabaseBackup, Download, Upload, Lock,
+  DatabaseBackup, Download, Upload, Lock, UserCheck,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { generateId, cn, formatCurrency, parseCurrency } from "../lib/utils";
@@ -21,6 +21,7 @@ export default function Settings() {
     saveProfile, saveCategory, saveResponsible, saveBudget, saveIncomeType,
     deleteItem, readPhoto, addToast, restoreBackup,
     notificationsEnabled, requestNotificationPermission, authEnabled, signOut,
+    deviceUser, setDeviceUser,
   } = useData();
 
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(null);
@@ -280,6 +281,28 @@ export default function Settings() {
             </button>
           )}
         </div>
+      </section>
+
+      {/* ── Quem usa este aparelho ────────────────────────────────────────────── */}
+      <section className="card p-6">
+        <h3 className="section-title"><UserCheck size={16} /> Quem usa este aparelho</h3>
+        <p className="text-sm text-slate-500 mb-4">
+          Cada lançamento passa a registrar quem fez. Fica guardado só neste
+          aparelho — no celular da sua esposa a escolha é outra.
+        </p>
+        <select
+          value={deviceUser}
+          onChange={e => setDeviceUser(e.target.value)}
+          className="input"
+        >
+          <option value="">— não registrar —</option>
+          {responsibles.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+        </select>
+        {responsibles.length === 0 && (
+          <p className="text-[11px] text-amber-600 mt-2">
+            Cadastre os responsáveis abaixo para poder escolher.
+          </p>
+        )}
       </section>
 
       {/* ── Segurança ─────────────────────────────────────────────────────────── */}

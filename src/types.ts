@@ -64,6 +64,7 @@ export interface Income {
   notes?: string;
   recurring: number;    // 0 | 1  (legacy flag; superseded by recurring_income_id)
   recurring_income_id?: string;  // links an auto-generated income to its template
+  created_by?: string;  // quem lançou (nome do responsável escolhido no aparelho)
 }
 
 export interface RecurringIncome {

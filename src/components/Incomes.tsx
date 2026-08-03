@@ -4,7 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { motion } from "motion/react";
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Edit2,
-  TrendingUp, StickyNote, RefreshCw,
+  TrendingUp, StickyNote, RefreshCw, UserCheck,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { formatCurrency, cn, recurringDueDate, isRecurringIncomeCovered, buildSkipSet } from "../lib/utils";
@@ -250,6 +250,11 @@ export default function Incomes() {
                       )}
                       {resp && <p className="text-[10px] text-slate-500 uppercase font-medium">{resp.name}</p>}
                     </div>
+                    {inc.created_by && !inc.isVirtual && (
+                      <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                        <UserCheck size={10} /> lançado por {inc.created_by}
+                      </p>
+                    )}
                     {inc.notes && (
                       <p className="text-[10px] text-slate-400 italic mt-0.5 flex items-center gap-1">
                         <StickyNote size={10} /> {inc.notes}

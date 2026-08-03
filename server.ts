@@ -156,6 +156,7 @@ tryMigrate("SELECT notes FROM expenses LIMIT 1",         "ALTER TABLE expenses A
 tryMigrate("SELECT created_by FROM expenses LIMIT 1",    "ALTER TABLE expenses ADD COLUMN created_by TEXT");
 tryMigrate("SELECT recurring_id FROM expenses LIMIT 1",  "ALTER TABLE expenses ADD COLUMN recurring_id TEXT");
 tryMigrate("SELECT recurring_income_id FROM incomes LIMIT 1", "ALTER TABLE incomes ADD COLUMN recurring_income_id TEXT");
+tryMigrate("SELECT created_by FROM incomes LIMIT 1",          "ALTER TABLE incomes ADD COLUMN created_by TEXT");
 
 // Key/value store for one-time maintenance flags.
 db.exec("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);");
@@ -237,7 +238,7 @@ const ALLOWED_COLUMNS: Record<string, string[]> = {
   responsibles:        ["id", "name", "photo"],
   budgets:             ["id", "category_id", "month", "limit_value"],
   recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active"],
-  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id"],
+  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by"],
   income_types:        ["id", "name", "color"],
   recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active"],
   recurring_skips:     ["id", "recurring_id", "month"],

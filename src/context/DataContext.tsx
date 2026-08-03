@@ -36,6 +36,9 @@ interface DataContextValue {
   needsAuth:    boolean;
   /** true quando este aparelho tem senha guardada (permite bloquear). */
   authEnabled:  boolean;
+  /** Nome de quem usa ESTE aparelho — carimbado em cada lançamento. */
+  deviceUser:   string;
+  setDeviceUser: (nome: string) => void;
   notificationsEnabled: boolean;
   pendingCount: number;
   toasts:       ToastMessage[];
@@ -246,6 +249,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [needsAuth,    setNeedsAuth]    = useState(false);
   const [authEnabled,  setAuthEnabled]  = useState(() => !!getAuthToken());
+  // Guardado por aparelho (não sincroniza): o perfil é da família, então não
+  // serve para distinguir quem lançou. Escolhido em Configurações.
+  const [deviceUser,   setDeviceUserState] = useState<string>(() => lsGet<string>("device_user", ""));
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
 
   const socketRef             = useRef<Socket | null>(null);
@@ -940,6 +946,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return true;
   }, [addToast]);
 
+  const setDeviceUser = useCallback((nome: string) => {
+    setDeviceUserState(nome);
+    lsSet("device_user", nome);
+  }, []);
+
   const signOut = useCallback(() => {
     try { localStorage.removeItem(AUTH_KEY); } catch { /* ignore */ }
     setAuthEnabled(false);
@@ -1248,6 +1259,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     expenses, categories, responsibles, profile, budgets, recurring,
     incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
     isOnline, isConnected, realtime, serverReachable, needsAuth, authEnabled,
+    deviceUser, setDeviceUser,
     notificationsEnabled, pendingCount, toasts,
     saveExpense, deleteItem, togglePaid, forceSync, signIn, signOut, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,

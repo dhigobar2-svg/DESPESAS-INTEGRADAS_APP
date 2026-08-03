@@ -76,6 +76,9 @@ export const SCHEMA = [
      content TEXT NOT NULL DEFAULT '',
      updated_at TEXT NOT NULL)`,
 
+  // Coluna adicionada depois: quem lançou a entrada.
+  `ALTER TABLE incomes ADD COLUMN IF NOT EXISTS created_by TEXT`,
+
   // Tentativas de senha por origem — sustenta o bloqueio contra força bruta.
   `CREATE TABLE IF NOT EXISTS auth_attempts (
      ip TEXT PRIMARY KEY,
