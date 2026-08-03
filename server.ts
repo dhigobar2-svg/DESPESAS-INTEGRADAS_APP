@@ -117,16 +117,6 @@ db.exec(`
     color TEXT NOT NULL
   );
 
-  CREATE TABLE IF NOT EXISTS cards (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    color TEXT NOT NULL DEFAULT '#6366f1',
-    closing_day INTEGER NOT NULL DEFAULT 1,
-    due_day INTEGER NOT NULL DEFAULT 10,
-    limit_value REAL,
-    active INTEGER DEFAULT 1,
-    updated_at TEXT
-  );
 
   CREATE TABLE IF NOT EXISTS recurring_incomes (
     id TEXT PRIMARY KEY,
@@ -179,16 +169,13 @@ for (const t of ["recurring_expenses", "recurring_incomes"]) {
   tryMigrate(`SELECT start_date FROM ${t} LIMIT 1`, `ALTER TABLE ${t} ADD COLUMN start_date TEXT`);
 }
 
-// Compra no cartão de crédito: liga a despesa ao cartão que gera a fatura.
-tryMigrate("SELECT card_id FROM expenses LIMIT 1", "ALTER TABLE expenses ADD COLUMN card_id TEXT");
-
 // Controle de edição simultânea: cada linha guarda quando foi editada pela
 // última vez (ISO UTC, gravado pelo cliente). O sync recusa uma escrita mais
 // antiga que a versão já guardada — sem isso, o aparelho que ficou offline
 // sobrescrevia, ao reconectar, a edição mais nova feita no outro aparelho.
 for (const t of ["expenses", "categories", "responsibles", "budgets",
                  "recurring_expenses", "incomes", "income_types",
-                 "recurring_incomes", "user_profile", "cards"]) {
+                 "recurring_incomes", "user_profile"]) {
   tryMigrate(`SELECT updated_at FROM ${t} LIMIT 1`, `ALTER TABLE ${t} ADD COLUMN updated_at TEXT`);
 }
 
@@ -208,7 +195,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_incomes_recurring       ON incomes (recurring_income_id);
   CREATE INDEX IF NOT EXISTS idx_budgets_month           ON budgets (month);
   CREATE INDEX IF NOT EXISTS idx_recurring_skips_lookup  ON recurring_skips (recurring_id, month);
-  CREATE INDEX IF NOT EXISTS idx_expenses_card          ON expenses (card_id);
 `);
 
 // One-time cleanup of duplicate rows. A duplicate = same description + due_date +
@@ -288,7 +274,6 @@ function montarBackup() {
     recurring:        get("SELECT * FROM recurring_expenses"),
     incomes:          get("SELECT * FROM incomes"),
     incomeTypes:      get("SELECT * FROM income_types"),
-    cards:            get("SELECT * FROM cards"),
     recurringIncomes: get("SELECT * FROM recurring_incomes"),
     recurringSkips:   get("SELECT * FROM recurring_skips"),
     notes:            get("SELECT * FROM notes"),
@@ -317,14 +302,13 @@ setInterval(() => {
 
 // Whitelist of allowed columns per table — prevents SQL injection via sync
 const ALLOWED_COLUMNS: Record<string, string[]> = {
-  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total", "card_id", "updated_at"],
+  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total", "updated_at"],
   categories:          ["id", "name", "color", "updated_at"],
   responsibles:        ["id", "name", "photo", "updated_at"],
   budgets:             ["id", "category_id", "month", "limit_value", "updated_at"],
   recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date", "updated_at"],
   incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by", "updated_at"],
   income_types:        ["id", "name", "color", "updated_at"],
-  cards:               ["id", "name", "color", "closing_day", "due_day", "limit_value", "active", "updated_at"],
   recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date", "updated_at"],
   recurring_skips:     ["id", "recurring_id", "month"],
   notes:               ["id", "title", "content", "updated_at"],
@@ -479,13 +463,12 @@ async function startServer() {
     const recurring    = db.prepare("SELECT * FROM recurring_expenses ORDER BY description").all();
     const incomes      = db.prepare("SELECT * FROM incomes ORDER BY date DESC").all();
     const incomeTypes  = db.prepare("SELECT * FROM income_types ORDER BY name").all();
-    const cards        = db.prepare("SELECT * FROM cards ORDER BY name").all();
     const recurringIncomes = db.prepare("SELECT * FROM recurring_incomes ORDER BY description").all();
     const recurringSkips = db.prepare("SELECT * FROM recurring_skips").all();
     const notes        = db.prepare("SELECT * FROM notes ORDER BY updated_at DESC").all();
     res.json({
       expenses, categories, responsibles, profile, budgets, recurring,
-      incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards,
+      incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
       // Aqui existe Socket.IO: o cliente escuta `data_updated` em vez de fazer
       // polling (o backend serverless da Netlify responde `realtime: false`).
       meta: { realtime: true, storage: "sqlite" },
@@ -494,7 +477,7 @@ async function startServer() {
 
   // POST /api/sync — validated upsert of all client state
   app.post("/api/sync", (req, res) => {
-    const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards } = req.body;
+    const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes } = req.body;
     try {
       // Ids recusados por já existir uma versão mais nova no servidor — o
       // cliente descarta a cópia local e recarrega, em vez de insistir.
@@ -505,7 +488,6 @@ async function startServer() {
       };
 
       aplicar("categories",         categories);
-      aplicar("cards",              cards);
       aplicar("responsibles",       responsibles);
       aplicar("expenses",           expenses);
       aplicar("budgets",            budgets);
@@ -539,19 +521,18 @@ async function startServer() {
   });
 
   // Shared delete logic with referential-integrity guard.
-  const VALID_DELETE_TABLES = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes", "income_types", "recurring_incomes", "notes", "cards"];
+  const VALID_DELETE_TABLES = ["expenses", "categories", "responsibles", "budgets", "recurring_expenses", "incomes", "income_types", "recurring_incomes", "notes"];
 
   function handleDelete(table: string, id: string, res: any) {
     if (!VALID_DELETE_TABLES.includes(table)) {
       return res.status(400).json({ error: "Tabela inválida." });
     }
 
-    // Block deleting a category/responsible/card still referenced by an expense,
+    // Block deleting a category/responsible still referenced by an expense,
     // so the user is never left with silently orphaned data.
     const COLUNA_EM_USO: Record<string, { column: string; msg: string }> = {
       categories:   { column: "category_id",    msg: "Não é possível excluir: categoria está sendo usada em uma despesa." },
       responsibles: { column: "responsible_id", msg: "Não é possível excluir: responsável está sendo usado em uma despesa." },
-      cards:        { column: "card_id",        msg: "Não é possível excluir: o cartão tem despesas lançadas. Desative-o para parar de usá-lo." },
     };
     const guarda = COLUNA_EM_USO[table];
     if (guarda) {

@@ -50,13 +50,6 @@ export default defineConfig(({mode}) => {
               url: '/?tela=incomes',
               icons: [{src: '/icons/icon-192.png', sizes: '192x192'}],
             },
-            {
-              name: 'Cartões e Faturas',
-              short_name: 'Faturas',
-              description: 'Fatura do mês por cartão',
-              url: '/?tela=cards',
-              icons: [{src: '/icons/icon-192.png', sizes: '192x192'}],
-            },
           ],
           icons: [
             {src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any'},

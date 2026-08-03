@@ -36,7 +36,7 @@ belongs in *both* `server.ts` and `netlify/functions/api.mts`.
 │   │   ├── ExpenseModal.tsx   # Add/edit expense + recurrence toggle + duplicate warning
 │   │   ├── FutureExpenses.tsx # Overdue + upcoming view, virtual recurring occurrences
 │   │   ├── Incomes.tsx        # Incomes list ("Entradas / Receitas")
-│   │   ├── Cards.tsx          # "Cartões e Faturas": fatura por cartão/mês
+│   │   ├── QuemUsa.tsx        # Pergunta única (após a senha) de quem usa o aparelho
 │   │   ├── IncomeModal.tsx    # Add/edit income + recurrence toggle + duplicate warning
 │   │   ├── Notes.tsx          # Synced notepad ("Bloco de Notas")
 │   │   ├── Settings.tsx       # Profile, categories, responsibles, budgets, income types,
@@ -123,7 +123,7 @@ npm run icons     # Regenerate the PWA icons in public/icons/
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/data` | Returns all data: `{ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards }` |
+| `GET` | `/api/data` | Returns all data: `{ expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes }` |
 | `POST` | `/api/sync` | Upserts (`REPLACE INTO`) any subset of tables; columns are whitelisted per table AND resolved **per item** (items in one batch may have different key sets). Emits `data_updated`. |
 | `DELETE` | `/api/:table/:id` | Deletes a row (tables whitelisted; categories/responsibles in use by an expense are rejected with HTTP 400 + pt-BR message) |
 | `POST` | `/api/delete/:table/:id` | Same as DELETE — fallback for environments that block the DELETE method (this is what the frontend uses) |
@@ -145,7 +145,7 @@ categories        (id TEXT PK, name, color)
 responsibles      (id TEXT PK, name, photo)          -- photo = base64 data URL (compressed client-side)
 expenses          (id TEXT PK, category_id FK→SET NULL, description, date, due_date,
                    value REAL, responsible_id FK→SET NULL, paid INTEGER 0/1,
-                   notes, created_by, recurring_id, card_id, created_at)
+                   notes, created_by, recurring_id, created_at)
 user_profile      (id TEXT PK = 'default', name, photo)
 budgets           (id TEXT PK, category_id FK→CASCADE, month 'yyyy-MM', limit_value,
                    UNIQUE(category_id, month))
@@ -156,8 +156,6 @@ recurring_expenses(id TEXT PK, category_id, description, value, responsible_id,
 incomes           (id TEXT PK, description, value, date, type, responsible_id,
                    notes, recurring INTEGER (legacy), recurring_income_id)
 income_types      (id TEXT PK, name, color)
-cards             (id TEXT PK, name, color, closing_day, due_day,
-                   limit_value REAL, active INTEGER 0/1)   -- cartão de crédito
 recurring_incomes (id TEXT PK, description, value, type, responsible_id,
                    day_of_month, active INTEGER 0/1,
                    frequency, interval_n, start_date)      -- idem
@@ -308,23 +306,6 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
   are self-healed: the server dedups on every start (`dedupRecurringOccurrences`) and
   `fetchData` drops client-side copies via `findRecurringDuplicates()` + queued deletes.
 
-### Cartões de crédito e faturas
-
-- **A fatura não é uma tabela.** It is derived: the invoice of card *C* for month
-  *M* is every expense with `card_id = C` whose purchase date maps to *M* via
-  `faturaDaCompra(date, closing_day)` (a purchase **on or after** the closing day
-  belongs to the next invoice). Deriving it means the invoice can never drift out
-  of sync with the expense list.
-- When a card is picked in `ExpenseModal`, `due_date` becomes the invoice's due
-  date (`vencimentoDaFatura(mes, due_day)`) and the field is shown locked, with a
-  hidden input carrying the value — a disabled input is not submitted with the form.
-- "Marcar fatura como paga" flips `paid` on that invoice's expenses through
-  `marcarPagas(ids, msg)` — one queued batch, not one request per row. No new
-  expense is created: the invoice *is* those rows.
-- A card still referenced by an expense cannot be deleted (HTTP 400, pt-BR
-  message) — deactivate it instead (`active: 0`), which hides it from the pickers
-  while keeping its history.
-
 ### Informação e ações na interface
 
 - **"Fluxo do período"** (Dashboard) breaks the period's expenses into *já pago* ×
@@ -339,6 +320,10 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
   button in the toast; `deleteItem` captures the removed expense/income and the
   undo re-saves it with the same id (sync is an upsert, so it lands back where it
   was). Toasts with an action live 9 s instead of 4.5 s.
+- **"Quem usa este aparelho"** is asked once, right after the lock screen
+  (`QuemUsa.tsx`, gated by `device_user_asked` in localStorage) — answering is
+  optional. The name lives in localStorage (`device_user`) and is **never
+  synced**: it's per-device, and it's what fills `created_by`.
 - **PWA shortcuts** (`manifest.shortcuts` in `vite.config.ts`) open
   `/?tela=<tab>&novo=1`; `App.tsx` consumes the query on mount and rewrites the
   URL so going back doesn't reopen the modal.

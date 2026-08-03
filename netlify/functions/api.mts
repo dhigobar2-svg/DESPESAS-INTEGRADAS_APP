@@ -31,14 +31,13 @@ export interface DbPool {
 // Colunas permitidas por tabela — a mesma whitelist do server.ts, e a única
 // coisa que impede injeção de SQL via nomes de coluna vindos do cliente.
 const ALLOWED_COLUMNS: Record<string, string[]> = {
-  expenses:           ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total", "card_id", "updated_at"],
+  expenses:           ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total", "updated_at"],
   categories:         ["id", "name", "color", "updated_at"],
   responsibles:       ["id", "name", "photo", "updated_at"],
   budgets:            ["id", "category_id", "month", "limit_value", "updated_at"],
   recurring_expenses: ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date", "updated_at"],
   incomes:            ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by", "updated_at"],
   income_types:       ["id", "name", "color", "updated_at"],
-  cards:              ["id", "name", "color", "closing_day", "due_day", "limit_value", "active", "updated_at"],
   recurring_incomes:  ["id", "description", "value", "type", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date", "updated_at"],
   recurring_skips:    ["id", "recurring_id", "month"],
   notes:              ["id", "title", "content", "updated_at"],
@@ -50,7 +49,7 @@ const VERSIONED_TABLES = new Set(Object.keys(ALLOWED_COLUMNS).filter((t) => t !=
 
 const VALID_DELETE_TABLES = [
   "expenses", "categories", "responsibles", "budgets", "recurring_expenses",
-  "incomes", "income_types", "recurring_incomes", "notes", "cards",
+  "incomes", "income_types", "recurring_incomes", "notes",
 ];
 
 // Chave do payload de /api/sync → tabela no banco.
@@ -58,7 +57,7 @@ const TABLE_FOR_PAYLOAD: Record<string, string> = {
   categories: "categories", responsibles: "responsibles", expenses: "expenses",
   budgets: "budgets", recurring: "recurring_expenses", incomes: "incomes",
   incomeTypes: "income_types", recurringIncomes: "recurring_incomes",
-  recurringSkips: "recurring_skips", notes: "notes", cards: "cards",
+  recurringSkips: "recurring_skips", notes: "notes",
 };
 
 // ─── Infra ────────────────────────────────────────────────────────────────────
@@ -151,7 +150,7 @@ async function syncItems(client: DbClient, table: string, items: unknown[]): Pro
 async function getData(p: DbPool) {
   const [
     expenses, categories, responsibles, profileRows, budgets,
-    recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards,
+    recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
   ] = await Promise.all([
     p.query("SELECT * FROM expenses ORDER BY due_date DESC"),
     p.query("SELECT * FROM categories ORDER BY name"),
@@ -164,7 +163,6 @@ async function getData(p: DbPool) {
     p.query("SELECT * FROM recurring_incomes ORDER BY description"),
     p.query("SELECT * FROM recurring_skips"),
     p.query("SELECT * FROM notes ORDER BY updated_at DESC"),
-    p.query("SELECT * FROM cards ORDER BY name"),
   ]);
 
   return json({
@@ -179,7 +177,6 @@ async function getData(p: DbPool) {
     recurringIncomes: recurringIncomes.rows,
     recurringSkips: recurringSkips.rows,
     notes: notes.rows,
-    cards: cards.rows,
     // Sem Socket.IO aqui: o cliente cai para polling.
     meta: { realtime: false, storage: "postgres" },
   });
@@ -193,7 +190,7 @@ async function postSync(p: DbPool, req: Request) {
     // Ids recusados por já existir versão mais nova no servidor.
     const conflicts: { table: string; id: string }[] = [];
     // Categorias e responsáveis primeiro: despesas apontam para eles.
-    for (const key of ["categories", "responsibles", "cards", "expenses", "budgets", "recurring",
+    for (const key of ["categories", "responsibles", "expenses", "budgets", "recurring",
                        "incomes", "incomeTypes", "recurringIncomes", "recurringSkips", "notes"]) {
       const items = body[key];
       if (Array.isArray(items) && items.length) {
@@ -232,12 +229,11 @@ async function handleDelete(p: DbPool, table: string, id: string) {
     return json({ error: "Tabela inválida." }, 400);
   }
 
-  // Não deixa excluir categoria/responsável/cartão ainda usado por uma despesa
-  // — o usuário não pode ficar com dados órfãos sem perceber.
+  // Não deixa excluir categoria/responsável ainda usado por uma despesa — o
+  // usuário não pode ficar com dados órfãos sem perceber.
   const COLUNA_EM_USO: Record<string, { column: string; msg: string }> = {
     categories:   { column: "category_id",    msg: "Não é possível excluir: categoria está sendo usada em uma despesa." },
     responsibles: { column: "responsible_id", msg: "Não é possível excluir: responsável está sendo usado em uma despesa." },
-    cards:        { column: "card_id",        msg: "Não é possível excluir: o cartão tem despesas lançadas. Desative-o para parar de usá-lo." },
   };
   const guarda = COLUNA_EM_USO[table];
   if (guarda) {

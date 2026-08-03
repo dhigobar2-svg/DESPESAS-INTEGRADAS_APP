@@ -32,26 +32,11 @@ export interface Expense extends Versionado {
   notes?: string;
   created_by?: string;
   recurring_id?: string;  // links an auto-generated expense back to its recurring template
-  card_id?: string;       // compra no cartão de crédito (entra na fatura dele)
   // Compra parcelada: todas as parcelas compartilham o mesmo installment_id.
   installment_id?: string;
   installment_no?: number;     // 1, 2, 3…
   installment_total?: number;  // total de parcelas
   created_at?: string;    // set by the server (DATETIME DEFAULT CURRENT_TIMESTAMP)
-}
-
-/**
- * Cartão de crédito. `closing_day` é o dia em que a fatura fecha e `due_day` o
- * dia em que ela vence — é o par que decide em qual fatura uma compra cai.
- */
-export interface Card extends Versionado {
-  id: string;
-  name: string;
-  color: string;
-  closing_day: number;   // 1–31
-  due_day: number;       // 1–31
-  limit_value?: number;  // limite do cartão (opcional)
-  active: number;        // 0 | 1
 }
 
 export interface UserProfile extends Versionado {

@@ -3,12 +3,13 @@ import { format } from "date-fns";
 import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, HardDrive,
-  TrendingUp, NotebookPen, Loader2, UploadCloud, CreditCard,
+  TrendingUp, NotebookPen, Loader2, UploadCloud,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency, isRecurringCovered, buildSkipSet, ocorrenciasNoMes } from "./lib/utils";
 import Toast from "./components/Toast";
 import LockScreen from "./components/LockScreen";
+import QuemUsa from "./components/QuemUsa";
 
 // Lazy-loaded tabs keep the heavy chart/PDF libraries out of the initial bundle.
 const Dashboard         = lazy(() => import("./components/Dashboard"));
@@ -16,9 +17,8 @@ const ExpenseList       = lazy(() => import("./components/ExpenseList"));
 const Incomes           = lazy(() => import("./components/Incomes"));
 const Notes             = lazy(() => import("./components/Notes"));
 const Settings          = lazy(() => import("./components/Settings"));
-const Cards             = lazy(() => import("./components/Cards"));
 
-type Tab = "menu" | "overview" | "expenses" | "incomes" | "cards" | "notes" | "settings";
+type Tab = "menu" | "overview" | "expenses" | "incomes" | "notes" | "settings";
 type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 
 // State stored in browser history entries so the system/browser back button
@@ -34,7 +34,7 @@ interface NavState {
 // ─── Inner shell (has access to DataContext) ──────────────────────────────────
 
 function Shell() {
-  const { profile, isOnline, isConnected, realtime, serverReachable, needsAuth, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes, cards } = useData();
+  const { profile, isOnline, isConnected, realtime, serverReachable, needsAuth, pendingCount, forceSync, expenses, recurring, recurringSkips, incomes } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [activeTab, setActiveTab] = useState<Tab>("menu");
   // Drives the "Minhas Despesas" sub-tab (full list vs. próximos vencimentos).
@@ -120,7 +120,12 @@ function Shell() {
   // abre a tela pedida — e o modal de nova despesa — já na abertura. O
   // parâmetro é consumido na hora para não reabrir o modal ao voltar.
   const [abrirNovaDespesa, setAbrirNovaDespesa] = useState(false);
-  const TABS_ATALHO: Tab[] = ["overview", "expenses", "incomes", "cards", "notes", "settings"];
+  // Pergunta "quem usa este aparelho" — uma vez só, guardada neste aparelho.
+  const [perguntarQuemUsa, setPerguntarQuemUsa] = useState(() => {
+    try { return !localStorage.getItem("device_user_asked") && !localStorage.getItem("device_user"); }
+    catch { return false; }
+  });
+  const TABS_ATALHO: Tab[] = ["overview", "expenses", "incomes", "notes", "settings"];
 
   useEffect(() => {
     let atalho: Tab | null = null;
@@ -215,6 +220,16 @@ function Shell() {
   // Servidor exige senha e este aparelho ainda não entrou: nada do app é
   // montado até a senha ser aceita.
   if (needsAuth) return <><LockScreen /><Toast /></>;
+
+  // Logo depois da senha, uma única vez: quem usa este aparelho. Perguntar aqui
+  // (em vez de esperar o usuário achar a opção em Configurações) é o que faz o
+  // "lançado por" realmente ser preenchido. Responder é opcional.
+  if (perguntarQuemUsa) {
+    return <><QuemUsa onPronto={() => {
+      try { localStorage.setItem("device_user_asked", "1"); } catch { /* ignore */ }
+      setPerguntarQuemUsa(false);
+    }} /><Toast /></>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
@@ -388,10 +403,6 @@ function Shell() {
               />
               <MenuButton icon={TrendingUp}    title="Entradas / Receitas" subtitle="Salário e rendas"
                 onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
-              {cards.some(c => c.active) && (
-                <MenuButton icon={CreditCard} title="Cartões e Faturas" subtitle="Compras e fatura do mês"
-                  onClick={() => handleTabChange("cards")}   colorClass="bg-indigo-500" />
-              )}
               <MenuButton icon={NotebookPen}   title="Bloco de Notas"    subtitle="Anotações e lembretes"
                 onClick={() => handleTabChange("notes")}     colorClass="bg-amber-500" />
               <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
@@ -416,7 +427,6 @@ function Shell() {
               />
             )}
             {activeTab === "incomes"   && <Incomes />}
-            {activeTab === "cards"     && <Cards />}
             {activeTab === "notes"     && <Notes />}
             {activeTab === "settings"  && <Settings />}
           </Suspense>

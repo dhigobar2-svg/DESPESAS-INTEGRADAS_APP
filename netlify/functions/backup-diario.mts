@@ -20,13 +20,12 @@ export async function montarBackup(pool: {
   const q = async (sql: string) => (await pool.query(sql)).rows;
   const [
     expenses, categories, responsibles, profileRows, budgets,
-    recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards,
+    recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
   ] = await Promise.all([
     q("SELECT * FROM expenses"), q("SELECT * FROM categories"), q("SELECT * FROM responsibles"),
     q("SELECT * FROM user_profile WHERE id = 'default'"), q("SELECT * FROM budgets"),
     q("SELECT * FROM recurring_expenses"), q("SELECT * FROM incomes"), q("SELECT * FROM income_types"),
     q("SELECT * FROM recurring_incomes"), q("SELECT * FROM recurring_skips"), q("SELECT * FROM notes"),
-    q("SELECT * FROM cards"),
   ]);
 
   return {
@@ -36,7 +35,7 @@ export async function montarBackup(pool: {
     origem: "backup-automatico",
     profile: profileRows[0] ?? { id: "default", name: "Usuário" },
     expenses, categories, responsibles, budgets, recurring,
-    incomes, incomeTypes, recurringIncomes, recurringSkips, notes, cards,
+    incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
   };
 }
 
