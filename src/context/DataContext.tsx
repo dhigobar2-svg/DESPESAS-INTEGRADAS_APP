@@ -165,15 +165,23 @@ function countPendingChanges(): number {
   return n;
 }
 
+// Ponto único onde a alteração ganha o carimbo de "editado agora" (ISO UTC).
+// É esse carimbo que o servidor compara para recusar uma escrita mais antiga
+// que a versão já guardada — inclusive a que ficou dias parada na fila offline.
+// `recurringSkips` fica de fora: marcador imutável, nunca conflita.
+const carimbar = <T extends object>(row: T, agora: string): T =>
+  ({ ...row, updated_at: agora });
+
 function queuePending(data: SyncData) {
   const store = getPending();
+  const agora = new Date().toISOString();
   for (const t of PAYLOAD_TABLES) {
     const rows = data[t] as { id: string }[] | undefined;
     if (!rows?.length) continue;
     const bucket = store.rows[t] ?? (store.rows[t] = {});
-    for (const r of rows) bucket[r.id] = r;
+    for (const r of rows) bucket[r.id] = t === "recurringSkips" ? r : carimbar(r, agora);
   }
-  if (data.profile) store.profile = data.profile;
+  if (data.profile) store.profile = carimbar(data.profile, agora);
   setPending(store);
 }
 
@@ -281,6 +289,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // lost when the server is briefly unreachable.
 
   const flushInFlight  = useRef(false);
+  const conflitosRef   = useRef(0);
   const flushTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushPendingRef = useRef<() => Promise<boolean>>(async () => true);
 
@@ -305,7 +314,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // resposta é realmente JSON da nossa API.
       try {
         const body = await res.json();
-        if (body && typeof body === "object" && !("error" in body)) return "ok";
+        if (body && typeof body === "object" && !("error" in body)) {
+          // Linhas recusadas por já existir versão mais nova no servidor: a
+          // cópia local está velha, o flush conta quantas foram e recarrega.
+          const conflitos = (body as { conflicts?: unknown[] }).conflicts;
+          if (Array.isArray(conflitos) && conflitos.length) {
+            conflitosRef.current += conflitos.length;
+          }
+          return "ok";
+        }
       } catch { /* HTML/vazio: não existe backend nesta URL */ }
       return "failed";
     }
@@ -316,6 +333,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return "rejected";
     }
     return "failed";
+  }, [addToast]);
+
+  // Alguma linha enviada era mais velha que a versão no servidor: a versão mais
+  // nova (do outro aparelho) foi mantida. Recarrega e avisa — a alteração local
+  // não some em silêncio, o usuário sabe que a tela mudou por causa disso.
+  const avisarConflitos = useCallback(() => {
+    const n = conflitosRef.current;
+    if (!n) return;
+    conflitosRef.current = 0;
+    fetchDataRef.current();
+    addToast("info", n === 1
+      ? "Uma alteração sua era mais antiga que a versão em outro aparelho — mantivemos a mais recente."
+      : `${n} alterações suas eram mais antigas que as de outro aparelho — mantivemos as mais recentes.`);
   }, [addToast]);
 
   const flushPending = useCallback(async (): Promise<boolean> => {
@@ -331,6 +361,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (result !== "failed") {
         clearSentPending(payload);
         setServerReachable(true);
+        avisarConflitos();
         if (result === "rejected") fetchDataRef.current(); // resync after an app-level rejection
         // Rows queued while this request was in flight: flush again shortly.
         if (!pendingIsEmpty(getPending())) scheduleFlush(500);
@@ -364,6 +395,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       setServerReachable(anyOk || anyRejected);
+      avisarConflitos();
       if (anyRejected) fetchDataRef.current();
       // Keep retrying on our own — without this, a failed queue was only
       // re-sent on the next user action and the badge never went down.
@@ -376,7 +408,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } finally {
       flushInFlight.current = false;
     }
-  }, [postSync, scheduleFlush]);
+  }, [postSync, scheduleFlush, avisarConflitos]);
   flushPendingRef.current = flushPending;
 
   const syncWithServer = useCallback(async (data: SyncData) => {

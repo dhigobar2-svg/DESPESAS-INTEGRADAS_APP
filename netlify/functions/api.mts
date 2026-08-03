@@ -31,17 +31,21 @@ export interface DbPool {
 // Colunas permitidas por tabela — a mesma whitelist do server.ts, e a única
 // coisa que impede injeção de SQL via nomes de coluna vindos do cliente.
 const ALLOWED_COLUMNS: Record<string, string[]> = {
-  expenses:           ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total"],
-  categories:         ["id", "name", "color"],
-  responsibles:       ["id", "name", "photo"],
-  budgets:            ["id", "category_id", "month", "limit_value"],
-  recurring_expenses: ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date"],
-  incomes:            ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by"],
-  income_types:       ["id", "name", "color"],
-  recurring_incomes:  ["id", "description", "value", "type", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date"],
+  expenses:           ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total", "updated_at"],
+  categories:         ["id", "name", "color", "updated_at"],
+  responsibles:       ["id", "name", "photo", "updated_at"],
+  budgets:            ["id", "category_id", "month", "limit_value", "updated_at"],
+  recurring_expenses: ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date", "updated_at"],
+  incomes:            ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by", "updated_at"],
+  income_types:       ["id", "name", "color", "updated_at"],
+  recurring_incomes:  ["id", "description", "value", "type", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date", "updated_at"],
   recurring_skips:    ["id", "recurring_id", "month"],
   notes:              ["id", "title", "content", "updated_at"],
 };
+
+// Tabelas com controle de versão por linha (o mesmo conjunto do server.ts).
+// `recurring_skips` fica de fora: é marcador imutável, nunca conflita.
+const VERSIONED_TABLES = new Set(Object.keys(ALLOWED_COLUMNS).filter((t) => t !== "recurring_skips"));
 
 const VALID_DELETE_TABLES = [
   "expenses", "categories", "responsibles", "budgets", "recurring_expenses",
@@ -88,10 +92,12 @@ const json = (body: unknown, status = 200) =>
 // As colunas são resolvidas POR ITEM: o JSON omite campos indefinidos, então
 // itens do mesmo lote podem ter conjuntos de chaves diferentes.
 
-async function syncItems(client: DbClient, table: string, items: unknown[]) {
-  if (!Array.isArray(items) || !items.length) return;
+async function syncItems(client: DbClient, table: string, items: unknown[]): Promise<string[]> {
+  if (!Array.isArray(items) || !items.length) return [];
   const allowed = ALLOWED_COLUMNS[table];
   if (!allowed) throw new Error(`Tabela inválida: ${table}`);
+
+  const conflitos: string[] = [];
 
   for (const item of items) {
     const row = item as Record<string, unknown>;
@@ -120,12 +126,23 @@ async function syncItems(client: DbClient, table: string, items: unknown[]) {
     const quoted = cols.map((c) => `"${c}"`).join(", ");
     const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
     const updates = cols.filter((c) => c !== "id").map((c) => `"${c}" = EXCLUDED."${c}"`).join(", ");
-    await client.query(
+    // Controle de edição simultânea: só sobrescreve se a versão que chegou for
+    // igual ou mais nova que a guardada. Linha sem carimbo (de um dos lados)
+    // segue o comportamento antigo de último a escrever vence.
+    const guarda = VERSIONED_TABLES.has(table) && cols.includes("updated_at")
+      ? ` WHERE "${table}"."updated_at" IS NULL OR "${table}"."updated_at" <= EXCLUDED."updated_at"`
+      : "";
+    const r = await client.query(
       `INSERT INTO "${table}" (${quoted}) VALUES (${placeholders}) ` +
-      (updates ? `ON CONFLICT (id) DO UPDATE SET ${updates}` : "ON CONFLICT (id) DO NOTHING"),
+      (updates ? `ON CONFLICT (id) DO UPDATE SET ${updates}${guarda}` : "ON CONFLICT (id) DO NOTHING") +
+      " RETURNING id",
       values,
     );
+    // `rows` (e não rowCount): é o campo presente em todos os drivers Postgres.
+    if (guarda && !r.rows?.length) conflitos.push(String(row.id));
   }
+
+  return conflitos;
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -170,26 +187,34 @@ async function postSync(p: DbPool, req: Request) {
   const client = await p.connect();
   try {
     await client.query("BEGIN");
+    // Ids recusados por já existir versão mais nova no servidor.
+    const conflicts: { table: string; id: string }[] = [];
     // Categorias e responsáveis primeiro: despesas apontam para eles.
     for (const key of ["categories", "responsibles", "expenses", "budgets", "recurring",
                        "incomes", "incomeTypes", "recurringIncomes", "recurringSkips", "notes"]) {
       const items = body[key];
       if (Array.isArray(items) && items.length) {
-        await syncItems(client, TABLE_FOR_PAYLOAD[key], items);
+        const table = TABLE_FOR_PAYLOAD[key];
+        for (const id of await syncItems(client, table, items)) conflicts.push({ table, id });
       }
     }
 
     const profile = body.profile as Record<string, unknown> | undefined;
     if (profile && typeof profile === "object") {
-      await client.query(
-        `INSERT INTO user_profile (id, name, photo) VALUES ('default', $1, $2)
-         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, photo = EXCLUDED.photo`,
-        [profile.name ?? "Usuário", profile.photo ?? null],
+      const r = await client.query(
+        `INSERT INTO user_profile (id, name, photo, updated_at) VALUES ('default', $1, $2, $3)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, photo = EXCLUDED.photo,
+                                        updated_at = EXCLUDED.updated_at
+         WHERE user_profile.updated_at IS NULL OR EXCLUDED.updated_at IS NULL
+            OR user_profile.updated_at <= EXCLUDED.updated_at
+         RETURNING id`,
+        [profile.name ?? "Usuário", profile.photo ?? null, profile.updated_at ?? null],
       );
+      if (!r.rows?.length) conflicts.push({ table: "user_profile", id: "default" });
     }
 
     await client.query("COMMIT");
-    return json({ success: true });
+    return json({ success: true, conflicts });
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     console.error("Sync error:", err);

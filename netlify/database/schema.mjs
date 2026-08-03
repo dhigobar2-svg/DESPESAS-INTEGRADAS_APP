@@ -93,6 +93,12 @@ export const SCHEMA = [
   // Coluna adicionada depois: quem lançou a entrada.
   `ALTER TABLE incomes ADD COLUMN IF NOT EXISTS created_by TEXT`,
 
+  // Controle de edição simultânea: carimbo ISO (UTC) da última edição, gravado
+  // pelo cliente. O sync recusa escrita mais antiga que a versão guardada.
+  ...["expenses", "categories", "responsibles", "budgets", "recurring_expenses",
+      "incomes", "income_types", "recurring_incomes", "user_profile"]
+    .map((t) => `ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS updated_at TEXT`),
+
   // Tentativas de senha por origem — sustenta o bloqueio contra força bruta.
   `CREATE TABLE IF NOT EXISTS auth_attempts (
      ip TEXT PRIMARY KEY,

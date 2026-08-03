@@ -1,16 +1,26 @@
-export interface Category {
+/**
+ * Carimbo da última edição (ISO UTC), gravado pelo cliente ao enfileirar a
+ * alteração. O servidor recusa uma escrita mais antiga que a versão guardada,
+ * então o aparelho que ficou offline não sobrescreve a edição mais nova feita
+ * no outro. Ausente = dado antigo, tratado como "sempre aceita".
+ */
+export interface Versionado {
+  updated_at?: string;
+}
+
+export interface Category extends Versionado {
   id: string;
   name: string;
   color: string;
 }
 
-export interface Responsible {
+export interface Responsible extends Versionado {
   id: string;
   name: string;
   photo?: string;
 }
 
-export interface Expense {
+export interface Expense extends Versionado {
   id: string;
   category_id: string;
   description: string;
@@ -29,13 +39,13 @@ export interface Expense {
   created_at?: string;    // set by the server (DATETIME DEFAULT CURRENT_TIMESTAMP)
 }
 
-export interface UserProfile {
+export interface UserProfile extends Versionado {
   id?: string;
   name: string;
   photo?: string;
 }
 
-export interface Budget {
+export interface Budget extends Versionado {
   id: string;
   category_id: string;
   month: string;        // yyyy-MM
@@ -45,7 +55,7 @@ export interface Budget {
 /** Como a recorrência se repete. Ausente = mensal (dados antigos). */
 export type Frequencia = "weekly" | "monthly" | "yearly";
 
-export interface RecurringExpense {
+export interface RecurringExpense extends Versionado {
   id: string;
   category_id: string;
   description: string;
@@ -58,13 +68,13 @@ export interface RecurringExpense {
   start_date?: string;    // yyyy-MM-dd — âncora do ciclo
 }
 
-export interface IncomeType {
+export interface IncomeType extends Versionado {
   id: string;
   name: string;
   color: string;
 }
 
-export interface Income {
+export interface Income extends Versionado {
   id: string;
   description: string;
   value: number;
@@ -77,7 +87,7 @@ export interface Income {
   created_by?: string;  // quem lançou (nome do responsável escolhido no aparelho)
 }
 
-export interface RecurringIncome {
+export interface RecurringIncome extends Versionado {
   id: string;
   description: string;
   value: number;

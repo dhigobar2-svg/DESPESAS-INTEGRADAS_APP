@@ -164,6 +164,10 @@ notes             (id TEXT PK, title, content, updated_at)
 app_meta          (key TEXT PK, value)               -- one-time maintenance flags (e.g. dedup_v1)
 ```
 
+Every table above except `recurring_skips` and `app_meta` also carries
+`updated_at TEXT` (ISO UTC, written by the client) — the row version used by the
+concurrent-edit control.
+
 - Foreign keys are enforced (`PRAGMA foreign_keys = ON`).
 - `journal_mode = WAL` + `synchronous = NORMAL` + `busy_timeout = 5000`: readers don't block
   during a write (every client re-fetches `/api/data` on `data_updated`), with far fewer fsyncs.
@@ -264,6 +268,16 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
    shows an amber badge when > 0.
 6. Sync payload keys map to server tables via `TABLE_FOR_PAYLOAD`
    (`recurring` → `recurring_expenses`, `incomeTypes` → `income_types`, …).
+7. **Concurrent-edit control**: `queuePending` stamps every queued row (and the
+   profile) with `updated_at` = now, ISO UTC — it is the *single* place that
+   stamps, so an edit carries the moment it was made even if it sits in the
+   offline queue for days. `/api/sync` refuses a row whose `updated_at` is
+   **older** than the stored one and returns the refused ids in
+   `{ success: true, conflicts: [{ table, id }] }`; ties are accepted so
+   re-sending the queue stays idempotent. The client counts them, refetches and
+   toasts. Rows with no stamp on either side keep the old last-write-wins path,
+   so an older client (or legacy row) is never blocked. `recurring_skips` is
+   exempt — it's an immutable marker.
 
 ### Recurring expenses/incomes
 

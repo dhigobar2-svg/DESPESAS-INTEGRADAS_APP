@@ -168,6 +168,16 @@ for (const t of ["recurring_expenses", "recurring_incomes"]) {
   tryMigrate(`SELECT start_date FROM ${t} LIMIT 1`, `ALTER TABLE ${t} ADD COLUMN start_date TEXT`);
 }
 
+// Controle de edição simultânea: cada linha guarda quando foi editada pela
+// última vez (ISO UTC, gravado pelo cliente). O sync recusa uma escrita mais
+// antiga que a versão já guardada — sem isso, o aparelho que ficou offline
+// sobrescrevia, ao reconectar, a edição mais nova feita no outro aparelho.
+for (const t of ["expenses", "categories", "responsibles", "budgets",
+                 "recurring_expenses", "incomes", "income_types",
+                 "recurring_incomes", "user_profile"]) {
+  tryMigrate(`SELECT updated_at FROM ${t} LIMIT 1`, `ALTER TABLE ${t} ADD COLUMN updated_at TEXT`);
+}
+
 // Key/value store for one-time maintenance flags.
 db.exec("CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);");
 
@@ -291,34 +301,53 @@ setInterval(() => {
 
 // Whitelist of allowed columns per table — prevents SQL injection via sync
 const ALLOWED_COLUMNS: Record<string, string[]> = {
-  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total"],
-  categories:          ["id", "name", "color"],
-  responsibles:        ["id", "name", "photo"],
-  budgets:             ["id", "category_id", "month", "limit_value"],
-  recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date"],
-  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by"],
-  income_types:        ["id", "name", "color"],
-  recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date"],
+  expenses:            ["id", "category_id", "description", "date", "due_date", "value", "responsible_id", "paid", "notes", "created_by", "recurring_id", "installment_id", "installment_no", "installment_total", "updated_at"],
+  categories:          ["id", "name", "color", "updated_at"],
+  responsibles:        ["id", "name", "photo", "updated_at"],
+  budgets:             ["id", "category_id", "month", "limit_value", "updated_at"],
+  recurring_expenses:  ["id", "category_id", "description", "value", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date", "updated_at"],
+  incomes:             ["id", "description", "value", "date", "type", "responsible_id", "notes", "recurring", "recurring_income_id", "created_by", "updated_at"],
+  income_types:        ["id", "name", "color", "updated_at"],
+  recurring_incomes:   ["id", "description", "value", "type", "responsible_id", "day_of_month", "active", "frequency", "interval_n", "start_date", "updated_at"],
   recurring_skips:     ["id", "recurring_id", "month"],
   notes:               ["id", "title", "content", "updated_at"],
 };
+
+// Tabelas com controle de versão por linha. `recurring_skips` fica de fora:
+// é um marcador imutável, reenviá-lo nunca conflita.
+const VERSIONED_TABLES = new Set(Object.keys(ALLOWED_COLUMNS).filter(t => t !== "recurring_skips"));
 
 // Safe upsert: only uses whitelisted columns.
 // Columns are resolved PER ITEM: JSON omits undefined fields, so items in the
 // same batch can have different key sets — deriving columns from the first item
 // silently dropped fields (notes, recurring_id…) from every other row.
-function syncItems(table: string, items: unknown[]) {
-  if (!items?.length) return;
+function syncItems(table: string, items: unknown[]): string[] {
+  if (!items?.length) return [];
   const allowed = ALLOWED_COLUMNS[table];
   if (!allowed) throw new Error(`Invalid table: ${table}`);
 
   const stmtCache = new Map<string, ReturnType<typeof db.prepare>>();
+  const conflitos: string[] = [];
+  const versionado = VERSIONED_TABLES.has(table);
+  const lerVersao = versionado
+    ? db.prepare(`SELECT updated_at FROM ${table} WHERE id = ?`)
+    : null;
 
   db.transaction((data: unknown[]) => {
     for (const item of data) {
       const row = item as Record<string, unknown>;
       const cols = allowed.filter(col => Object.prototype.hasOwnProperty.call(row, col));
       if (!cols.includes("id")) throw new Error("Missing id field");
+
+      // Escrita mais antiga que a versão guardada é descartada: quem editou por
+      // último vence. Linha sem carimbo (dos dois lados) segue o caminho antigo.
+      if (lerVersao && typeof row.updated_at === "string") {
+        const atual = lerVersao.get(row.id) as { updated_at?: string } | undefined;
+        if (atual?.updated_at && atual.updated_at > row.updated_at) {
+          conflitos.push(String(row.id));
+          continue;
+        }
+      }
 
       const key = cols.join(",");
       let stmt = stmtCache.get(key);
@@ -335,6 +364,8 @@ function syncItems(table: string, items: unknown[]) {
       }));
     }
   })(items);
+
+  return conflitos;
 }
 
 async function startServer() {
@@ -447,25 +478,41 @@ async function startServer() {
   app.post("/api/sync", (req, res) => {
     const { expenses, categories, responsibles, profile, budgets, recurring, incomes, incomeTypes, recurringIncomes, recurringSkips, notes } = req.body;
     try {
-      if (categories?.length)       syncItems("categories",         categories);
-      if (responsibles?.length)     syncItems("responsibles",       responsibles);
-      if (expenses?.length)         syncItems("expenses",           expenses);
-      if (budgets?.length)          syncItems("budgets",            budgets);
-      if (recurring?.length)        syncItems("recurring_expenses", recurring);
-      if (incomes?.length)          syncItems("incomes",            incomes);
-      if (incomeTypes?.length)      syncItems("income_types",       incomeTypes);
-      if (recurringIncomes?.length) syncItems("recurring_incomes",  recurringIncomes);
-      if (recurringSkips?.length)   syncItems("recurring_skips",    recurringSkips);
-      if (notes?.length)            syncItems("notes",              notes);
+      // Ids recusados por já existir uma versão mais nova no servidor — o
+      // cliente descarta a cópia local e recarrega, em vez de insistir.
+      const conflitos: { table: string; id: string }[] = [];
+      const aplicar = (tabela: string, itens: unknown[] | undefined) => {
+        if (!itens?.length) return;
+        for (const id of syncItems(tabela, itens)) conflitos.push({ table: tabela, id });
+      };
+
+      aplicar("categories",         categories);
+      aplicar("responsibles",       responsibles);
+      aplicar("expenses",           expenses);
+      aplicar("budgets",            budgets);
+      aplicar("recurring_expenses", recurring);
+      aplicar("incomes",            incomes);
+      aplicar("income_types",       incomeTypes);
+      aplicar("recurring_incomes",  recurringIncomes);
+      aplicar("recurring_skips",    recurringSkips);
+      aplicar("notes",              notes);
 
       if (profile && typeof profile === "object") {
         const p = profile as Record<string, unknown>;
-        db.prepare("REPLACE INTO user_profile (id, name, photo) VALUES ('default', ?, ?)")
-          .run(p.name ?? "Usuário", p.photo ?? null);
+        const atual = db.prepare("SELECT updated_at FROM user_profile WHERE id = 'default'")
+          .get() as { updated_at?: string } | undefined;
+        const maisNovo = !(typeof p.updated_at === "string" && atual?.updated_at
+          && atual.updated_at > p.updated_at);
+        if (maisNovo) {
+          db.prepare("REPLACE INTO user_profile (id, name, photo, updated_at) VALUES ('default', ?, ?, ?)")
+            .run(p.name ?? "Usuário", p.photo ?? null, p.updated_at ?? null);
+        } else {
+          conflitos.push({ table: "user_profile", id: "default" });
+        }
       }
 
       io.emit("data_updated");
-      res.json({ success: true });
+      res.json({ success: true, conflicts: conflitos });
     } catch (err) {
       console.error("Sync error:", err);
       res.status(500).json({ error: "Erro ao sincronizar dados." });
