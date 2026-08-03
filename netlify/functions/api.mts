@@ -238,6 +238,9 @@ async function getHealth(p: DbPool) {
     return json({
       status: "ok",
       database: { engine: "postgres", provider: "netlify-db", persistent: true, expenses: rows[0].n },
+      // Diz se a proteção por senha está ligada — sem revelar a senha. Serve
+      // para conferir de fora que a variável chegou até a função.
+      auth: { required: !!senhaConfigurada() },
     });
   } catch (err) {
     console.error("Health error:", err);
@@ -313,9 +316,19 @@ async function limparFalhas(p: DbPool, ip: string): Promise<void> {
   await p.query("DELETE FROM auth_attempts WHERE ip = $1", [ip]);
 }
 
+/** Senha configurada no ambiente, lida das duas fontes possíveis. */
+function senhaConfigurada(): string | undefined {
+  // process.env é o caminho padrão e sempre preenchido nas funções; o objeto
+  // Netlify global fica como reserva. Ler só do global fazia a proteção não
+  // ligar em produção: a função caía no "sem senha configurada" e liberava tudo.
+  const doProcesso = typeof process !== "undefined" ? process.env?.APP_PASSWORD : undefined;
+  const doRuntime  = (globalThis as { Netlify?: { env: { get(k: string): string | undefined } } })
+    .Netlify?.env.get("APP_PASSWORD");
+  return (doProcesso ?? doRuntime)?.trim() || undefined;
+}
+
 async function checkAuth(req: Request): Promise<boolean> {
-  const senha = (globalThis as { Netlify?: { env: { get(k: string): string | undefined } } })
-    .Netlify?.env.get("APP_PASSWORD")?.trim();
+  const senha = senhaConfigurada();
   if (!senha) return true; // sem senha configurada: acesso livre
 
   const bytes = new TextEncoder().encode(senha);

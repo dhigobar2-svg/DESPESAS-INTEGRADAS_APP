@@ -404,6 +404,7 @@ async function startServer() {
     } catch { /* banco indisponível — o status abaixo já denuncia */ }
     res.json({
       status: expenseCount === null ? "degraded" : "ok",
+      auth: { required: !!process.env.APP_PASSWORD?.trim() },
       database: {
         path: dbAbsolute,
         persistent: dbPersistent,
