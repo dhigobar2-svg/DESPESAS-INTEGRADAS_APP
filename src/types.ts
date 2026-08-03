@@ -135,4 +135,6 @@ export interface ToastMessage {
   id: string;
   type: ToastType;
   message: string;
+  /** Ação opcional no próprio aviso — usada pelo "Desfazer" da exclusão. */
+  action?: { label: string; run: () => void };
 }

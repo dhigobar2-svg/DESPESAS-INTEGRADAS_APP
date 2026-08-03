@@ -33,6 +33,31 @@ export default defineConfig(({mode}) => {
           background_color: '#f8fafc',
           theme_color: '#059669',
           categories: ['finance', 'productivity'],
+          // Atalhos do ícone instalado (pressionar e segurar no Android):
+          // caem em /?tela=… e o App.tsx abre direto a tela pedida.
+          shortcuts: [
+            {
+              name: 'Nova despesa',
+              short_name: 'Nova despesa',
+              description: 'Lançar uma despesa agora',
+              url: '/?tela=expenses&novo=1',
+              icons: [{src: '/icons/icon-192.png', sizes: '192x192'}],
+            },
+            {
+              name: 'Entradas / Receitas',
+              short_name: 'Entradas',
+              description: 'Ver e lançar entradas',
+              url: '/?tela=incomes',
+              icons: [{src: '/icons/icon-192.png', sizes: '192x192'}],
+            },
+            {
+              name: 'Cartões e Faturas',
+              short_name: 'Faturas',
+              description: 'Fatura do mês por cartão',
+              url: '/?tela=cards',
+              icons: [{src: '/icons/icon-192.png', sizes: '192x192'}],
+            },
+          ],
           icons: [
             {src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any'},
             {src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any'},

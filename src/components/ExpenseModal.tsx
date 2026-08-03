@@ -36,7 +36,7 @@ interface Props {
 
 export default function ExpenseModal({ open, editing, defaultValues, onClose }: Props) {
   const {
-    categories, responsibles, expenses, recurring, cards,
+    categories, responsibles, expenses, recurring, cards, budgets,
     saveExpense, saveRecurring, addToast, deviceUser,
   } = useData();
 
@@ -58,6 +58,10 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
   // o da fatura, calculado a partir da data da compra e do dia de fechamento.
   const [cartaoId,        setCartaoId]        = useState("");
   const [dataCompra,      setDataCompra]      = useState("");
+  // Categoria e vencimento são controlados para o aviso de orçamento reagir
+  // enquanto o usuário preenche, em vez de só na hora de salvar.
+  const [categoriaId,     setCategoriaId]     = useState("");
+  const [dataVenc,        setDataVenc]        = useState("");
 
   // Reflect the entry's current recurrence state whenever the modal (re)opens.
   useEffect(() => {
@@ -70,7 +74,10 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
       setParcelas(1);
       setValorEhTotal(true);
       setCartaoId(editing?.card_id ?? defaultValues?.card_id ?? "");
-      setDataCompra(editing?.date ?? defaultValues?.date ?? format(new Date(), "yyyy-MM-dd"));
+      const hojeISO = format(new Date(), "yyyy-MM-dd");
+      setDataCompra(editing?.date ?? defaultValues?.date ?? hojeISO);
+      setDataVenc(editing?.due_date ?? defaultValues?.due_date ?? hojeISO);
+      setCategoriaId(editing?.category_id ?? defaultValues?.category_id ?? categories[0]?.id ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing?.id]);
@@ -226,10 +233,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
   const today = format(new Date(), "yyyy-MM-dd");
 
   // Resolve default values: editing > defaultValues > empty
-  const defCat   = editing?.category_id    ?? defaultValues?.category_id    ?? categories[0]?.id ?? "";
   const defDesc  = editing?.description    ?? defaultValues?.description    ?? "";
-  const defDate  = editing?.date           ?? defaultValues?.date           ?? today;
-  const defDue   = editing?.due_date       ?? defaultValues?.due_date       ?? today;
   const defVal   = editing?.value          ?? defaultValues?.value;
   const defResp  = editing?.responsible_id ?? defaultValues?.responsible_id ?? responsibles[0]?.id ?? "";
   const defPaid  = editing?.paid === 1;
@@ -238,8 +242,20 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
   // Cartão escolhido → a fatura (e o vencimento dela) saem da data da compra.
   const cartoesAtivos = cards.filter(c => c.active || c.id === cartaoId);
   const cartao     = cards.find(c => c.id === cartaoId);
-  const mesFatura  = cartao ? faturaDaCompra(dataCompra || defDate, cartao.closing_day) : "";
+  const mesFatura  = cartao ? faturaDaCompra(dataCompra || today, cartao.closing_day) : "";
   const vencFatura = cartao ? vencimentoDaFatura(mesFatura, cartao.due_day) : "";
+
+  // Aviso de orçamento: compara o que já está lançado na categoria naquele mês
+  // (fora este lançamento) com o limite definido em Configurações.
+  const mesLancamento = (cartao ? vencFatura : dataVenc).slice(0, 7);
+  const orcamento = budgets.find(b => b.category_id === categoriaId && b.month === mesLancamento);
+  const jaGasto = orcamento
+    ? expenses
+        .filter(e => e.category_id === categoriaId && e.due_date?.startsWith(mesLancamento) && e.id !== editing?.id)
+        .reduce((s, e) => s + e.value, 0)
+    : 0;
+  const totalComEste = jaGasto + (valorForm ?? 0);
+  const estouraOrcamento = !!orcamento && orcamento.limit_value > 0 && totalComEste > orcamento.limit_value;
 
   return (
     <AnimatePresence>
@@ -279,7 +295,9 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                   <label className="label">Categoria</label>
                   {/* required só quando há opções: um select obrigatório com lista
                       vazia bloqueia o envio do formulário sem feedback claro. */}
-                  <select name="category" defaultValue={defCat} required={categories.length > 0} className="input">
+                  <select name="category" value={categoriaId}
+                    onChange={e => setCategoriaId(e.target.value)}
+                    required={categories.length > 0} className="input">
                     {categories.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
@@ -310,7 +328,7 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                       </>
                     ) : (
                       <input type="date" name="due_date" required className="input"
-                        defaultValue={defDue} />
+                        value={dataVenc} onChange={e => setDataVenc(e.target.value)} />
                     )}
                   </div>
                 </div>
@@ -321,6 +339,22 @@ export default function ExpenseModal({ open, editing, defaultValues, onClose }: 
                   <CurrencyInput name="value" value={valorForm} onChange={setValorForm}
                     required className="font-black" />
                 </div>
+
+                {/* Aviso de orçamento — informativo, nunca bloqueia o salvamento.
+                    Aparece enquanto o valor é digitado, que é quando ainda dá
+                    para decidir alguma coisa a respeito. */}
+                {estouraOrcamento && orcamento && (
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 flex items-start gap-2.5">
+                    <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                    <p className="text-[12px] font-medium text-amber-800 leading-snug">
+                      Com este lançamento, <span className="font-black">
+                        {categories.find(c => c.id === categoriaId)?.name}
+                      </span>{" "}
+                      chega a R$ {formatCurrency(totalComEste)} em {rotuloMes(mesLancamento)} —
+                      acima do orçamento de R$ {formatCurrency(orcamento.limit_value)}.
+                    </p>
+                  </div>
+                )}
 
                 {/* Responsável */}
                 <div>

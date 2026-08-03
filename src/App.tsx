@@ -116,8 +116,27 @@ function Shell() {
   // Browser-history integration: every screen gets its own history entry, so
   // the system/browser back button navigates inside the app (menu ← tab ←
   // editor) instead of leaving the page.
+  // Atalhos do ícone instalado (manifest.shortcuts): /?tela=expenses&novo=1
+  // abre a tela pedida — e o modal de nova despesa — já na abertura. O
+  // parâmetro é consumido na hora para não reabrir o modal ao voltar.
+  const [abrirNovaDespesa, setAbrirNovaDespesa] = useState(false);
+  const TABS_ATALHO: Tab[] = ["overview", "expenses", "incomes", "cards", "notes", "settings"];
+
   useEffect(() => {
-    try { history.replaceState({ despTab: "menu" } as NavState, ""); } catch { /* ignore */ }
+    let atalho: Tab | null = null;
+    try {
+      const params = new URLSearchParams(location.search);
+      const tela   = params.get("tela") as Tab | null;
+      if (tela && TABS_ATALHO.includes(tela)) {
+        atalho = tela;
+        setAbrirNovaDespesa(params.get("novo") === "1");
+        applyNav({ despTab: tela });
+        history.replaceState({ despTab: tela } as NavState, "", location.pathname);
+      }
+    } catch { /* ignore */ }
+    if (!atalho) {
+      try { history.replaceState({ despTab: "menu" } as NavState, ""); } catch { /* ignore */ }
+    }
     const onPop = (ev: PopStateEvent) => {
       const st = ev.state as NavState | null;
       if (st?.noteEditor) return; // that entry belongs to the notes editor
@@ -390,6 +409,7 @@ function Shell() {
               <ExpenseList
                 key={`exp-${expensesNonce}`}
                 initialView={expensesView}
+                openNewOnMount={abrirNovaDespesa}
                 initialFutureFilter={futuresFilter}
                 initialDateFrom={expensesDateRange?.from}
                 initialDateTo={expensesDateRange?.to}

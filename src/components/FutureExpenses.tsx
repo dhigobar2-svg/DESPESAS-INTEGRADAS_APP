@@ -206,7 +206,7 @@ export default function FutureExpenses({ filter }: Props) {
           isOverdueSection ? "bg-red-600" : isUrgent ? "bg-red-500" : isWarning ? "bg-amber-500" : "bg-slate-400",
         )}>
           <span className="text-base font-black leading-none">{dueDate.getDate()}</span>
-          <span className="text-[10px] opacity-80 font-bold">
+          <span className="text-[11px] opacity-80 font-bold">
             {format(dueDate, "MMM", { locale: ptBR })}
           </span>
         </div>
@@ -224,19 +224,19 @@ export default function FutureExpenses({ filter }: Props) {
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat?.color ?? "#94a3b8" }} />
-            <p className="text-[10px] text-slate-500 uppercase font-medium">
+            <p className="text-[11px] text-slate-500 uppercase font-medium">
               {cat?.name ?? "—"} · {resp?.name ?? "—"}
             </p>
           </div>
           {!e.isVirtual && e.notes && (
-            <p className="text-[10px] text-slate-400 italic mt-0.5 flex items-center gap-1">
+            <p className="text-[11px] text-slate-400 italic mt-0.5 flex items-center gap-1">
               <StickyNote size={10} />
               {e.notes}
             </p>
           )}
           {/* Overdue indicator */}
           {isOverdueSection && (
-            <p className="text-[10px] font-bold text-red-600 mt-0.5 flex items-center gap-1">
+            <p className="text-[11px] font-bold text-red-600 mt-0.5 flex items-center gap-1">
               <AlertTriangle size={10} />
               {daysLate === 1 ? "Vencida há 1 dia" : `Vencida há ${daysLate} dias`}
             </p>
@@ -244,7 +244,7 @@ export default function FutureExpenses({ filter }: Props) {
           {/* Future urgency indicator */}
           {!isOverdueSection && isWarning && (
             <p className={cn(
-              "text-[10px] font-bold mt-0.5 flex items-center gap-1",
+              "text-[11px] font-bold mt-0.5 flex items-center gap-1",
               isUrgent ? "text-red-500" : "text-amber-500",
             )}>
               <Clock size={10} />
@@ -348,15 +348,15 @@ export default function FutureExpenses({ filter }: Props) {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3">
         <div className="card p-4">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Previsto</p>
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Previsto</p>
           <p className="text-sm font-black text-red-500">R$ {formatCurrency(totalFuture)}</p>
         </div>
         <div className="card p-4">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Despesas</p>
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Despesas</p>
           <p className="text-sm font-black text-slate-800">{expCount}</p>
         </div>
         <div className="card p-4">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Meses</p>
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Meses</p>
           <p className="text-sm font-black text-slate-800">{monthCount}</p>
         </div>
       </div>

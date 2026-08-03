@@ -123,6 +123,20 @@ export default function Incomes() {
   const totalIncome = displayedIncomes.reduce((s, i) => s + i.value, 0);
   const balance     = totalIncome - monthExpenses;
 
+  // Comparativo com o mês anterior: um número solto não diz se o mês foi bom.
+  const totalMesAnterior = useMemo(() => {
+    const anterior = subMonths(selectedMonth, 1);
+    const start = startOfMonth(anterior);
+    const end   = endOfMonth(anterior);
+    return incomes
+      .filter(i => { try { return isWithinInterval(parseISO(i.date), { start, end }); } catch { return false; } })
+      .reduce((s, i) => s + i.value, 0);
+  }, [incomes, selectedMonth]);
+
+  const variacao = totalMesAnterior > 0
+    ? ((totalIncome - totalMesAnterior) / totalMesAnterior) * 100
+    : null;
+
   const openAdd  = () => { setEditingIncome(null); setShowModal(true); };
 
   // Editar uma ocorrência prevista não precisa esperar a virada do mês: ela é
@@ -187,22 +201,22 @@ export default function Incomes() {
 
       {/* Balanço do mês */}
       <div className="card p-5">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Balanço do mês</p>
+        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Balanço do mês</p>
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] text-emerald-600 font-bold w-16">Entradas</span>
+          <span className="text-[11px] text-emerald-600 font-bold w-16">Entradas</span>
           <div className="flex-1 bg-slate-100 rounded-full h-2.5">
             <div className="h-2.5 bg-emerald-500 rounded-full transition-all"
               style={{ width: `${totalIncome > 0 ? Math.min((totalIncome / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }} />
           </div>
-          <span className="text-[10px] font-black text-emerald-600 w-24 text-right">R$ {formatCurrency(totalIncome)}</span>
+          <span className="text-[11px] font-black text-emerald-600 w-24 text-right">R$ {formatCurrency(totalIncome)}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-red-500 font-bold w-16">Despesas</span>
+          <span className="text-[11px] text-red-500 font-bold w-16">Despesas</span>
           <div className="flex-1 bg-slate-100 rounded-full h-2.5">
             <div className="h-2.5 bg-red-400 rounded-full transition-all"
               style={{ width: `${monthExpenses > 0 ? Math.min((monthExpenses / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }} />
           </div>
-          <span className="text-[10px] font-black text-red-500 w-24 text-right">R$ {formatCurrency(monthExpenses)}</span>
+          <span className="text-[11px] font-black text-red-500 w-24 text-right">R$ {formatCurrency(monthExpenses)}</span>
         </div>
         <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
           <span className="text-xs font-bold text-slate-600">Saldo líquido</span>
@@ -210,6 +224,15 @@ export default function Incomes() {
             {balance >= 0 ? "+" : ""}R$ {formatCurrency(balance)}
           </span>
         </div>
+        {variacao !== null && Math.abs(variacao) >= 1 && (
+          <p className={cn("text-[12px] font-bold mt-2 flex items-center gap-1",
+            variacao > 0 ? "text-emerald-600" : "text-amber-600")}>
+            {variacao > 0 ? "▲" : "▼"} {Math.abs(variacao).toFixed(0)}% em entradas vs. o mês anterior
+            <span className="text-slate-400 font-medium">
+              (R$ {formatCurrency(totalMesAnterior)})
+            </span>
+          </p>
+        )}
       </div>
 
       {/* Filtros — mesmo padrão de Minhas Despesas */}
@@ -285,7 +308,7 @@ export default function Incomes() {
                     inc.isVirtual ? "bg-violet-400" : "bg-emerald-500",
                   )}>
                     <span className="text-base font-black leading-none">{dateObj.getDate()}</span>
-                    <span className="text-[10px] opacity-80 font-bold">{format(dateObj, "MMM", { locale: ptBR })}</span>
+                    <span className="text-[11px] opacity-80 font-bold">{format(dateObj, "MMM", { locale: ptBR })}</span>
                   </div>
 
                   {/* Info */}
@@ -295,7 +318,7 @@ export default function Incomes() {
                     <p className="text-sm font-bold text-slate-900 truncate">{inc.description}</p>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
                       <span
-                        className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
+                        className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest"
                         style={it ? { backgroundColor: it.color + "22", color: it.color } : { backgroundColor: "#64748b22", color: "#64748b" }}
                       >
                         {it?.name ?? inc.type}
@@ -312,15 +335,15 @@ export default function Incomes() {
                           <RefreshCw size={9} /> Mês
                         </span>
                       )}
-                      {resp && <p className="text-[10px] text-slate-500 uppercase font-medium">{resp.name}</p>}
+                      {resp && <p className="text-[11px] text-slate-500 uppercase font-medium">{resp.name}</p>}
                     </div>
                     {inc.created_by && !inc.isVirtual && (
-                      <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                      <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
                         <UserCheck size={10} /> lançado por {inc.created_by}
                       </p>
                     )}
                     {inc.notes && (
-                      <p className="text-[10px] text-slate-400 italic mt-0.5 flex items-center gap-1">
+                      <p className="text-[11px] text-slate-400 italic mt-0.5 flex items-center gap-1">
                         <StickyNote size={10} /> {inc.notes}
                       </p>
                     )}
@@ -355,7 +378,7 @@ export default function Incomes() {
 
       {/* Explica a linha roxa: não há nada a fazer, o lançamento nasce sozinho. */}
       {virtualIncomes.length > 0 && (
-        <p className="text-[11px] text-violet-500 font-medium px-1 flex items-start gap-1.5">
+        <p className="text-[12px] text-violet-500 font-medium px-1 flex items-start gap-1.5">
           <RefreshCw size={12} className="mt-0.5 shrink-0" />
           <span>
             As entradas marcadas como <strong>previsto</strong> se repetem todo mês e são

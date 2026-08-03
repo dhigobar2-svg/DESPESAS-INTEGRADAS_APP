@@ -67,7 +67,7 @@ interface DataContextValue {
   restoreBackup:    (raw: unknown) => number;
   readPhoto:        (file: File) => Promise<string>;
   requestNotificationPermission: () => Promise<boolean>;
-  addToast:         (type: ToastMessage["type"], message: string) => void;
+  addToast:         (type: ToastMessage["type"], message: string, action?: ToastMessage["action"]) => void;
   dismissToast:     (id: string) => void;
 }
 
@@ -280,10 +280,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // ── Toast ────────────────────────────────────────────────────────────────────
 
-  const addToast = useCallback((type: ToastMessage["type"], message: string) => {
+  const addToast = useCallback((
+    type: ToastMessage["type"], message: string, action?: ToastMessage["action"],
+  ) => {
     const id = generateId();
-    setToasts(prev => [...prev, { id, type, message }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4500);
+    setToasts(prev => [...prev, { id, type, message, action }]);
+    // Aviso com ação fica mais tempo: "Desfazer" precisa dar tempo de ler e tocar.
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), action ? 9000 : 4500);
   }, []);
 
   const dismissToast = useCallback((id: string) => {
@@ -1038,6 +1041,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addToast("success", toastMsg ?? (isEdit ? "Despesa atualizada!" : "Despesa adicionada!"));
   }, [syncWithServer, addToast]);
 
+  // Refs para o "Desfazer" do aviso de exclusão: `deleteItem` é declarado antes
+  // de `saveIncome`, então a chamada passa por aqui em vez de por dependência.
+  const saveExpenseRef = useRef<(e: Expense, isEdit: boolean, msg?: string) => void>(() => {});
+  const saveIncomeRef  = useRef<(i: Income, isEdit: boolean) => void>(() => {});
+
   const deleteItem = useCallback(async (table: string, id: string) => {
     const snap = {
       expenses:     expenses,
@@ -1068,6 +1076,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // otherwise the next flush would resurrect it.
     const payloadKey = PAYLOAD_FOR_TABLE[table];
     if (payloadKey) removePendingRow(payloadKey, id);
+
+    // Guarda a linha para o "Desfazer" do aviso: recriar é só regravá-la com o
+    // mesmo id (o sync é upsert por chave primária).
+    const despesaApagada = table === "expenses" ? expenses.find(e => e.id === id) : undefined;
+    const entradaApagada = table === "incomes"  ? incomes.find(i => i.id === id)  : undefined;
 
     // Optimistic local removal
     if (table === "expenses") {
@@ -1121,7 +1134,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       if (res.ok && body && typeof body === "object" && !body.error) {
         setServerReachable(true);
-        addToast("success", "Item excluído.");
+        const desfazer = despesaApagada
+          ? { label: "Desfazer", run: () => saveExpenseRef.current(despesaApagada, false, "Exclusão desfeita.") }
+          : entradaApagada
+          ? { label: "Desfazer", run: () => saveIncomeRef.current(entradaApagada, false) }
+          : undefined;
+        addToast("success", "Item excluído.", desfazer);
       } else if (body?.error) {
         // Rejeição real da aplicação (ex.: categoria em uso) → desfaz.
         setServerReachable(true);
@@ -1171,6 +1189,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     syncWithServer({ expenses: alterados });
     if (mensagem) addToast("success", mensagem);
   }, [expenses, syncWithServer, addToast]);
+
+  saveExpenseRef.current = saveExpense;
 
   const saveProfile = useCallback(async (p: UserProfile) => {
     setProfile(p);
@@ -1237,6 +1257,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     syncWithServer({ incomes: [inc] });
     addToast("success", isEdit ? "Entrada atualizada!" : "Entrada adicionada!");
   }, [syncWithServer, addToast]);
+
+  saveIncomeRef.current = saveIncome;
 
   const saveIncomeType = useCallback((it: IncomeType, isEdit: boolean) => {
     setIncomeTypes(prev => {

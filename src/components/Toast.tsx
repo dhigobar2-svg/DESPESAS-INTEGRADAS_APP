@@ -35,7 +35,17 @@ export default function Toast() {
             )}
           >
             <span className="mt-0.5 shrink-0">{ICONS[t.type]}</span>
-            <p className="text-sm font-medium text-slate-800 flex-1">{t.message}</p>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-800">{t.message}</p>
+              {t.action && (
+                <button
+                  onClick={() => { t.action!.run(); dismissToast(t.id); }}
+                  className="mt-1.5 text-xs font-black uppercase tracking-widest text-emerald-700 hover:text-emerald-800 active:scale-95 transition-all"
+                >
+                  {t.action.label}
+                </button>
+              )}
+            </div>
             <button
               onClick={() => dismissToast(t.id)}
               className="text-slate-400 hover:text-slate-700 transition-colors shrink-0 mt-0.5"

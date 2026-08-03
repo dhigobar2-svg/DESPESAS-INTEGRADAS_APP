@@ -118,7 +118,7 @@ export default function Notes() {
       {/* Header row */}
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">Bloco de Notas</h2>
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
           {notes.length} nota{notes.length !== 1 ? "s" : ""}
         </span>
       </div>
@@ -188,7 +188,7 @@ export default function Notes() {
                         <Trash2 size={14} />
                       </button>
                     </div>
-                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-2">
+                    <p className="text-[11px] font-bold text-amber-600 uppercase tracking-widest mt-2">
                       {formatDate(note.updated_at)}
                     </p>
                   </div>

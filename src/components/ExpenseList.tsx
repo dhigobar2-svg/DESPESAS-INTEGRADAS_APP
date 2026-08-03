@@ -19,6 +19,7 @@ const PAGE_SIZE = 10;
 type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
 
 interface Props {
+  openNewOnMount?: boolean;
   initialResponsibleFilter?: string;
   initialView?: "list" | "futures";
   initialFutureFilter?: FutureFilter;
@@ -27,14 +28,22 @@ interface Props {
 }
 
 export default function ExpenseList({
+  openNewOnMount = false,
   initialResponsibleFilter = "", initialView = "list", initialFutureFilter,
   initialDateFrom = "", initialDateTo = "",
 }: Props) {
-  const { expenses, categories, responsibles, incomes, incomeTypes, recurring, cards, togglePaid, deleteItem } = useData();
+  const {
+    expenses, categories, responsibles, incomes, incomeTypes, recurring, cards,
+    togglePaid, marcarPagas, deleteItem,
+  } = useData();
   const activeRecurringIds = new Set(recurring.filter(r => r.active).map(r => r.id));
 
   const [view,             setView]             = useState<"list" | "futures">(initialView);
-  const [showModal,        setShowModal]        = useState(false);
+  // Atalho do ícone instalado ("Nova despesa") abre o modal já na montagem.
+  const [showModal,        setShowModal]        = useState(openNewOnMount);
+  // Seleção em lote: ids marcados na lista atual.
+  const [selecionados,     setSelecionados]     = useState<string[]>([]);
+  const [confirmLote,      setConfirmLote]      = useState(false);
   const [editingExp,       setEditingExp]        = useState<Expense | null>(null);
   const [confirmId,        setConfirmId]        = useState<string | null>(null);
   const [page,             setPage]             = useState(1);
@@ -55,6 +64,10 @@ export default function ExpenseList({
       setPage(1);
     }
   }, [initialResponsibleFilter]);
+
+  // ── Seleção em lote ───────────────────────────────────────────────────────────
+  const alternarSelecao = (id: string) =>
+    setSelecionados(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   // ── Filtering ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -297,14 +310,56 @@ export default function ExpenseList({
           : null}
       />
 
+      {/* Ações em lote — só aparece com algo marcado */}
+      {selecionados.length > 0 && (
+        <div className="card p-3 flex flex-wrap items-center gap-2 border-emerald-200 bg-emerald-50/60">
+          <span className="text-xs font-black uppercase tracking-widest text-emerald-700 flex-1">
+            {selecionados.length} selecionada{selecionados.length > 1 ? "s" : ""}
+            <span className="text-emerald-600 font-bold normal-case tracking-normal">
+              {" · R$ "}
+              {formatCurrency(expenses.filter(e => selecionados.includes(e.id)).reduce((s2, e) => s2 + e.value, 0))}
+            </span>
+          </span>
+          <button
+            onClick={() => {
+              marcarPagas(selecionados, `${selecionados.length} despesa(s) marcada(s) como paga(s).`);
+              setSelecionados([]);
+            }}
+            className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-[12px] font-black uppercase tracking-widest flex items-center gap-1.5 active:scale-95 transition-transform">
+            <CheckCircle2 size={14} /> Marcar pagas
+          </button>
+          <button
+            onClick={() => setConfirmLote(true)}
+            className="px-3 py-2 rounded-xl bg-white border border-red-200 text-red-600 text-[12px] font-black uppercase tracking-widest flex items-center gap-1.5 active:scale-95 transition-transform">
+            <Trash2 size={14} /> Excluir
+          </button>
+          <button
+            onClick={() => setSelecionados([])}
+            className="px-3 py-2 rounded-xl text-slate-500 text-[12px] font-bold uppercase tracking-widest">
+            Limpar
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="pl-4 pr-1 py-3.5 w-8">
+                  <input
+                    type="checkbox"
+                    aria-label="Selecionar todas as despesas desta página"
+                    checked={paginated.length > 0 && paginated.every(e => selecionados.includes(e.id))}
+                    onChange={e => setSelecionados(e.target.checked
+                      ? Array.from(new Set([...selecionados, ...paginated.map(x => x.id)]))
+                      : selecionados.filter(id => !paginated.some(x => x.id === id)))}
+                    className="w-4 h-4 rounded accent-emerald-600"
+                  />
+                </th>
                 {["Vencimento", "Despesa", "Valor", "Status", ""].map(h => (
-                  <th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 last:text-right">
+                  <th key={h} className="px-5 py-3.5 text-[12px] font-bold uppercase tracking-widest text-slate-400 last:text-right">
                     {h}
                   </th>
                 ))}
@@ -315,24 +370,34 @@ export default function ExpenseList({
                 const cat  = categories.find(c => c.id === expense.category_id);
                 const resp = responsibles.find(r => r.id === expense.responsible_id);
                 return (
-                  <tr key={expense.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={expense.id} className={cn("hover:bg-slate-50 transition-colors",
+                    selecionados.includes(expense.id) && "bg-emerald-50/60")}>
+                    <td className="pl-4 pr-1 py-4">
+                      <input
+                        type="checkbox"
+                        aria-label={`Selecionar ${expense.description || "despesa"}`}
+                        checked={selecionados.includes(expense.id)}
+                        onChange={() => alternarSelecao(expense.id)}
+                        className="w-4 h-4 rounded accent-emerald-600"
+                      />
+                    </td>
                     <td className="px-5 py-4">
                       <p className="text-sm font-bold">
                         {expense.due_date ? format(parseISO(expense.due_date), "dd/MM/yyyy") : "—"}
                       </p>
-                      <p className="text-[10px] text-slate-400 uppercase font-medium">{resp?.name ?? "—"}</p>
+                      <p className="text-[11px] text-slate-400 uppercase font-medium">{resp?.name ?? "—"}</p>
                     </td>
                     <td className="px-5 py-4 max-w-[200px]">
                       <div className="flex items-center gap-1.5">
                         <p className="text-sm font-bold text-slate-900 truncate">{expense.description || "—"}</p>
                         {!!expense.installment_total && expense.installment_total > 1 && (
                           <span title={`Parcela ${expense.installment_no} de ${expense.installment_total}`}
-                            className="shrink-0 text-[8px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                            className="shrink-0 text-[10px] font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
                             {expense.installment_no}/{expense.installment_total}
                           </span>
                         )}
                         {expense.recurring_id && activeRecurringIds.has(expense.recurring_id) && (
-                          <span title="Repete todo mês" className="shrink-0 flex items-center gap-0.5 text-[8px] font-bold text-orange-500 bg-orange-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
+                          <span title="Repete todo mês" className="shrink-0 flex items-center gap-0.5 text-[10px] font-bold text-orange-500 bg-orange-100 px-1.5 py-0.5 rounded-full uppercase tracking-widest">
                             <RefreshCw size={8} /> Mês
                           </span>
                         )}
@@ -340,7 +405,7 @@ export default function ExpenseList({
                           const cartao = expense.card_id ? cards.find(c => c.id === expense.card_id) : undefined;
                           return cartao ? (
                             <span title={`Compra no cartão ${cartao.name}`}
-                              className="shrink-0 flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-widest text-white"
+                              className="shrink-0 flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-widest text-white"
                               style={{ backgroundColor: cartao.color }}>
                               <CreditCard size={8} /> {cartao.name}
                             </span>
@@ -349,16 +414,16 @@ export default function ExpenseList({
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat?.color ?? "#cbd5e1" }} />
-                        <p className="text-[10px] font-medium text-slate-500 uppercase truncate">{cat?.name ?? "Outros"}</p>
+                        <p className="text-[11px] font-medium text-slate-500 uppercase truncate">{cat?.name ?? "Outros"}</p>
                       </div>
                       {expense.notes && (
-                        <p className="text-[10px] text-slate-400 italic mt-0.5 flex items-center gap-1 truncate">
+                        <p className="text-[11px] text-slate-400 italic mt-0.5 flex items-center gap-1 truncate">
                           <StickyNote size={9} className="shrink-0" />
                           {expense.notes}
                         </p>
                       )}
                       {expense.created_by && (
-                        <p className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
+                        <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1 truncate">
                           <UserCheck size={9} className="shrink-0" />
                           lançado por {expense.created_by}
                         </p>
@@ -371,7 +436,7 @@ export default function ExpenseList({
                       <button
                         onClick={() => togglePaid(expense.id)}
                         className={cn(
-                          "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all",
+                          "px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-widest transition-all",
                           expense.paid ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700",
                         )}
                       >
@@ -409,7 +474,7 @@ export default function ExpenseList({
               })}
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center">
+                  <td colSpan={6} className="px-5 py-12 text-center">
                     <p className="text-slate-400 text-sm font-medium">Nenhuma despesa encontrada.</p>
                   </td>
                 </tr>
@@ -450,6 +515,18 @@ export default function ExpenseList({
         message="Esta ação não pode ser desfeita."
         onConfirm={() => { if (confirmId) deleteItem("expenses", confirmId); setConfirmId(null); }}
         onCancel={() => setConfirmId(null)}
+      />
+
+      <ConfirmModal
+        open={confirmLote}
+        title="Excluir selecionadas"
+        message={`Excluir ${selecionados.length} despesa(s)? Esta ação não pode ser desfeita.`}
+        onConfirm={() => {
+          for (const id of selecionados) deleteItem("expenses", id);
+          setSelecionados([]);
+          setConfirmLote(false);
+        }}
+        onCancel={() => setConfirmLote(false)}
       />
       </>
       )}

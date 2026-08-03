@@ -284,6 +284,44 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── Fluxo do período: o que já saiu, o que ainda vai sair e o que sobra ── */}
+      <div className="card p-5">
+        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">
+          Fluxo do período
+        </h3>
+        <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100 mb-3">
+          {stats.saidas > 0 && (
+            <>
+              <div className="bg-emerald-500" style={{ width: `${(stats.pago / stats.saidas) * 100}%` }} />
+              <div className="bg-amber-400"   style={{ width: `${(stats.pendente / stats.saidas) * 100}%` }} />
+            </>
+          )}
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Já pago</p>
+            <p className="text-sm font-black text-emerald-600">R$ {formatCurrency(stats.pago)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">A vencer</p>
+            <p className="text-sm font-black text-amber-600">R$ {formatCurrency(stats.pendente)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Sobra prevista</p>
+            <p className={cn("text-sm font-black", stats.saldo >= 0 ? "text-emerald-600" : "text-red-600")}>
+              {stats.saldo >= 0 ? "" : "−"}R$ {formatCurrency(Math.abs(stats.saldo))}
+            </p>
+          </div>
+        </div>
+        <p className="text-[11px] text-slate-400 mt-3 leading-snug">
+          {stats.pendente > 0
+            ? `Se pagar tudo que ainda vence, ${stats.saldo >= 0
+                ? `sobram R$ ${formatCurrency(stats.saldo)}`
+                : `faltam R$ ${formatCurrency(Math.abs(stats.saldo))}`} no período.`
+            : "Nada pendente neste período — tudo que venceu já está pago."}
+        </p>
+      </div>
+
       {/* ── Insights ────────────────────────────────────────────────────────────── */}
       {insights.length > 0 && (
         <div className="card p-5">

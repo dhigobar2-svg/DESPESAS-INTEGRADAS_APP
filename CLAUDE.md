@@ -325,6 +325,24 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
   message) — deactivate it instead (`active: 0`), which hides it from the pickers
   while keeping its history.
 
+### Informação e ações na interface
+
+- **"Fluxo do período"** (Dashboard) breaks the period's expenses into *já pago* ×
+  *a vencer* and states the projected leftover in words — a total alone doesn't
+  answer "dá para pagar tudo?".
+- **Budget warning at entry time**: `ExpenseModal` compares the category's budget
+  for the entry's month with what's already booked (excluding the row being
+  edited) and warns while the value is typed. It never blocks the save.
+- **Bulk actions** in `ExpenseList`: checkbox column + a bar with "marcar pagas"
+  (via `marcarPagas`, one batch) and "excluir selecionadas".
+- **Undo delete**: `addToast(type, message, { label, run })` renders an action
+  button in the toast; `deleteItem` captures the removed expense/income and the
+  undo re-saves it with the same id (sync is an upsert, so it lands back where it
+  was). Toasts with an action live 9 s instead of 4.5 s.
+- **PWA shortcuts** (`manifest.shortcuts` in `vite.config.ts`) open
+  `/?tela=<tab>&novo=1`; `App.tsx` consumes the query on mount and rewrites the
+  URL so going back doesn't reopen the modal.
+
 ### Other conventions in the data layer
 
 - On mount and network failure, state falls back to localStorage (offline mode); when

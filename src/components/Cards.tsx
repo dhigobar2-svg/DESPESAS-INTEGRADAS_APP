@@ -41,10 +41,17 @@ export default function Cards() {
         .filter(e => e.card_id === cartao.id && faturaDaCompra(e.date, cartao.closing_day) === mes)
         .sort((a, b) => a.date.localeCompare(b.date));
       const total = compras.reduce((s, e) => s + e.value, 0);
+      // Fatura anterior do mesmo cartão: sozinho, o total do mês não diz se a
+      // fatura veio maior ou menor que a última.
+      const anterior = expenses
+        .filter(e => e.card_id === cartao.id
+          && faturaDaCompra(e.date, cartao.closing_day) === somarMes(mes, -1))
+        .reduce((s, e) => s + e.value, 0);
       return {
         cartao,
         compras,
         total,
+        anterior,
         vencimento: vencimentoDaFatura(mes, cartao.due_day),
         paga: compras.length > 0 && compras.every(e => e.paid === 1),
       };
@@ -93,7 +100,7 @@ export default function Cards() {
           <ChevronLeft size={20} />
         </button>
         <div className="text-center">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Fatura de</p>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Fatura de</p>
           <p className="text-base font-black tracking-tighter uppercase">{rotuloMes(mes)}</p>
         </div>
         <button onClick={() => setMes(m => somarMes(m, 1))}
@@ -109,14 +116,14 @@ export default function Cards() {
           <Wallet size={20} />
         </div>
         <div className="flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
             Total nas faturas de {rotuloMes(mes)}
           </p>
           <p className="text-xl font-black tracking-tighter">R$ {formatCurrency(totalGeral)}</p>
         </div>
       </div>
 
-      {faturas.map(({ cartao, compras, total, vencimento, paga }) => (
+      {faturas.map(({ cartao, compras, total, anterior, vencimento, paga }) => (
         <motion.div
           key={cartao.id}
           initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -129,14 +136,21 @@ export default function Cards() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-black tracking-tight uppercase truncate">{cartao.name}</p>
-              <p className="text-[11px] font-bold text-slate-400">
+              <p className="text-[12px] font-bold text-slate-400">
                 Fecha dia {cartao.closing_day} · vence em {vencimento.split("-").reverse().join("/")}
               </p>
+              {anterior > 0 && total > 0 && Math.abs(total - anterior) / anterior >= 0.01 && (
+                <p className={cn("text-[12px] font-bold",
+                  total > anterior ? "text-amber-600" : "text-emerald-600")}>
+                  {total > anterior ? "▲" : "▼"} {Math.abs(((total - anterior) / anterior) * 100).toFixed(0)}%
+                  {" vs. fatura anterior (R$ "}{formatCurrency(anterior)}{")"}
+                </p>
+              )}
             </div>
             <div className="text-right shrink-0">
               <p className="text-lg font-black tracking-tighter">R$ {formatCurrency(total)}</p>
               {paga && (
-                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                <span className="text-[11px] font-black uppercase tracking-widest text-emerald-600">
                   Paga
                 </span>
               )}
@@ -161,7 +175,7 @@ export default function Cards() {
                           </span>
                         )}
                       </p>
-                      <p className="text-[11px] text-slate-400">
+                      <p className="text-[12px] text-slate-400">
                         {compra.date.split("-").reverse().join("/")} · {nomeCategoria(compra.category_id)}
                       </p>
                     </div>
@@ -188,7 +202,7 @@ export default function Cards() {
         </motion.div>
       ))}
 
-      <p className="text-[11px] text-slate-400 text-center px-6 pb-2">
+      <p className="text-[12px] text-slate-400 text-center px-6 pb-2">
         Para lançar uma compra no cartão, escolha o cartão na tela de nova despesa.
       </p>
 
