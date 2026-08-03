@@ -435,6 +435,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const applyRecurringIncomes = useCallback((
     currentIncomes: Income[],
     currentTemplates: RecurringIncome[],
+    skipSet: Set<string>,
   ): Income[] => {
     const now = new Date();
     const year = now.getFullYear();
@@ -444,6 +445,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     for (const tpl of currentTemplates) {
       if (!tpl.active) continue;
+      // Ocorrência que o usuário apagou não pode voltar na próxima abertura —
+      // é o mesmo registro de "pulo" que as despesas recorrentes já usavam.
+      if (skipSet.has(`${tpl.id}_${monthKey}`)) continue;
       const date = recurringDueDate(year, month1, tpl.day_of_month);
       if (isRecurringIncomeCovered(currentIncomes, tpl, date)) continue;
       if (generated.some(i => i.recurring_income_id === tpl.id)) continue;
@@ -616,7 +620,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // Materialise recurring incomes for the current month
       if (recurringIncomeAppliedMonth.current !== monthNow && recIncomes.length) {
         recurringIncomeAppliedMonth.current = monthNow;
-        const newIncs = applyRecurringIncomes(incs, recIncomes);
+        const newIncs = applyRecurringIncomes(incs, recIncomes, skipSet);
         if (newIncs.length) {
           incs = [...incs, ...newIncs];
           syncWithServer({ incomes: newIncs });
@@ -959,6 +963,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } else if (table === "recurring_expenses") {
       setRecurring(p => { const u = p.filter(r => r.id !== id); lsSet("recurring", u); return u; });
     } else if (table === "incomes") {
+      // Igual às despesas: apagar uma ocorrência de recorrência registra o pulo
+      // do mês, senão ela seria gerada de novo na próxima abertura do app.
+      const alvo = incomes.find(i => i.id === id);
+      if (alvo?.recurring_income_id && alvo.date) {
+        addRecurringSkip(alvo.recurring_income_id, alvo.date.slice(0, 7));
+      }
       setIncomes(p => { const u = p.filter(i => i.id !== id); lsSet("incomes", u); return u; });
     } else if (table === "income_types") {
       setIncomeTypes(p => { const u = p.filter(it => it.id !== id); lsSet("incomeTypes", u); return u; });

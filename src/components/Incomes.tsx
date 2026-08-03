@@ -7,7 +7,7 @@ import {
   TrendingUp, StickyNote, RefreshCw,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, recurringDueDate, isRecurringIncomeCovered } from "../lib/utils";
+import { formatCurrency, cn, recurringDueDate, isRecurringIncomeCovered, buildSkipSet } from "../lib/utils";
 import { Income } from "../types";
 import ConfirmModal from "./ConfirmModal";
 import IncomeModal from "./IncomeModal";
@@ -18,7 +18,7 @@ type IncomeRow = Income & { isVirtual?: boolean };
 
 export default function Incomes() {
   const {
-    incomes, expenses, responsibles, incomeTypes, recurringIncomes,
+    incomes, expenses, responsibles, incomeTypes, recurringIncomes, recurringSkips,
     deleteItem, saveRecurringIncome,
   } = useData();
 
@@ -58,9 +58,11 @@ export default function Incomes() {
 
     const year   = selectedMonth.getFullYear();
     const month1 = selectedMonth.getMonth() + 1;
+    // Ocorrência apagada pelo usuário não volta como prevista.
+    const skips = buildSkipSet(recurringSkips);
 
     return recurringIncomes
-      .filter(tpl => tpl.active)
+      .filter(tpl => tpl.active && !skips.has(`${tpl.id}_${monthKey}`))
       .map(tpl => {
         const date = recurringDueDate(year, month1, tpl.day_of_month);
         if (isRecurringIncomeCovered(incomes, tpl, date)) return null;
@@ -77,7 +79,7 @@ export default function Incomes() {
         } as IncomeRow;
       })
       .filter((i): i is IncomeRow => i !== null);
-  }, [selectedMonth, recurringIncomes, incomes]);
+  }, [selectedMonth, recurringIncomes, incomes, recurringSkips]);
 
   // Lista exibida = lançamentos reais do mês + previstos das recorrências.
   const displayedIncomes = useMemo<IncomeRow[]>(
