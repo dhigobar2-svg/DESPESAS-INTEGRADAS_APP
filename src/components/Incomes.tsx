@@ -177,13 +177,8 @@ export default function Incomes() {
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
       className="space-y-5 pb-20"
     >
-      {/* Month nav — o título encolhe e a navegação nunca quebra de linha:
-          em telas estreitas "Entradas e Receitas" ocupava duas linhas e
-          espremia as setas de mês. */}
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400 truncate">
-          Entradas e Receitas
-        </h2>
+      {/* Month nav — o título da tela vive no cabeçalho verde do App. */}
+      <div className="flex items-center justify-center gap-2">
         <div className="flex items-center gap-1 shrink-0">
           <button onClick={prevMonth} aria-label="Mês anterior"
             className="p-2 rounded-xl hover:bg-slate-100 active:scale-95 transition-all">

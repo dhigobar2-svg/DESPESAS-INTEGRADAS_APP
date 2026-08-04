@@ -251,9 +251,8 @@ export default function ExpenseList({
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
       className="space-y-5"
     >
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">Minhas Despesas</h2>
+      {/* Ações — o título da tela vive no cabeçalho verde do App */}
+      <div className="flex items-center justify-end gap-3">
         {view === "list" && (
           <div className="flex gap-2 flex-wrap items-center">
             <button onClick={generatePDF}

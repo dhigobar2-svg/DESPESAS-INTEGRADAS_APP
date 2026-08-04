@@ -4,6 +4,7 @@ import {
   BarChart3, ListOrdered, Settings as SettingsIcon,
   ChevronLeft, ChevronRight, Wifi, WifiOff, HardDrive,
   TrendingUp, NotebookPen, Loader2, UploadCloud,
+  Wallet, Eye, EyeOff, Clock, ArrowDown, TrendingDown, CalendarClock, CalendarSync,
 } from "lucide-react";
 import { DataProvider, useData } from "./context/DataContext";
 import { cn, formatCurrency, isRecurringCovered, buildSkipSet, ocorrenciasNoMes } from "./lib/utils";
@@ -20,6 +21,20 @@ const Settings          = lazy(() => import("./components/Settings"));
 
 type Tab = "menu" | "overview" | "expenses" | "incomes" | "notes" | "settings";
 type FutureFilter = "upcoming" | "pending" | "recurring" | undefined;
+
+// Título exibido no cabeçalho verde de cada tela interna. As telas não repetem
+// mais esse título no corpo — ele vive só aqui.
+const TITULO_TELA: Record<Tab, string> = {
+  menu:     "Despesas Integradas",
+  overview: "Visão Geral",
+  expenses: "Minhas Despesas",
+  incomes:  "Entradas / Receitas",
+  notes:    "Bloco de Notas",
+  settings: "Configurações",
+};
+
+const saudacaoDoDia = (h: number) =>
+  h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
 
 // State stored in browser history entries so the system/browser back button
 // navigates inside the app instead of leaving it.
@@ -42,6 +57,29 @@ function Shell() {
   const [futuresFilter,  setFuturesFilter]  = useState<FutureFilter>(undefined);
   const [expensesDateRange, setExpensesDateRange] = useState<{ from: string; to: string } | null>(null);
   const [expensesNonce,  setExpensesNonce]  = useState(0);
+
+  const isMenu = activeTab === "menu";
+  // Faixa de aviso (offline / modo local) entre o cabeçalho e o conteúdo.
+  const temBanner = !isOnline || !serverReachable;
+
+  // Privacidade: esconde os valores do resumo (útil para abrir o app em
+  // público). É uma preferência deste aparelho — nunca vai para o servidor.
+  const [valoresOcultos, setValoresOcultos] = useState(() => {
+    try { return localStorage.getItem("ocultar_valores") === "1"; }
+    catch { return false; }
+  });
+  const alternarValores = () => setValoresOcultos(v => {
+    const novo = !v;
+    try { localStorage.setItem("ocultar_valores", novo ? "1" : "0"); } catch { /* ignore */ }
+    return novo;
+  });
+  /** Valor em reais do resumo, respeitando o "ocultar valores". */
+  const dinheiro = (valor: number, comSinal = false) =>
+    valoresOcultos
+      ? "R$ ••••"
+      : `${comSinal && valor >= 0 ? "+" : ""}R$ ${formatCurrency(valor)}`;
+  /** Contagem do resumo, respeitando o "ocultar valores". */
+  const contagem = (valor: number | string) => valoresOcultos ? "•••" : String(valor);
 
   const now = new Date();
   const mm  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -190,30 +228,59 @@ function Shell() {
   }) => (
     <button
       onClick={onClick}
-      className="w-full bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex items-center gap-6 text-left group active:scale-[0.98]"
+      className="w-full bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all flex items-center gap-4 text-left group active:scale-[0.98]"
     >
-      <div className={cn("p-4 rounded-2xl text-white shadow-lg transition-transform group-hover:scale-110 relative", colorClass)}>
-        <Icon size={32} />
+      <div className={cn("w-14 h-14 shrink-0 rounded-2xl text-white shadow-md flex items-center justify-center transition-transform group-hover:scale-105 relative", colorClass)}>
+        <Icon size={26} />
         {/* Numeric badge — amber when urgent, red otherwise */}
         {badge !== undefined && badge > 0 && (
           <span className={cn(
-            "absolute -top-1.5 -right-1.5 w-5 h-5 text-white text-[10px] font-black rounded-full flex items-center justify-center",
+            "absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 text-white text-[10px] font-black rounded-full flex items-center justify-center ring-2 ring-white",
             badgeUrgent ? "bg-amber-500" : "bg-red-500",
           )}>
             {badge > 9 ? "9+" : badge}
           </span>
         )}
       </div>
-      <div className="flex-1">
-        <h3 className="text-lg font-black tracking-tighter uppercase">{title}</h3>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{subtitle}</p>
+      <div className="flex-1 min-w-0">
+        <h3 className="text-base font-black tracking-tight uppercase">{title}</h3>
+        <p className="text-xs font-semibold text-slate-400">{subtitle}</p>
         {badgeUrgent && urgentCount !== undefined && urgentCount > 0 && (
-          <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest mt-0.5">
+          <p className="text-[11px] font-bold text-amber-600 mt-0.5">
             ⚠ {urgentCount} vence{urgentCount > 1 ? "m" : ""} em até 7 dias
           </p>
         )}
       </div>
-      <ChevronRight className="text-slate-300 group-hover:text-slate-600 transition-colors" />
+      <ChevronRight size={20} className="text-slate-300 group-hover:text-slate-600 transition-colors shrink-0" />
+    </button>
+  );
+
+  /** Um dos quatro indicadores do cartão "Resumo Financeiro". */
+  const ResumoTile = ({
+    icon: Icon, iconClass, label, valor, valorClass, legenda, legendaClass, onClick,
+  }: {
+    icon: React.ElementType; iconClass: string; label: string;
+    valor: string; valorClass?: string; legenda: string; legendaClass?: string;
+    onClick: () => void;
+  }) => (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center text-center gap-1 px-0.5 py-1 rounded-2xl hover:bg-slate-50 active:scale-95 transition-all"
+    >
+      <span className={cn("w-11 h-11 rounded-full flex items-center justify-center text-white shadow-md mb-0.5", iconClass)}>
+        <Icon size={20} />
+      </span>
+      {/* As alturas mínimas mantêm valores e legendas alinhados entre as quatro
+          colunas mesmo quando um rótulo ("Vence em breve") ocupa duas linhas. */}
+      <span className="text-[9px] font-black uppercase tracking-wide text-slate-500 leading-tight min-h-[1.5rem] flex items-center break-words">
+        {label}
+      </span>
+      {/* whitespace-nowrap: sem isso "R$ 36.370,38" quebrava no meio do número.
+          O corpo menor em telas estreitas evita que as quatro colunas se toquem. */}
+      <span className={cn("text-[9px] min-[380px]:text-[10px] font-black leading-tight tracking-tight whitespace-nowrap", valorClass ?? "text-slate-800")}>
+        {valor}
+      </span>
+      <span className={cn("text-[9px] font-semibold leading-tight", legendaClass ?? "text-slate-400")}>{legenda}</span>
     </button>
   );
 
@@ -233,72 +300,111 @@ function Shell() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* Header */}
-      {/* O topo respeita a área segura do aparelho (barra de status/notch) e
+      {/* Header verde — mesma identidade na home e nas telas internas.
+          O topo respeita a área segura do aparelho (barra de status/notch) e
           ainda desce um pouco mais: encostado no topo, o botão de voltar caía
-          na faixa de gestos do sistema e ficava impossível de tocar no celular. */}
+          na faixa de gestos do sistema e ficava impossível de tocar no celular.
+          Na home ele não é sticky (é alto e o cartão de resumo sobe por cima);
+          nas telas internas continua fixo para o voltar ficar sempre à mão. */}
       <header
-        className="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 pb-4"
+        className={cn(
+          "bg-gradient-to-br from-emerald-500 via-emerald-600 to-green-700 text-white relative overflow-hidden px-4 pb-4",
+          isMenu ? "z-0" : "sticky top-0 z-30 shadow-lg shadow-emerald-900/10",
+        )}
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1.5rem)" }}
       >
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="w-12">
-            {activeTab !== "menu" && (
-              <button
-                onClick={() => handleTabChange("menu")}
-                aria-label="Voltar"
-                className="p-2.5 -ml-1 text-slate-400 hover:text-slate-900 active:scale-95 transition-all"
-              >
-                <ChevronLeft size={24} />
-              </button>
-            )}
-          </div>
+        {/* Formas suaves de fundo (no lugar da ilustração) */}
+        <div className="absolute -right-16 -top-16 w-56 h-56 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -left-12 bottom-0 w-44 h-44 bg-white/[0.07] rounded-full blur-2xl pointer-events-none" />
 
-          <h1 className="text-xl font-black tracking-tighter text-center uppercase">
-            Despesas Integradas
-          </h1>
-
-          {/* Connection status */}
-          <div className="flex items-center gap-1.5">
-            {/* Alterações ainda não confirmadas pelo servidor (fila de envio) */}
-            {pendingCount > 0 && (
-              <button
-                onClick={forceSync}
-                className="flex items-center gap-1 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 hover:bg-amber-100 active:scale-95 transition-all"
-                title={`${pendingCount} alteraç${pendingCount > 1 ? "ões" : "ão"} aguardando envio — toque para sincronizar agora`}
-              >
-                <UploadCloud size={12} className="text-amber-500" />
-                <span className="text-[10px] font-black text-amber-600">{pendingCount}</span>
-              </button>
-            )}
-            {!isOnline ? (
-              <div className="flex items-center gap-1.5" title="Offline">
-                <WifiOff size={14} className="text-red-500" />
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-              </div>
-            ) : !serverReachable ? (
-              <div className="flex items-center gap-1.5" title="Modo local — sem servidor">
-                <HardDrive size={14} className="text-slate-400" />
-                <div className="w-2 h-2 rounded-full bg-slate-300" />
-              </div>
+        <div className="max-w-4xl mx-auto relative">
+          <div className="flex items-center justify-between gap-2 min-h-11">
+            {isMenu ? (
+              <span className="text-[11px] font-black uppercase tracking-[0.2em] text-white/70">
+                Despesas Integradas
+              </span>
             ) : (
-              // Sem Socket.IO (backend serverless) "conectado" é o estado normal:
-              // os dados vão para o banco do mesmo jeito, só sem push em tempo real.
-              <div className="flex items-center gap-1.5" title={isConnected || !realtime ? "Conectado ao servidor" : "Reconectando…"}>
-                <Wifi size={14} className={cn(isConnected || !realtime ? "text-emerald-500" : "text-amber-400")} />
-                <div className={cn(
-                  "w-2 h-2 rounded-full",
-                  isConnected || !realtime ? "bg-emerald-500 animate-pulse" : "bg-amber-400 animate-pulse",
-                )} />
+              <div className="flex items-center gap-1 min-w-0">
+                <button
+                  onClick={() => handleTabChange("menu")}
+                  aria-label="Voltar"
+                  className="p-2.5 -ml-2.5 text-white/80 hover:text-white active:scale-95 transition-all"
+                >
+                  <ChevronLeft size={24} />
+                </button>
+                <h1 className="text-lg font-black tracking-tight truncate">
+                  {TITULO_TELA[activeTab]}
+                </h1>
               </div>
             )}
+
+            {/* Status de conexão + fila de envio + ocultar valores */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Alterações ainda não confirmadas pelo servidor (fila de envio) */}
+              {pendingCount > 0 && (
+                <button
+                  onClick={forceSync}
+                  className="flex items-center gap-1 bg-white/20 border border-white/25 rounded-full px-2 py-1 hover:bg-white/30 active:scale-95 transition-all"
+                  title={`${pendingCount} alteraç${pendingCount > 1 ? "ões" : "ão"} aguardando envio — toque para sincronizar agora`}
+                >
+                  <UploadCloud size={12} className="text-amber-200" />
+                  <span className="text-[10px] font-black text-amber-100">{pendingCount}</span>
+                </button>
+              )}
+              {!isOnline ? (
+                <div className="flex items-center gap-1.5 bg-white/15 rounded-full px-2 py-1.5" title="Offline">
+                  <WifiOff size={14} className="text-red-200" />
+                  <div className="w-2 h-2 rounded-full bg-red-300" />
+                </div>
+              ) : !serverReachable ? (
+                <div className="flex items-center gap-1.5 bg-white/15 rounded-full px-2 py-1.5" title="Modo local — sem servidor">
+                  <HardDrive size={14} className="text-white/70" />
+                  <div className="w-2 h-2 rounded-full bg-white/50" />
+                </div>
+              ) : (
+                // Sem Socket.IO (backend serverless) "conectado" é o estado normal:
+                // os dados vão para o banco do mesmo jeito, só sem push em tempo real.
+                <div className="flex items-center gap-1.5 bg-white/15 rounded-full px-2 py-1.5" title={isConnected || !realtime ? "Conectado ao servidor" : "Reconectando…"}>
+                  <Wifi size={14} className={cn(isConnected || !realtime ? "text-white" : "text-amber-200")} />
+                  <div className={cn(
+                    "w-2 h-2 rounded-full animate-pulse",
+                    isConnected || !realtime ? "bg-white" : "bg-amber-300",
+                  )} />
+                </div>
+              )}
+              {isMenu && (
+                <button
+                  onClick={alternarValores}
+                  aria-label={valoresOcultos ? "Mostrar valores" : "Ocultar valores"}
+                  title={valoresOcultos ? "Mostrar valores" : "Ocultar valores"}
+                  className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center active:scale-95 transition-all"
+                >
+                  {valoresOcultos ? <EyeOff size={17} /> : <Eye size={17} />}
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Saudação (só na home) */}
+          {isMenu && (
+            <div className="mt-5 pb-10">
+              <p className="text-sm font-semibold text-white/80">{saudacaoDoDia(now.getHours())},</p>
+              {/* text-2xl no celular: em 3xl um nome longo empurrava o 👋
+                  sozinho para a linha de baixo. */}
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight leading-tight mt-0.5">
+                {profile.name} <span className="align-middle">👋</span>
+              </h2>
+              <p className="text-sm font-medium text-white/75 mt-2">
+                Aqui está o resumo das suas finanças.
+              </p>
+            </div>
+          )}
         </div>
       </header>
 
       {/* Offline banner */}
       {!isOnline && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center">
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center relative z-10">
           <p className="text-xs font-bold text-amber-700 uppercase tracking-widest">
             Modo offline — alterações serão sincronizadas ao reconectar
           </p>
@@ -307,7 +413,7 @@ function Shell() {
 
       {/* Local-only banner — online but no backend reachable (e.g. static host) */}
       {isOnline && !serverReachable && (
-        <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 text-center">
+        <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 text-center relative z-10">
           <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
             Modo local — sem servidor; os dados ficam apenas neste dispositivo
           </p>
@@ -317,83 +423,104 @@ function Shell() {
       {/* Content */}
       <main className="max-w-4xl mx-auto p-4">
         <>
-          {activeTab === "menu" && (
-            <div className="space-y-4 pt-4">
-              {/* Welcome card */}
-              <div className="bg-emerald-600 p-6 rounded-[2.5rem] text-white mb-8 shadow-2xl shadow-emerald-200 relative overflow-hidden">
-                <div className="relative z-10">
-                  <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80 mb-1">Bem-vindo(a) novamente,</p>
-                  <h2 className="text-2xl font-black tracking-tighter mb-4">{profile.name}</h2>
-                  <div className="grid grid-cols-2 gap-2">
-                    {/* Total Geral → lista de despesas do mês */}
-                    <button
-                      onClick={goToMonthExpenses}
-                      className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-left w-full transition-all active:scale-95"
-                    >
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Total Geral</p>
-                      <p className="text-base font-black truncate">R$ {formatCurrency(totalMonth)}</p>
-                    </button>
-                    {/* Pendente */}
-                    <button
-                      onClick={() => goToFutures("pending")}
-                      className={cn(
-                        "backdrop-blur-md p-3 rounded-2xl border text-left w-full transition-all active:scale-95",
-                        pendingMonth > 0 ? "bg-red-500/40 border-red-300/40" : "bg-white/20 border-white/0",
-                      )}
-                    >
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">
-                        {pendingMonth > 0 ? "⚠ Pendente" : "Pendente"}
-                      </p>
-                      <p className="text-base font-black truncate">R$ {formatCurrency(pendingMonth)}</p>
-                    </button>
-                    {/* Entradas */}
-                    <button
-                      onClick={goToIncomes}
-                      className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-left w-full transition-all active:scale-95"
-                    >
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Entradas</p>
-                      <p className="text-base font-black truncate">R$ {formatCurrency(incomeMonth)}</p>
-                    </button>
-                    {/* Saldo → visão geral (entradas × saídas do mês) */}
-                    <button
-                      onClick={() => handleTabChange("overview")}
-                      className={cn(
-                        "backdrop-blur-md p-3 rounded-2xl border text-left w-full transition-all active:scale-95",
-                        balanceMonth >= 0 ? "bg-white/20 border-white/20" : "bg-red-500/40 border-red-300/40",
-                      )}
-                    >
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Saldo</p>
-                      <p className="text-base font-black truncate">
-                        {balanceMonth >= 0 ? "+" : ""}R$ {formatCurrency(balanceMonth)}
-                      </p>
-                    </button>
-                    {/* Vence em breve */}
-                    <button
-                      onClick={() => goToFutures("upcoming")}
-                      className={cn(
-                        "backdrop-blur-md p-3 rounded-2xl border text-left w-full transition-all active:scale-95",
-                        urgentFutureCount > 0 ? "bg-amber-500/40 border-amber-300/40" : "bg-white/20 border-white/0",
-                      )}
-                    >
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">Vence em breve</p>
-                      <p className="text-base font-black">
-                        {urgentFutureCount > 0 ? urgentFutureCount : (futureCount > 0 ? futureCount : "—")}
-                      </p>
-                    </button>
-                    {/* Recorrente/mês */}
-                    <button
-                      onClick={() => goToFutures("recurring")}
-                      className="bg-white/20 backdrop-blur-md p-3 rounded-2xl text-left w-full transition-all active:scale-95"
-                    >
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-70">Recorrente/mês</p>
-                      <p className="text-base font-black truncate">R$ {formatCurrency(recurringTotal)}</p>
-                    </button>
-                  </div>
+          {isMenu && (
+            <div className="space-y-3">
+              {/* ── Resumo Financeiro ────────────────────────────────────────
+                  Cartão branco que sobe por cima do verde do cabeçalho. Quando
+                  há uma faixa de aviso (offline / modo local) ele não sobe, para
+                  não cobrir o aviso. */}
+              <div className={cn(
+                "bg-white rounded-3xl border border-slate-100 shadow-xl shadow-emerald-900/10 p-5 relative",
+                temBanner ? "mt-1" : "-mt-12",
+              )}>
+                <div className="flex items-center gap-2.5 mb-4">
+                  <span className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                    <Wallet size={18} />
+                  </span>
+                  <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-700">
+                    Resumo Financeiro
+                  </h3>
                 </div>
-                <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
+
+                <div className="flex items-center gap-3">
+                  {/* Total Geral → lista de despesas do mês */}
+                  <button onClick={goToMonthExpenses} className="flex-1 min-w-0 text-left active:scale-95 transition-transform">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Total Geral</p>
+                    <p className="text-xl min-[380px]:text-[22px] font-black tracking-tight text-slate-900 truncate mt-0.5">
+                      {dinheiro(totalMonth)}
+                    </p>
+                  </button>
+                  {/* Pendente → vencimentos em aberto. Compacto de propósito:
+                      com um cartão maior o "Total Geral" ao lado era cortado. */}
+                  <button
+                    onClick={() => goToFutures("pending")}
+                    className={cn(
+                      "flex items-center gap-2 rounded-2xl border px-2.5 py-2 shrink-0 active:scale-95 transition-all",
+                      pendingMonth > 0 ? "bg-red-50 border-red-100" : "bg-emerald-50/70 border-emerald-100",
+                    )}
+                  >
+                    {/* O ícone some nas telas mais estreitas: são 36 px que o
+                        "Total Geral" ao lado precisa para não ser cortado. */}
+                    <span className={cn(
+                      "w-7 h-7 rounded-full hidden min-[380px]:flex items-center justify-center text-white shrink-0",
+                      pendingMonth > 0 ? "bg-red-500" : "bg-emerald-500",
+                    )}>
+                      <Clock size={15} />
+                    </span>
+                    <span className="text-left">
+                      <span className="block text-[9px] font-black uppercase tracking-widest text-slate-500">Pendente</span>
+                      <span className={cn(
+                        "block text-[13px] font-black tracking-tight whitespace-nowrap",
+                        pendingMonth > 0 ? "text-red-600" : "text-slate-800",
+                      )}>
+                        {dinheiro(pendingMonth)}
+                      </span>
+                    </span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1 border-t border-slate-100 mt-4 pt-4">
+                  <ResumoTile
+                    icon={ArrowDown} iconClass="bg-emerald-500"
+                    label="Entradas" valor={dinheiro(incomeMonth)} valorClass="text-emerald-600"
+                    legenda="Total recebido" onClick={goToIncomes}
+                  />
+                  {/* Seta de tendência (não a seta reta de "Entradas") e virada
+                      conforme o sinal: uma seta para cima sobre um saldo negativo
+                      lia exatamente ao contrário do que o número diz. */}
+                  <ResumoTile
+                    icon={balanceMonth >= 0 ? TrendingUp : TrendingDown}
+                    iconClass={balanceMonth >= 0 ? "bg-emerald-500" : "bg-red-500"}
+                    label="Saldo" valor={dinheiro(balanceMonth, true)}
+                    valorClass={balanceMonth >= 0 ? "text-emerald-600" : "text-red-600"}
+                    legenda="Entradas − saídas"
+                    onClick={() => handleTabChange("overview")}
+                  />
+                  <ResumoTile
+                    icon={CalendarClock} iconClass={urgentFutureCount > 0 ? "bg-amber-500" : "bg-emerald-500"}
+                    label="Vence em breve"
+                    valor={contagem(urgentFutureCount > 0 ? urgentFutureCount : (futureCount > 0 ? futureCount : "—"))}
+                    legenda={urgentFutureCount > 0 ? "Próximos 7 dias" : "despesas"}
+                    legendaClass={urgentFutureCount > 0 ? "text-amber-600" : undefined}
+                    onClick={() => goToFutures("upcoming")}
+                  />
+                  <ResumoTile
+                    icon={CalendarSync} iconClass="bg-emerald-600"
+                    // "Recorrente/mês" não cabia numa coluna de tela estreita e
+                    // invadia a coluna vizinha; o "/mês" foi para a legenda.
+                    label="Recorrente" valor={dinheiro(recurringTotal)} valorClass="text-emerald-600"
+                    legenda={`${recurringCount} ativa${recurringCount === 1 ? "" : "s"}/mês`}
+                    onClick={() => goToFutures("recurring")}
+                  />
+                </div>
               </div>
 
-              <MenuButton icon={BarChart3}     title="Visão Geral"       subtitle="Gráficos e Estatísticas"
+              {/* ── Menu ─────────────────────────────────────────────────────── */}
+              <h3 className="text-xs font-black uppercase tracking-[0.15em] text-slate-500 pt-5 pb-1">
+                O que você deseja fazer?
+              </h3>
+
+              <MenuButton icon={BarChart3}     title="Visão Geral"       subtitle="Gráficos e estatísticas"
                 onClick={() => handleTabChange("overview")}  colorClass="bg-blue-500" />
               <MenuButton icon={ListOrdered}   title="Minhas Despesas"   subtitle="Lançamentos e vencimentos"
                 onClick={() => handleTabChange("expenses")}  colorClass="bg-emerald-500"
@@ -405,7 +532,7 @@ function Shell() {
                 onClick={() => handleTabChange("incomes")}   colorClass="bg-teal-500" />
               <MenuButton icon={NotebookPen}   title="Bloco de Notas"    subtitle="Anotações e lembretes"
                 onClick={() => handleTabChange("notes")}     colorClass="bg-amber-500" />
-              <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e Perfil"
+              <MenuButton icon={SettingsIcon}  title="Configurações"     subtitle="Ajustes e perfil"
                 onClick={() => handleTabChange("settings")}  colorClass="bg-slate-700" />
             </div>
           )}

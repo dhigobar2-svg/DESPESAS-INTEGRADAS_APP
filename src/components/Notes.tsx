@@ -115,9 +115,8 @@ export default function Notes() {
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
       className="pb-24"
     >
-      {/* Header row */}
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">Bloco de Notas</h2>
+      {/* Contagem — o título da tela vive no cabeçalho verde do App */}
+      <div className="flex items-center justify-end mb-5">
         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
           {notes.length} nota{notes.length !== 1 ? "s" : ""}
         </span>

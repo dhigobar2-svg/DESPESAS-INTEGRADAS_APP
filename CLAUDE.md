@@ -332,6 +332,21 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
 - **PWA shortcuts** (`manifest.shortcuts` in `vite.config.ts`) open
   `/?tela=<tab>&novo=1`; `App.tsx` consumes the query on mount and rewrites the
   URL so going back doesn't reopen the modal.
+- **Green header, one per screen** (`App.tsx`). The gradient header is shared by
+  every screen and is the **single** place a screen title is rendered — the map
+  is `TITULO_TELA`. Screen components must not repeat their own title in the
+  body. On the home it carries the greeting and is *not* sticky (the "Resumo
+  Financeiro" card rises over it with a negative margin, dropped to `mt-1` when
+  an offline/local banner is showing, so the banner is never covered); on the
+  inner screens it is sticky so the back arrow stays reachable. It also hosts
+  the connection state and the pending-queue badge (still a button that calls
+  `forceSync`), and keeps `env(safe-area-inset-top)` so the back arrow doesn't
+  land in the system gesture strip.
+- **"Ocultar valores"** (👁 in the header, home only): swaps the summary figures
+  for `••••`. It's a per-device preference in localStorage (`ocultar_valores`),
+  **never synced**, and it only masks the home summary — the lists and charts
+  keep showing real values. Render summary figures through the `dinheiro()` /
+  `contagem()` helpers so the toggle keeps working.
 
 ### Other conventions in the data layer
 

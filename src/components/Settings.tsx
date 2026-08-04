@@ -312,7 +312,7 @@ export default function Settings() {
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
       className="space-y-8 pb-16"
     >
-      <h2 className="text-sm font-bold uppercase tracking-widest text-slate-400">Configurações</h2>
+      {/* O título da tela vive no cabeçalho verde do App */}
 
       {/* ── Profile ───────────────────────────────────────────────────────────── */}
       <section className="card p-6">
