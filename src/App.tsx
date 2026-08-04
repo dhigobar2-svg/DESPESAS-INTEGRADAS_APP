@@ -450,21 +450,25 @@ function Shell() {
                   </h3>
                 </div>
 
-                <div className="flex items-center gap-2.5 px-1.5 pb-3.5">
+                {/* Grade de duas colunas iguais, não flex: com "Pendente" fixo e
+                    "Total Geral" ocupando o resto, o total ficava com 63 px num
+                    aparelho de 414 px e era cortado. Metade e metade, os dois
+                    valores têm sempre o mesmo espaço — e o mesmo corpo de fonte. */}
+                <div className="grid grid-cols-2 items-stretch gap-2 sm:gap-2.5 px-1.5 pb-3.5">
                   {/* Total Geral → lista de despesas do mês */}
                   <button
                     onClick={goToMonthExpenses}
-                    className="flex items-center gap-3 flex-1 min-w-0 text-left active:opacity-80 transition-opacity"
+                    className="flex items-center gap-3 min-w-0 text-left active:opacity-80 transition-opacity"
                   >
-                    {/* Os dois ícones desta linha só aparecem a partir de 400 px:
-                        abaixo disso são 90 px que os valores precisam para não
+                    {/* Os ícones desta linha só aparecem a partir de sm: no
+                        celular são ~90 px que os valores precisam para não
                         serem cortados — e o pedido aqui era fonte maior. */}
-                    <span className="w-12 h-12 rounded-2xl bg-white/15 hidden min-[400px]:flex items-center justify-center text-white shrink-0">
+                    <span className="w-12 h-12 rounded-2xl bg-white/15 hidden sm:flex items-center justify-center text-white shrink-0">
                       <Coins size={22} />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-[10px] font-black uppercase tracking-widest text-white/80">Total Geral</span>
-                      <span className="block text-xl sm:text-2xl font-black tracking-tight text-white truncate">
+                      <span className="block text-[15px] min-[400px]:text-base sm:text-lg font-black tracking-tight text-white truncate">
                         {dinheiro(totalMonth)}
                       </span>
                     </span>
@@ -473,16 +477,16 @@ function Shell() {
                   <button
                     onClick={() => goToFutures("pending")}
                     className={cn(
-                      "flex items-center gap-2.5 rounded-2xl border px-3 py-2.5 shrink-0 active:opacity-80 transition-opacity",
+                      "flex items-center gap-2.5 min-w-0 rounded-2xl border px-2 sm:px-3 py-2.5 active:opacity-80 transition-opacity",
                       pendingMonth > 0 ? "bg-red-500/30 border-red-300/50" : "bg-white/15 border-white/35",
                     )}
                   >
-                    <span className="w-9 h-9 rounded-full border-2 border-white/40 hidden min-[400px]:flex items-center justify-center text-white shrink-0">
+                    <span className="w-9 h-9 rounded-full border-2 border-white/40 hidden sm:flex items-center justify-center text-white shrink-0">
                       <Clock size={17} />
                     </span>
-                    <span className="text-left">
+                    <span className="text-left min-w-0">
                       <span className="block text-[9px] font-black uppercase tracking-widest text-white/85">Pendente</span>
-                      <span className="block text-sm sm:text-base font-black tracking-tight text-white whitespace-nowrap">
+                      <span className="block text-[15px] min-[400px]:text-base sm:text-lg font-black tracking-tight text-white truncate">
                         {dinheiro(pendingMonth)}
                       </span>
                     </span>
