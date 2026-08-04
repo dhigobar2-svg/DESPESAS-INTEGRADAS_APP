@@ -7,7 +7,7 @@ import {
   TrendingUp, StickyNote, RefreshCw, UserCheck, Search,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, isRecurringIncomeCovered, buildSkipSet, ocorrenciasNoMes, chaveOcorrencia } from "../lib/utils";
+import { cn, isRecurringIncomeCovered, buildSkipSet, ocorrenciasNoMes, chaveOcorrencia } from "../lib/utils";
 import { Income } from "../types";
 import ConfirmModal from "./ConfirmModal";
 import MultiSelect from "./MultiSelect";
@@ -20,7 +20,7 @@ type IncomeRow = Income & { isVirtual?: boolean };
 export default function Incomes() {
   const {
     incomes, expenses, responsibles, incomeTypes, recurringIncomes, recurringSkips,
-    deleteItem, saveRecurringIncome,
+    deleteItem, saveRecurringIncome, moeda,
   } = useData();
 
   const [selectedMonth,  setSelectedMonth]  = useState(new Date());
@@ -203,7 +203,7 @@ export default function Incomes() {
             <div className="h-2.5 bg-emerald-500 rounded-full transition-all"
               style={{ width: `${totalIncome > 0 ? Math.min((totalIncome / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }} />
           </div>
-          <span className="text-[11px] font-black text-emerald-600 w-24 text-right">R$ {formatCurrency(totalIncome)}</span>
+          <span className="text-[11px] font-black text-emerald-600 w-24 text-right">R$ {moeda(totalIncome)}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[11px] text-red-500 font-bold w-16">Despesas</span>
@@ -211,12 +211,12 @@ export default function Incomes() {
             <div className="h-2.5 bg-red-400 rounded-full transition-all"
               style={{ width: `${monthExpenses > 0 ? Math.min((monthExpenses / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }} />
           </div>
-          <span className="text-[11px] font-black text-red-500 w-24 text-right">R$ {formatCurrency(monthExpenses)}</span>
+          <span className="text-[11px] font-black text-red-500 w-24 text-right">R$ {moeda(monthExpenses)}</span>
         </div>
         <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
           <span className="text-xs font-bold text-slate-600">Saldo líquido</span>
           <span className={cn("text-base font-black", balance >= 0 ? "text-emerald-600" : "text-red-600")}>
-            {balance >= 0 ? "+" : ""}R$ {formatCurrency(balance)}
+            {balance >= 0 ? "+" : ""}R$ {moeda(balance)}
           </span>
         </div>
         {variacao !== null && Math.abs(variacao) >= 1 && (
@@ -224,7 +224,7 @@ export default function Incomes() {
             variacao > 0 ? "text-emerald-600" : "text-amber-600")}>
             {variacao > 0 ? "▲" : "▼"} {Math.abs(variacao).toFixed(0)}% em entradas vs. o mês anterior
             <span className="text-slate-400 font-medium">
-              (R$ {formatCurrency(totalMesAnterior)})
+              (R$ {moeda(totalMesAnterior)})
             </span>
           </p>
         )}
@@ -255,7 +255,7 @@ export default function Incomes() {
         {temFiltro && (
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-slate-500 font-medium">
-              {displayedIncomes.length} entrada{displayedIncomes.length === 1 ? "" : "s"} · R$ {formatCurrency(totalIncome)}
+              {displayedIncomes.length} entrada{displayedIncomes.length === 1 ? "" : "s"} · R$ {moeda(totalIncome)}
             </span>
             <button onClick={limparFiltros} className="text-xs text-emerald-600 font-bold hover:underline shrink-0">
               Limpar filtros
@@ -283,7 +283,7 @@ export default function Incomes() {
             <span className="text-xs font-black uppercase tracking-widest text-slate-700">
               {format(selectedMonth, "MMMM yyyy", { locale: ptBR })}
             </span>
-            <span className="text-sm font-black text-emerald-600">R$ {formatCurrency(totalIncome)}</span>
+            <span className="text-sm font-black text-emerald-600">R$ {moeda(totalIncome)}</span>
           </div>
 
           <div className="divide-y divide-slate-50">
@@ -347,7 +347,7 @@ export default function Incomes() {
                   {/* Value + actions */}
                   <div className="flex flex-col items-end gap-1.5 shrink-0">
                     <p className={cn("text-sm font-black", inc.isVirtual ? "text-violet-500" : "text-emerald-600")}>
-                      R$ {formatCurrency(inc.value)}
+                      R$ {moeda(inc.value)}
                     </p>
                     <div className="flex items-center gap-1">
                       <button

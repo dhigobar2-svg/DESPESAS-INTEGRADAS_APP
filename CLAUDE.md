@@ -335,18 +335,26 @@ All state and sync logic lives in `DataProvider`; components consume it via `use
 - **Green header, one per screen** (`App.tsx`). The gradient header is shared by
   every screen and is the **single** place a screen title is rendered — the map
   is `TITULO_TELA`. Screen components must not repeat their own title in the
-  body. On the home it carries the greeting and is *not* sticky (the "Resumo
+  body. On the home it carries the time-of-day greeting (`saudacaoDoDia`:
+  "Bom dia" before 12h, "Boa tarde" before 18h, "Boa noite" after — local
+  clock) and is *not* sticky (the "Resumo
   Financeiro" card rises over it with a negative margin, dropped to `mt-1` when
   an offline/local banner is showing, so the banner is never covered); on the
   inner screens it is sticky so the back arrow stays reachable. It also hosts
   the connection state and the pending-queue badge (still a button that calls
   `forceSync`), and keeps `env(safe-area-inset-top)` so the back arrow doesn't
   land in the system gesture strip.
-- **"Ocultar valores"** (👁 in the header, home only): swaps the summary figures
-  for `••••`. It's a per-device preference in localStorage (`ocultar_valores`),
-  **never synced**, and it only masks the home summary — the lists and charts
-  keep showing real values. Render summary figures through the `dinheiro()` /
-  `contagem()` helpers so the toggle keeps working.
+- **"Ocultar valores"** (👁 in the header of **every** screen): swaps money for
+  `••••` across the whole app. State lives in `DataContext`
+  (`valoresOcultos` / `alternarValores`), persisted per device in localStorage
+  (`ocultar_valores`) and **never synced**.
+  **Render every on-screen amount through `moeda(valor)` from `useData()`**, not
+  `formatCurrency` — same contract (no `R$` prefix), so `R$ {moeda(v)}` is the
+  usual call. Two deliberate exceptions keep `formatCurrency`:
+  **what the user is typing** (`CurrencyInput`, `ExpenseModal`, budget fields in
+  Settings) and **what the user exports** (PDF/CSV/WhatsApp in `ExpenseList`) —
+  masking either would defeat the purpose. Percentages and chart bar *lengths*
+  stay visible; only the amounts are hidden.
 
 ### Other conventions in the data layer
 

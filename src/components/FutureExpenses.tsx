@@ -7,7 +7,7 @@ import {
   AlertTriangle, SlidersHorizontal,
 } from "lucide-react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn, isRecurringCovered, recurringDueDate, buildSkipSet, ocorrenciasNoMes } from "../lib/utils";
+import { cn, isRecurringCovered, recurringDueDate, buildSkipSet, ocorrenciasNoMes } from "../lib/utils";
 import { Expense } from "../types";
 import ExpenseModal from "./ExpenseModal";
 import ConfirmModal from "./ConfirmModal";
@@ -20,7 +20,7 @@ interface Props {
 }
 
 export default function FutureExpenses({ filter }: Props) {
-  const { expenses, categories, responsibles, recurring, recurringSkips, togglePaid, deleteItem, saveExpense, saveRecurring } = useData();
+  const { expenses, categories, responsibles, recurring, recurringSkips, togglePaid, deleteItem, saveExpense, saveRecurring, moeda } = useData();
   const skipSet = buildSkipSet(recurringSkips);
   const [showModal,        setShowModal]        = useState(false);
   const [editingExp,       setEditingExp]       = useState<Expense | null>(null);
@@ -259,7 +259,7 @@ export default function FutureExpenses({ filter }: Props) {
 
         {/* Value + actions */}
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <p className="text-sm font-black text-slate-900">R$ {formatCurrency(e.value)}</p>
+          <p className="text-sm font-black text-slate-900">R$ {moeda(e.value)}</p>
           <div className="flex items-center gap-1">
             <button
               onClick={() => {
@@ -349,7 +349,7 @@ export default function FutureExpenses({ filter }: Props) {
       <div className="grid grid-cols-3 gap-3">
         <div className="card p-4">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Previsto</p>
-          <p className="text-sm font-black text-red-500">R$ {formatCurrency(totalFuture)}</p>
+          <p className="text-sm font-black text-red-500">R$ {moeda(totalFuture)}</p>
         </div>
         <div className="card p-4">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Despesas</p>
@@ -385,7 +385,7 @@ export default function FutureExpenses({ filter }: Props) {
                   </span>
                 </div>
                 <span className="text-sm font-black text-white">
-                  R$ {formatCurrency(filteredOverdue.reduce((s, e) => s + e.value, 0))}
+                  R$ {moeda(filteredOverdue.reduce((s, e) => s + e.value, 0))}
                 </span>
               </div>
               <div className="divide-y divide-slate-50">
@@ -408,7 +408,7 @@ export default function FutureExpenses({ filter }: Props) {
                     {format(monthDate, "MMMM yyyy", { locale: ptBR })}
                   </span>
                   <span className="text-sm font-black text-red-500">
-                    R$ {formatCurrency(monthTotal)}
+                    R$ {moeda(monthTotal)}
                   </span>
                 </div>
                 <div className="divide-y divide-slate-50">

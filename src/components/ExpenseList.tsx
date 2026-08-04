@@ -34,7 +34,7 @@ export default function ExpenseList({
 }: Props) {
   const {
     expenses, categories, responsibles, incomes, incomeTypes, recurring,
-    togglePaid, marcarPagas, deleteItem, excluirVarias,
+    togglePaid, marcarPagas, deleteItem, excluirVarias, moeda,
   } = useData();
   const activeRecurringIds = new Set(recurring.filter(r => r.active).map(r => r.id));
 
@@ -305,7 +305,7 @@ export default function ExpenseList({
         responsible={filterResp}     onResponsible={v => { setFilterResp(v); resetPage(); }}
         status={filterPaid}          onStatus={v => { setFilterPaid(v); resetPage(); }}
         resultSummary={(search || filterDateFrom || filterDateTo || filterCat.length || filterResp.length || filterPaid.length)
-          ? `${filtered.length} resultado${filtered.length !== 1 ? "s" : ""} · Total: R$ ${formatCurrency(filteredTotal)}`
+          ? `${filtered.length} resultado${filtered.length !== 1 ? "s" : ""} · Total: R$ ${moeda(filteredTotal)}`
           : null}
       />
 
@@ -316,7 +316,7 @@ export default function ExpenseList({
             {selecionados.length} selecionada{selecionados.length > 1 ? "s" : ""}
             <span className="text-emerald-600 font-bold normal-case tracking-normal">
               {" · R$ "}
-              {formatCurrency(expenses.filter(e => selecionados.includes(e.id)).reduce((s2, e) => s2 + e.value, 0))}
+              {moeda(expenses.filter(e => selecionados.includes(e.id)).reduce((s2, e) => s2 + e.value, 0))}
             </span>
           </span>
           <button
@@ -419,7 +419,7 @@ export default function ExpenseList({
                       )}
                     </td>
                     <td className="px-5 py-4">
-                      <p className="text-sm font-black">R$ {formatCurrency(expense.value)}</p>
+                      <p className="text-sm font-black">R$ {moeda(expense.value)}</p>
                     </td>
                     <td className="px-5 py-4">
                       <button

@@ -10,7 +10,7 @@ import {
 } from "../types";
 import {
   generateId, compressImage, isRecurringCovered, isRecurringIncomeCovered, recurringDueDate, buildSkipSet,
-  findRecurringDuplicates, sha256Hex, ocorrenciasNoMes, chaveOcorrencia,
+  findRecurringDuplicates, sha256Hex, ocorrenciasNoMes, chaveOcorrencia, formatCurrency,
 } from "../lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,6 +42,17 @@ interface DataContextValue {
   notificationsEnabled: boolean;
   pendingCount: number;
   toasts:       ToastMessage[];
+  /** Privacidade: esconde os valores em todas as telas. Só neste aparelho. */
+  valoresOcultos: boolean;
+  alternarValores: () => void;
+  /**
+   * Formata um valor respeitando o "ocultar valores" — devolve `••••` quando
+   * ligado. Mesmo contrato de `formatCurrency` (sem o "R$"), então use nos
+   * lugares que **mostram** dinheiro na tela. Não use no que o usuário está
+   * digitando (campos, modais) nem no que ele exporta (PDF/CSV/WhatsApp):
+   * ali o valor real é justamente o que se quer.
+   */
+  moeda: (valor: number) => string;
 
   // Handlers
   saveExpense:      (expense: Expense, isEdit: boolean, toastMsg?: string) => void;
@@ -272,6 +283,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // serve para distinguir quem lançou. Escolhido em Configurações.
   const [deviceUser,   setDeviceUserState] = useState<string>(() => lsGet<string>("device_user", ""));
   const [toasts,       setToasts]       = useState<ToastMessage[]>([]);
+  // Preferência deste aparelho (nunca sincronizada): útil para abrir o app em
+  // público sem expor os números.
+  const [valoresOcultos, setValoresOcultos] = useState<boolean>(
+    () => lsGet<boolean>("ocultar_valores", false),
+  );
 
   const socketRef             = useRef<Socket | null>(null);
   // Track the month each generator last ran for, so it re-materialises when the
@@ -1395,12 +1411,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     syncWithServer({ notes: [note] });
   }, [syncWithServer]);
 
+  const alternarValores = useCallback(() => {
+    setValoresOcultos(v => { lsSet("ocultar_valores", !v); return !v; });
+  }, []);
+
+  const moeda = useCallback(
+    (valor: number) => valoresOcultos ? "••••" : formatCurrency(valor),
+    [valoresOcultos],
+  );
+
   const value: DataContextValue = {
     expenses, categories, responsibles, profile, budgets, recurring,
     incomes, incomeTypes, recurringIncomes, recurringSkips, notes,
     isOnline, isConnected, realtime, serverReachable, needsAuth, authEnabled,
     deviceUser, setDeviceUser,
     notificationsEnabled, pendingCount, toasts,
+    valoresOcultos, alternarValores, moeda,
     saveExpense, deleteItem, excluirVarias, togglePaid, marcarPagas, forceSync, signIn, signOut, saveProfile,
     saveCategory, saveResponsible, saveBudget, saveRecurring,
     saveIncome, saveIncomeType, saveRecurringIncome, saveNote, restoreBackup,

@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useData } from "../context/DataContext";
-import { formatCurrency, cn } from "../lib/utils";
+import { cn } from "../lib/utils";
 import ExpenseModal from "./ExpenseModal";
 import FilterBar from "./FilterBar";
 
@@ -57,7 +57,7 @@ function pct(curr: number, prev: number): number | null {
 }
 
 export default function Dashboard() {
-  const { expenses, categories, responsibles, budgets, incomes } = useData();
+  const { expenses, categories, responsibles, budgets, incomes, moeda } = useData();
 
   const [mode,        setMode]        = useState<PeriodMode>("month");
   const [anchor,      setAnchor]      = useState(new Date());
@@ -150,8 +150,8 @@ export default function Dashboard() {
 
     if (stats.entradas > 0 || stats.saidas > 0) {
       out.push(stats.saldo >= 0
-        ? { tone: "good", text: `Saldo positivo de R$ ${formatCurrency(stats.saldo)} no período.` }
-        : { tone: "bad",  text: `Saldo negativo de R$ ${formatCurrency(Math.abs(stats.saldo))} — gastos acima das entradas.` });
+        ? { tone: "good", text: `Saldo positivo de R$ ${moeda(stats.saldo)} no período.` }
+        : { tone: "bad",  text: `Saldo negativo de R$ ${moeda(Math.abs(stats.saldo))} — gastos acima das entradas.` });
     }
     if (dExp !== null && Math.abs(dExp) >= 5) {
       out.push(dExp > 0
@@ -166,11 +166,11 @@ export default function Dashboard() {
     if (stats.byCat.length > 0) {
       const top = stats.byCat[0];
       const share = stats.saidas > 0 ? (top.value / stats.saidas) * 100 : 0;
-      out.push({ tone: share > 40 ? "warn" : "good", text: `Maior gasto: ${top.name} — R$ ${formatCurrency(top.value)} (${share.toFixed(0)}% do total).` });
+      out.push({ tone: share > 40 ? "warn" : "good", text: `Maior gasto: ${top.name} — R$ ${moeda(top.value)} (${share.toFixed(0)}% do total).` });
     }
     const exceeded = monthBudgets.filter(b => b.pct >= 100);
     if (exceeded.length) out.push({ tone: "bad", text: `Orçamento estourado: ${exceeded.map(b => b.catName).join(", ")}.` });
-    if (stats.pendente > 0) out.push({ tone: "warn", text: `R$ ${formatCurrency(stats.pendente)} ainda pendentes de pagamento.` });
+    if (stats.pendente > 0) out.push({ tone: "warn", text: `R$ ${moeda(stats.pendente)} ainda pendentes de pagamento.` });
 
     return out;
   }, [stats, monthBudgets]);
@@ -249,18 +249,18 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-3">
         <div className="card p-4">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entradas</p>
-          <p className="text-xl font-black tracking-tighter text-teal-600">R$ {formatCurrency(stats.entradas)}</p>
+          <p className="text-xl font-black tracking-tighter text-teal-600">R$ {moeda(stats.entradas)}</p>
           <Delta value={pct(stats.entradas, stats.prevEntradas)} />
         </div>
         <div className="card p-4">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saídas</p>
-          <p className="text-xl font-black tracking-tighter text-red-500">R$ {formatCurrency(stats.saidas)}</p>
+          <p className="text-xl font-black tracking-tighter text-red-500">R$ {moeda(stats.saidas)}</p>
           <Delta value={pct(stats.saidas, stats.prevSaidas)} goodWhenDown />
         </div>
         <div className={cn("card p-4", stats.saldo < 0 && "ring-1 ring-red-200")}>
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Saldo</p>
           <p className={cn("text-xl font-black tracking-tighter", stats.saldo >= 0 ? "text-emerald-600" : "text-red-600")}>
-            {stats.saldo >= 0 ? "+" : "−"}R$ {formatCurrency(Math.abs(stats.saldo))}
+            {stats.saldo >= 0 ? "+" : "−"}R$ {moeda(Math.abs(stats.saldo))}
           </p>
           <Delta value={pct(stats.saldo, stats.prevSaldo)} />
         </div>
@@ -300,24 +300,24 @@ export default function Dashboard() {
         <div className="grid grid-cols-3 gap-2 text-center">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Já pago</p>
-            <p className="text-sm font-black text-emerald-600">R$ {formatCurrency(stats.pago)}</p>
+            <p className="text-sm font-black text-emerald-600">R$ {moeda(stats.pago)}</p>
           </div>
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">A vencer</p>
-            <p className="text-sm font-black text-amber-600">R$ {formatCurrency(stats.pendente)}</p>
+            <p className="text-sm font-black text-amber-600">R$ {moeda(stats.pendente)}</p>
           </div>
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Sobra prevista</p>
             <p className={cn("text-sm font-black", stats.saldo >= 0 ? "text-emerald-600" : "text-red-600")}>
-              {stats.saldo >= 0 ? "" : "−"}R$ {formatCurrency(Math.abs(stats.saldo))}
+              {stats.saldo >= 0 ? "" : "−"}R$ {moeda(Math.abs(stats.saldo))}
             </p>
           </div>
         </div>
         <p className="text-[11px] text-slate-400 mt-3 leading-snug">
           {stats.pendente > 0
             ? `Se pagar tudo que ainda vence, ${stats.saldo >= 0
-                ? `sobram R$ ${formatCurrency(stats.saldo)}`
-                : `faltam R$ ${formatCurrency(Math.abs(stats.saldo))}`} no período.`
+                ? `sobram R$ ${moeda(stats.saldo)}`
+                : `faltam R$ ${moeda(Math.abs(stats.saldo))}`} no período.`
             : "Nada pendente neste período — tudo que venceu já está pago."}
         </p>
       </div>
@@ -353,13 +353,13 @@ export default function Dashboard() {
             <BarChart data={trend} layout="vertical" margin={{ top: 4, right: 90, left: 8, bottom: 4 }}>
               <XAxis type="number" hide />
               <YAxis dataKey="name" type="category" fontSize={11} fontWeight={600} axisLine={false} tickLine={false} width={56} />
-              <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+              <Tooltip formatter={(v: number) => `R$ ${moeda(v)}`} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Bar dataKey="Entradas" fill="#14b8a6" radius={[0, 4, 4, 0]}>
-                <LabelList dataKey="Entradas" position="right" fontSize={9} fontWeight={700} formatter={(v: number) => v > 0 ? formatCurrency(v) : ""} />
+                <LabelList dataKey="Entradas" position="right" fontSize={9} fontWeight={700} formatter={(v: number) => v > 0 ? moeda(v) : ""} />
               </Bar>
               <Bar dataKey="Saídas" fill="#f87171" radius={[0, 4, 4, 0]}>
-                <LabelList dataKey="Saídas" position="right" fontSize={9} fontWeight={700} formatter={(v: number) => v > 0 ? formatCurrency(v) : ""} />
+                <LabelList dataKey="Saídas" position="right" fontSize={9} fontWeight={700} formatter={(v: number) => v > 0 ? moeda(v) : ""} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -380,10 +380,10 @@ export default function Dashboard() {
               <BarChart data={stats.byCat} layout="vertical" margin={{ top: 4, right: 100, left: 8, bottom: 4 }}>
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" fontSize={12} fontWeight={600} axisLine={false} tickLine={false} width={110} />
-                <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                <Tooltip formatter={(v: number) => `R$ ${moeda(v)}`} />
                 <Bar dataKey="value" radius={[0, 6, 6, 0]}>
                   {stats.byCat.map((d, i) => <Cell key={i} fill={d.color} />)}
-                  <LabelList dataKey="value" position="right" fontSize={11} fontWeight={700} formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                  <LabelList dataKey="value" position="right" fontSize={11} fontWeight={700} formatter={(v: number) => `R$ ${moeda(v)}`} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -400,9 +400,9 @@ export default function Dashboard() {
               <BarChart data={stats.byResp} layout="vertical" margin={{ top: 4, right: 100, left: 8, bottom: 4 }}>
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" fontSize={12} fontWeight={600} axisLine={false} tickLine={false} width={90} />
-                <Tooltip formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                <Tooltip formatter={(v: number) => `R$ ${moeda(v)}`} />
                 <Bar dataKey="value" fill="#6366f1" radius={[0, 6, 6, 0]}>
-                  <LabelList dataKey="value" position="right" fontSize={11} fontWeight={700} formatter={(v: number) => `R$ ${formatCurrency(v)}`} />
+                  <LabelList dataKey="value" position="right" fontSize={11} fontWeight={700} formatter={(v: number) => `R$ ${moeda(v)}`} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -426,7 +426,7 @@ export default function Dashboard() {
                       {over && <span className="text-[9px] font-black text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full uppercase">Estourado</span>}
                     </div>
                     <span className={cn("text-[10px] font-black", over ? "text-red-600" : warn ? "text-amber-600" : "text-slate-500")}>
-                      R$ {formatCurrency(b.spent)} / {formatCurrency(b.limit_value)}
+                      R$ {moeda(b.spent)} / {moeda(b.limit_value)}
                     </span>
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-2">
