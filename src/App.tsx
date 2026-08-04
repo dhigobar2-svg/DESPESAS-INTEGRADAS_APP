@@ -264,7 +264,7 @@ function Shell() {
     <button
       onClick={onClick}
       className={cn(
-        "flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 sm:p-3.5 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors",
+        "flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-2.5 sm:p-3.5 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors",
         className,
       )}
     >
@@ -279,7 +279,7 @@ function Shell() {
           {label}
         </span>
         <span className={cn(
-          "block text-[15px] sm:text-base font-black tracking-tight leading-tight mt-0.5 truncate",
+          "block text-lg min-[400px]:text-xl font-black tracking-tight leading-tight mt-0.5 truncate",
           valorClass ?? "text-slate-800",
         )}>
           {valor}
@@ -438,10 +438,10 @@ function Shell() {
                   há uma faixa de aviso (offline / modo local) ele não sobe, para
                   não cobrir o aviso. */}
               <div className={cn(
-                "bg-gradient-to-br from-emerald-600 to-green-700 rounded-[1.75rem] shadow-xl shadow-emerald-900/20 p-3 sm:p-4 relative",
+                "bg-gradient-to-br from-emerald-600 to-green-700 rounded-[1.75rem] shadow-xl shadow-emerald-900/20 p-2 sm:p-4 relative",
                 temBanner ? "mt-1" : "-mt-14",
               )}>
-                <div className="flex items-center gap-2.5 px-1.5 pt-1 pb-3.5">
+                <div className="flex items-center gap-2.5 px-2 sm:px-1.5 pt-1.5 sm:pt-1 pb-3.5">
                   <span className="w-10 h-10 rounded-xl bg-lime-400 text-emerald-900 flex items-center justify-center shrink-0">
                     <Wallet size={20} />
                   </span>
@@ -450,25 +450,22 @@ function Shell() {
                   </h3>
                 </div>
 
-                {/* Grade de duas colunas iguais, não flex: com "Pendente" fixo e
-                    "Total Geral" ocupando o resto, o total ficava com 63 px num
-                    aparelho de 414 px e era cortado. Metade e metade, os dois
-                    valores têm sempre o mesmo espaço — e o mesmo corpo de fonte. */}
-                <div className="grid grid-cols-2 items-stretch gap-2 sm:gap-2.5 px-1.5 pb-3.5">
+                {/* Uma coluna no celular, duas a partir de sm. Lado a lado num
+                    aparelho estreito, cada metade fica com ~130 px — e o valor
+                    em corpo `text-xl` (o mesmo da Visão Geral) não cabe sem
+                    cortar. Empilhados, cada um usa a largura inteira do cartão. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 items-stretch gap-2 sm:gap-2.5 px-1 sm:px-1.5 pb-3.5">
                   {/* Total Geral → lista de despesas do mês */}
                   <button
                     onClick={goToMonthExpenses}
-                    className="flex items-center gap-3 min-w-0 text-left active:opacity-80 transition-opacity"
+                    className="flex items-center gap-3 min-w-0 text-left px-1 sm:px-0 active:opacity-80 transition-opacity"
                   >
-                    {/* Os ícones desta linha só aparecem a partir de sm: no
-                        celular são ~90 px que os valores precisam para não
-                        serem cortados — e o pedido aqui era fonte maior. */}
                     <span className="w-12 h-12 rounded-2xl bg-white/15 hidden sm:flex items-center justify-center text-white shrink-0">
                       <Coins size={22} />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-[10px] font-black uppercase tracking-widest text-white/80">Total Geral</span>
-                      <span className="block text-[15px] min-[400px]:text-base sm:text-lg font-black tracking-tight text-white truncate">
+                      <span className="block text-xl font-black tracking-tight text-white truncate">
                         {dinheiro(totalMonth)}
                       </span>
                     </span>
@@ -477,7 +474,7 @@ function Shell() {
                   <button
                     onClick={() => goToFutures("pending")}
                     className={cn(
-                      "flex items-center gap-2.5 min-w-0 rounded-2xl border px-2 sm:px-3 py-2.5 active:opacity-80 transition-opacity",
+                      "flex items-center gap-2.5 min-w-0 rounded-2xl border px-3 py-2.5 active:opacity-80 transition-opacity",
                       pendingMonth > 0 ? "bg-red-500/30 border-red-300/50" : "bg-white/15 border-white/35",
                     )}
                   >
@@ -486,7 +483,7 @@ function Shell() {
                     </span>
                     <span className="text-left min-w-0">
                       <span className="block text-[9px] font-black uppercase tracking-widest text-white/85">Pendente</span>
-                      <span className="block text-[15px] min-[400px]:text-base sm:text-lg font-black tracking-tight text-white truncate">
+                      <span className="block text-xl font-black tracking-tight text-white truncate">
                         {dinheiro(pendingMonth)}
                       </span>
                     </span>

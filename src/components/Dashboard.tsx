@@ -300,15 +300,15 @@ export default function Dashboard() {
         <div className="grid grid-cols-3 gap-2 text-center">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Já pago</p>
-            <p className="text-sm font-black text-emerald-600">R$ {moeda(stats.pago)}</p>
+            <p className="text-base font-black tracking-tight text-emerald-600">R$ {moeda(stats.pago)}</p>
           </div>
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">A vencer</p>
-            <p className="text-sm font-black text-amber-600">R$ {moeda(stats.pendente)}</p>
+            <p className="text-base font-black tracking-tight text-amber-600">R$ {moeda(stats.pendente)}</p>
           </div>
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Sobra prevista</p>
-            <p className={cn("text-sm font-black", stats.saldo >= 0 ? "text-emerald-600" : "text-red-600")}>
+            <p className={cn("text-base font-black tracking-tight", stats.saldo >= 0 ? "text-emerald-600" : "text-red-600")}>
               {stats.saldo >= 0 ? "" : "−"}R$ {moeda(Math.abs(stats.saldo))}
             </p>
           </div>

@@ -198,24 +198,24 @@ export default function Incomes() {
       <div className="card p-5">
         <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-3">Balanço do mês</p>
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-[11px] text-emerald-600 font-bold w-16">Entradas</span>
-          <div className="flex-1 bg-slate-100 rounded-full h-2.5">
+          <span className="text-xs text-emerald-600 font-bold w-16 shrink-0">Entradas</span>
+          <div className="flex-1 min-w-0 bg-slate-100 rounded-full h-2.5">
             <div className="h-2.5 bg-emerald-500 rounded-full transition-all"
               style={{ width: `${totalIncome > 0 ? Math.min((totalIncome / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }} />
           </div>
-          <span className="text-[11px] font-black text-emerald-600 w-24 text-right">R$ {moeda(totalIncome)}</span>
+          <span className="text-lg font-black tracking-tight text-emerald-600 text-right shrink-0 whitespace-nowrap">R$ {moeda(totalIncome)}</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-red-500 font-bold w-16">Despesas</span>
-          <div className="flex-1 bg-slate-100 rounded-full h-2.5">
+          <span className="text-xs text-red-500 font-bold w-16 shrink-0">Despesas</span>
+          <div className="flex-1 min-w-0 bg-slate-100 rounded-full h-2.5">
             <div className="h-2.5 bg-red-400 rounded-full transition-all"
               style={{ width: `${monthExpenses > 0 ? Math.min((monthExpenses / Math.max(totalIncome, monthExpenses)) * 100, 100) : 0}%` }} />
           </div>
-          <span className="text-[11px] font-black text-red-500 w-24 text-right">R$ {moeda(monthExpenses)}</span>
+          <span className="text-lg font-black tracking-tight text-red-500 text-right shrink-0 whitespace-nowrap">R$ {moeda(monthExpenses)}</span>
         </div>
         <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
           <span className="text-xs font-bold text-slate-600">Saldo líquido</span>
-          <span className={cn("text-base font-black", balance >= 0 ? "text-emerald-600" : "text-red-600")}>
+          <span className={cn("text-xl font-black tracking-tight", balance >= 0 ? "text-emerald-600" : "text-red-600")}>
             {balance >= 0 ? "+" : ""}R$ {moeda(balance)}
           </span>
         </div>

@@ -346,18 +346,18 @@ export default function FutureExpenses({ filter }: Props) {
       )}
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="card p-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="card p-4 col-span-2 sm:col-span-1">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Previsto</p>
-          <p className="text-sm font-black text-red-500">R$ {moeda(totalFuture)}</p>
+          <p className="text-xl font-black tracking-tight text-red-500">R$ {moeda(totalFuture)}</p>
         </div>
         <div className="card p-4">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Despesas</p>
-          <p className="text-sm font-black text-slate-800">{expCount}</p>
+          <p className="text-xl font-black tracking-tight text-slate-800">{expCount}</p>
         </div>
         <div className="card p-4">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Meses</p>
-          <p className="text-sm font-black text-slate-800">{monthCount}</p>
+          <p className="text-xl font-black tracking-tight text-slate-800">{monthCount}</p>
         </div>
       </div>
 
